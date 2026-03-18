@@ -12,6 +12,10 @@ export interface StatsData {
   salesSummary: { 진행인원: number; 등록인원: number; 클로징율: number; 객단가: number }
   routeSales: { route: string; 등록매출: number; 진행인원: number; 등록인원: number; 클로징율: number; 객단가: number }[]
   trainerStats: { name: string; newSales: number; renewSales: number; totalSales: number; 등록인원: number; 클로징율: number }[]
+  // 요일별
+  dailyData: { day: string; count: number; sales: number }[]
+  // 연령대별
+  ageData: { ageGroup: string; count: number; percentage: number }[]
 }
 
 export async function getStats(): Promise<StatsData> {
@@ -64,18 +68,54 @@ export async function getStats(): Promise<StatsData> {
     trainerMap.set(name, e)
   }
 
+  // 요일별 통계
+  const dayNames = ['일', '월', '화', '수', '목', '금', '토']
+  const dayMap = new Map<string, { count: number; sales: number }>()
+  for (const d of dayNames) dayMap.set(d, { count: 0, sales: 0 })
+  for (const a of assignments) {
+    const dayIdx = new Date(a.created_at).getDay()
+    const dayName = dayNames[dayIdx]
+    const e = dayMap.get(dayName)!
+    e.count++
+    if (a.status === '완료') e.sales += a.actual_sales ?? 0
+  }
+  const dailyData = dayNames.map((day) => ({ day, ...dayMap.get(day)! }))
+
+  // 연령대별 통계
+  const ageMap = new Map<string, number>()
+  for (const a of assignments) {
+    const member = a.member as { age_group?: string; birth_year?: number }
+    let ageGroup = member?.age_group
+    if (!ageGroup && member?.birth_year) {
+      const age = new Date().getFullYear() - member.birth_year
+      if (age < 20) ageGroup = '10대'
+      else if (age < 30) ageGroup = '20대'
+      else if (age < 40) ageGroup = '30대'
+      else if (age < 50) ageGroup = '40대'
+      else ageGroup = '50대+'
+    }
+    if (!ageGroup) ageGroup = '미입력'
+    ageMap.set(ageGroup, (ageMap.get(ageGroup) ?? 0) + 1)
+  }
+  const totalForAge = assignments.length
+  const ageData = Array.from(ageMap.entries())
+    .map(([ageGroup, count]) => ({ ageGroup, count, percentage: totalForAge > 0 ? Math.round((count / totalForAge) * 100) : 0 }))
+    .sort((a, b) => { const order = ['10대','20대','30대','40대','50대+','미입력']; return order.indexOf(a.ageGroup) - order.indexOf(b.ageGroup) })
+
   return {
     newSales, renewSales: 0, totalSales: newSales, weeklyData, otStatus,
     salesSummary: { 진행인원: tc, 등록인원: rc, 클로징율: tc > 0 ? Math.round((rc / tc) * 100) : 0, 객단가: rc > 0 ? Math.round(newSales / rc) : 0 },
     routeSales: Array.from(routeMap.entries()).map(([route, v]) => ({ route, 등록매출: v.sales, 진행인원: v.p, 등록인원: v.r, 클로징율: v.p > 0 ? Math.round((v.r / v.p) * 100) : 0, 객단가: v.r > 0 ? Math.round(v.sales / v.r) : 0 })),
     trainerStats: Array.from(trainerMap.entries()).map(([name, v]) => ({ name, newSales: v.n, renewSales: 0, totalSales: v.t, 등록인원: v.r, 클로징율: v.c > 0 ? Math.round((v.r / v.c) * 100) : 0 })),
+    dailyData,
+    ageData,
   }
 }
 
 function autoWeek(c: string): number { const d = new Date(c).getDate(); if (d <= 7) return 1; if (d <= 14) return 2; if (d <= 21) return 3; return 4 }
 
 function emptyStats(): StatsData {
-  return { newSales: 0, renewSales: 0, totalSales: 0, weeklyData: [1,2,3,4].map(w => ({ week: w, newSales: 0, renewSales: 0, expectedSales: 0, actualSales: 0 })), otStatus: { inProgress: 0, rejected: 0, registered: 0, scheduleUndecided: 0, noContact: 0, closingFailed: 0 }, salesSummary: { 진행인원: 0, 등록인원: 0, 클로징율: 0, 객단가: 0 }, routeSales: [], trainerStats: [] }
+  return { newSales: 0, renewSales: 0, totalSales: 0, weeklyData: [1,2,3,4].map(w => ({ week: w, newSales: 0, renewSales: 0, expectedSales: 0, actualSales: 0 })), otStatus: { inProgress: 0, rejected: 0, registered: 0, scheduleUndecided: 0, noContact: 0, closingFailed: 0 }, salesSummary: { 진행인원: 0, 등록인원: 0, 클로징율: 0, 객단가: 0 }, routeSales: [], trainerStats: [], dailyData: ['일','월','화','수','목','금','토'].map(d => ({ day: d, count: 0, sales: 0 })), ageData: [] }
 }
 
 function getDemoStats(): StatsData {
@@ -97,5 +137,17 @@ function getDemoStats(): StatsData {
       { route: '지인소개', 등록매출: 0, 진행인원: 0, 등록인원: 0, 클로징율: 0, 객단가: 0 },
     ],
     trainerStats: [{ name: '박트레이너', newSales: 3300000, renewSales: 3300000, totalSales: 6600000, 등록인원: 1, 클로징율: 33 }],
+    dailyData: [
+      { day: '일', count: 0, sales: 0 }, { day: '월', count: 2, sales: 1650000 },
+      { day: '화', count: 1, sales: 0 }, { day: '수', count: 2, sales: 3300000 },
+      { day: '목', count: 1, sales: 0 }, { day: '금', count: 2, sales: 1650000 },
+      { day: '토', count: 0, sales: 0 },
+    ],
+    ageData: [
+      { ageGroup: '20대', count: 3, percentage: 38 },
+      { ageGroup: '30대', count: 3, percentage: 38 },
+      { ageGroup: '40대', count: 1, percentage: 12 },
+      { ageGroup: '미입력', count: 1, percentage: 12 },
+    ],
   }
 }

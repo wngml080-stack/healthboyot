@@ -292,6 +292,62 @@ export function StatsView({ stats, target }: Props) {
         </CardContent>
       </Card>
 
+      {/* 요일별 + 연령대별 */}
+      <div className="grid gap-6 md:grid-cols-2">
+        {/* 요일별 OT 현황 */}
+        <Card>
+          <CardHeader className="pb-2"><CardTitle className="text-base text-gray-900">요일별 OT 현황</CardTitle></CardHeader>
+          <CardContent>
+            <div className="space-y-2">
+              {stats.dailyData.map((d) => {
+                const maxCount = Math.max(...stats.dailyData.map((x) => x.count), 1)
+                const width = (d.count / maxCount) * 100
+                const isWeekend = d.day === '토' || d.day === '일'
+                return (
+                  <div key={d.day} className="flex items-center gap-3">
+                    <span className={`w-6 text-center text-sm font-bold ${isWeekend ? 'text-red-500' : 'text-gray-900'}`}>{d.day}</span>
+                    <div className="flex-1 h-6 bg-gray-100 rounded-full overflow-hidden">
+                      <div className={`h-full rounded-full transition-all ${isWeekend ? 'bg-red-400' : 'bg-yellow-400'}`} style={{ width: `${width}%` }} />
+                    </div>
+                    <span className="text-sm text-gray-900 w-8 text-right">{d.count}</span>
+                    <span className="text-xs text-gray-500 w-16 text-right">{d.sales > 0 ? fmtMan(d.sales) : '-'}</span>
+                  </div>
+                )
+              })}
+            </div>
+          </CardContent>
+        </Card>
+
+        {/* 연령대별 분포 */}
+        <Card>
+          <CardHeader className="pb-2"><CardTitle className="text-base text-gray-900">연령대별 분포</CardTitle></CardHeader>
+          <CardContent>
+            {stats.ageData.length === 0 ? (
+              <p className="text-sm text-gray-400 py-4 text-center">데이터 없음</p>
+            ) : (
+              <div className="space-y-3">
+                {stats.ageData.map((a) => {
+                  const colors: Record<string, string> = {
+                    '10대': 'bg-cyan-400', '20대': 'bg-blue-500', '30대': 'bg-yellow-400',
+                    '40대': 'bg-orange-500', '50대+': 'bg-red-500', '미입력': 'bg-gray-300',
+                  }
+                  return (
+                    <div key={a.ageGroup} className="flex items-center gap-3">
+                      <span className="w-12 text-sm font-medium text-gray-900">{a.ageGroup}</span>
+                      <div className="flex-1 h-6 bg-gray-100 rounded-full overflow-hidden">
+                        <div className={`h-full rounded-full ${colors[a.ageGroup] ?? 'bg-gray-400'}`} style={{ width: `${a.percentage}%` }} />
+                      </div>
+                      <span className="text-sm text-gray-900 w-8 text-right">{a.count}명</span>
+                      <span className="text-xs text-gray-500 w-10 text-right">{a.percentage}%</span>
+                    </div>
+                  )
+                })}
+              </div>
+            )}
+          </CardContent>
+        </Card>
+      </div>
+
       {/* 목표 설정 다이얼로그 */}
       <Dialog open={showTarget} onOpenChange={setShowTarget}>
         <DialogContent className="max-w-md">
