@@ -1,22 +1,47 @@
 'use client'
 
 import { useState } from 'react'
+import { useRouter } from 'next/navigation'
 import { OtCategoryBadge } from './ot-category-badge'
-import { OtStatusBadge } from './ot-status-badge'
-import { ChevronDown, ChevronUp } from 'lucide-react'
-import type { OtAssignmentWithDetails } from '@/types'
+import { ChevronDown, ChevronUp, UserPlus } from 'lucide-react'
+import { Button } from '@/components/ui/button'
+import {
+  Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
+} from '@/components/ui/select'
+import { updateOtAssignment } from '@/actions/ot'
+import type { OtAssignmentWithDetails, Profile } from '@/types'
 
 interface Props {
   assignments: OtAssignmentWithDetails[]
+  trainers?: Pick<Profile, 'id' | 'name'>[]
 }
 
-export function PendingOtList({ assignments }: Props) {
+export function PendingOtList({ assignments, trainers = [] }: Props) {
+  const router = useRouter()
   const [expandedId, setExpandedId] = useState<string | null>(null)
+  const [assigningId, setAssigningId] = useState<string | null>(null)
+  const [selectedTrainer, setSelectedTrainer] = useState('')
+  const [loading, setLoading] = useState(false)
+
+  const handleAssign = async (assignmentId: string) => {
+    if (!selectedTrainer) return
+    setLoading(true)
+    await updateOtAssignment(assignmentId, {
+      pt_trainer_id: selectedTrainer,
+      status: '배정완료',
+    })
+    setAssigningId(null)
+    setSelectedTrainer('')
+    setLoading(false)
+    router.refresh()
+  }
 
   return (
     <div className="space-y-2">
       {assignments.map((a) => {
         const isExpanded = expandedId === a.id
+        const isAssigning = assigningId === a.id
+
         return (
           <div key={a.id} className="rounded-md border border-gray-200 overflow-hidden">
             {/* 요약 행 */}
@@ -34,24 +59,62 @@ export function PendingOtList({ assignments }: Props) {
                 </p>
               </div>
               <div className="flex items-center gap-2">
-                <OtStatusBadge status={a.status} />
-                {isExpanded ? (
-                  <ChevronUp className="h-4 w-4 text-gray-400" />
-                ) : (
-                  <ChevronDown className="h-4 w-4 text-gray-400" />
-                )}
+                {isExpanded ? <ChevronUp className="h-4 w-4 text-gray-400" /> : <ChevronDown className="h-4 w-4 text-gray-400" />}
               </div>
             </button>
 
-            {/* 상세 정보 */}
+            {/* 상세 + 빠른 배정 */}
             {isExpanded && (
-              <div className="border-t border-gray-100 bg-gray-50 px-3 py-3 space-y-2 text-sm">
-                <DetailRow label="등록일" value={a.member.registered_at} />
-                <DetailRow label="운동시간" value={a.member.exercise_time} />
-                <DetailRow label="운동기간" value={a.member.duration_months ? `${a.member.duration_months}개월` : null} />
-                <DetailRow label="종목" value={a.member.ot_category} />
-                <DetailRow label="상세정보" value={a.member.detail_info} />
-                <DetailRow label="특이사항" value={a.member.notes} />
+              <div className="border-t border-gray-100 bg-gray-50 px-3 py-3 space-y-3">
+                <div className="space-y-1.5 text-sm">
+                  <DetailRow label="등록일" value={a.member.registered_at} />
+                  <DetailRow label="운동시간" value={a.member.exercise_time} />
+                  <DetailRow label="운동기간" value={a.member.duration_months ? `${a.member.duration_months}개월` : null} />
+                  <DetailRow label="종목" value={a.member.ot_category} />
+                  <DetailRow label="상세정보" value={a.member.detail_info} />
+                  <DetailRow label="특이사항" value={a.member.notes} />
+                </div>
+
+                {/* 빠른 배정 */}
+                {!isAssigning ? (
+                  <Button
+                    size="sm"
+                    className="w-full bg-yellow-400 text-black hover:bg-yellow-500"
+                    onClick={(e) => { e.stopPropagation(); setAssigningId(a.id) }}
+                  >
+                    <UserPlus className="h-4 w-4 mr-1" />
+                    트레이너 배정
+                  </Button>
+                ) : (
+                  <div className="flex gap-2">
+                    <Select value={selectedTrainer} onValueChange={setSelectedTrainer}>
+                      <SelectTrigger className="flex-1 h-8 text-sm bg-white text-gray-700 border-gray-300">
+                        <SelectValue placeholder="트레이너 선택" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {trainers.map((t) => (
+                          <SelectItem key={t.id} value={t.id}>{t.name}</SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                    <Button
+                      size="sm"
+                      className="bg-yellow-400 text-black hover:bg-yellow-500 h-8"
+                      onClick={() => handleAssign(a.id)}
+                      disabled={loading || !selectedTrainer}
+                    >
+                      {loading ? '...' : '배정'}
+                    </Button>
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      className="h-8 bg-gray-100 text-gray-700"
+                      onClick={() => setAssigningId(null)}
+                    >
+                      취소
+                    </Button>
+                  </div>
+                )}
               </div>
             )}
           </div>

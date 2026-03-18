@@ -8,6 +8,7 @@ import { OtSummaryCards } from '@/components/ot/ot-summary-cards'
 import { TrainerSubNav } from '@/components/ot/trainer-sub-nav'
 import { PageTitle } from '@/components/shared/page-title'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
+import { NotificationBell } from '@/components/ot/notification-bell'
 import { ArrowLeft } from 'lucide-react'
 import { format } from 'date-fns'
 import { ko } from 'date-fns/locale'
@@ -65,6 +66,9 @@ export default async function OtPage({ searchParams }: OtPageProps) {
           전체 목록
         </Link>
         <PageTitle>{trainerName}</PageTitle>
+        <div className="ml-auto">
+          <NotificationBell assignments={activeAssignments} />
+        </div>
       </div>
 
       {/* 좌측 보조메뉴 + 우측 콘텐츠 */}

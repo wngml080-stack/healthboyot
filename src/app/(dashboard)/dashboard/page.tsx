@@ -133,7 +133,7 @@ export default async function DashboardPage({ searchParams }: Props) {
             {recentPending.length === 0 ? (
               <p className="text-sm text-gray-400 py-4 text-center">대기 중인 OT가 없습니다</p>
             ) : (
-              <PendingOtList assignments={recentPending as OtAssignmentWithDetails[]} />
+              <PendingOtList assignments={recentPending as OtAssignmentWithDetails[]} trainers={trainers} />
             )}
           </CardContent>
         </Card>

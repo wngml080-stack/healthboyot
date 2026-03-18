@@ -22,6 +22,7 @@ import { upsertOtSession, updateOtAssignment } from '@/actions/ot'
 import { OT_STATUS_OPTIONS } from '@/lib/constants'
 import { ArrowLeft, Check, CalendarDays, Clock } from 'lucide-react'
 import Link from 'next/link'
+import { MemberTimeline } from './member-timeline'
 import type { OtAssignmentWithDetails, OtStatus, Profile } from '@/types'
 
 interface Props {
@@ -226,6 +227,9 @@ export function OtDetailView({ assignment, profile }: Props) {
           ))}
         </div>
       </div>
+
+      {/* 히스토리 타임라인 */}
+      <MemberTimeline assignment={a} />
     </div>
   )
 }

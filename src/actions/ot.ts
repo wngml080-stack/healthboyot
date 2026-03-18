@@ -105,6 +105,35 @@ export async function upsertOtSession(values: {
     .upsert(values, { onConflict: 'ot_assignment_id,session_number' })
 
   if (error) return { error: error.message }
+
+  // ── 자동 상태 전환 ──
+  // 일정 저장 → 진행중
+  if (values.scheduled_at && !values.completed_at) {
+    await supabase
+      .from('ot_assignments')
+      .update({ status: '진행중' })
+      .eq('id', values.ot_assignment_id)
+      .in('status', ['신청대기', '배정완료'])
+  }
+
+  // 완료 처리 시 → 세션 완료 개수 확인
+  if (values.completed_at) {
+    const { data: sessions } = await supabase
+      .from('ot_sessions')
+      .select('session_number, completed_at')
+      .eq('ot_assignment_id', values.ot_assignment_id)
+
+    const completedCount = sessions?.filter((s) => s.completed_at).length ?? 0
+
+    if (completedCount >= 3) {
+      // 3차 완료 → 자동으로 완료 상태
+      await supabase
+        .from('ot_assignments')
+        .update({ status: '완료' })
+        .eq('id', values.ot_assignment_id)
+    }
+  }
+
   return { success: true }
 }
 
