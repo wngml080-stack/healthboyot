@@ -106,6 +106,47 @@ export async function upsertOtSession(values: {
 
   if (error) return { error: error.message }
 
+  // ── 알림 발송 ──
+  if (values.scheduled_at && !values.completed_at) {
+    try {
+      const { data: assignment } = await supabase
+        .from('ot_assignments')
+        .select('member:members!inner(name, phone), pt_trainer:profiles!ot_assignments_pt_trainer_id_fkey(name)')
+        .eq('id', values.ot_assignment_id)
+        .single()
+
+      if (assignment) {
+        const { notifyScheduleConfirmed } = await import('./notify')
+        const member = assignment.member as unknown as { name: string; phone: string }
+        const trainer = assignment.pt_trainer as unknown as { name: string } | null
+        await notifyScheduleConfirmed({
+          memberName: member.name,
+          memberPhone: member.phone,
+          trainerName: trainer?.name ?? '담당자',
+          sessionNumber: values.session_number,
+          scheduledAt: values.scheduled_at,
+        })
+      }
+    } catch {}
+  }
+
+  // 3차 완료 → OT 완료 알림
+  if (values.completed_at && values.session_number === 3) {
+    try {
+      const { data: assignment } = await supabase
+        .from('ot_assignments')
+        .select('member:members!inner(name, phone)')
+        .eq('id', values.ot_assignment_id)
+        .single()
+
+      if (assignment) {
+        const { notifyOtCompleted } = await import('./notify')
+        const member = assignment.member as unknown as { name: string; phone: string }
+        await notifyOtCompleted({ memberName: member.name, memberPhone: member.phone })
+      }
+    } catch {}
+  }
+
   // ── 자동 상태 전환 ──
   // 일정 저장 → 진행중
   if (values.scheduled_at && !values.completed_at) {
