@@ -15,8 +15,11 @@ const geistMono = localFont({
 });
 
 export const metadata: Metadata = {
-  title: "당산점 OT 관리 시스템",
-  description: "헬스장 OT 배정 및 관리 시스템",
+  title: "헬스보이짐 당산역점 OT시스템",
+  description: "헬스보이짐 당산역점 OT 배정 및 관리 시스템",
+  icons: {
+    icon: "/favicon.svg",
+  },
 };
 
 export default function RootLayout({
