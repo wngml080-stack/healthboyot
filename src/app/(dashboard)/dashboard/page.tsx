@@ -2,11 +2,13 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
 import { PageTitle } from '@/components/shared/page-title'
 import { Users, ClipboardList, CheckCircle, Clock } from 'lucide-react'
-import { format } from 'date-fns'
+import { format, startOfWeek, endOfWeek } from 'date-fns'
 import { ko } from 'date-fns/locale'
+import { createClient } from '@/lib/supabase/server'
 import { isDemoMode } from '@/lib/demo'
 import { DEMO_OT_ASSIGNMENTS, DEMO_MEMBERS } from '@/lib/demo-data'
 import { getMembers } from '@/actions/members'
+import { getStaffList } from '@/actions/staff'
 import { MemberList } from '@/components/members/member-list'
 import { PendingOtList } from '@/components/ot/pending-ot-list'
 import type { OtAssignmentWithDetails } from '@/types'
@@ -33,10 +35,8 @@ async function getDashboardData() {
     }
   }
 
-  const { createClient } = await import('@/lib/supabase/server')
   const supabase = await createClient()
   const now = new Date()
-  const { startOfWeek, endOfWeek } = await import('date-fns')
   const weekStart = startOfWeek(now, { weekStartsOn: 1 })
   const weekEnd = endOfWeek(now, { weekStartsOn: 1 })
 
@@ -52,10 +52,9 @@ async function getDashboardData() {
     supabase.from('ot_assignments').select('*', { count: 'exact', head: true }).eq('status', '완료')
       .gte('updated_at', weekStart.toISOString()).lte('updated_at', weekEnd.toISOString()),
     supabase.from('ot_assignments').select(`
-      *, member:members!inner(*),
+      *, member:members!inner(id, name, phone, ot_category, exercise_time, duration_months, detail_info, notes, registered_at, registration_source),
       pt_trainer:profiles!ot_assignments_pt_trainer_id_fkey(id, name),
-      ppt_trainer:profiles!ot_assignments_ppt_trainer_id_fkey(id, name),
-      sessions:ot_sessions(*)
+      ppt_trainer:profiles!ot_assignments_ppt_trainer_id_fkey(id, name)
     `).eq('status', '신청대기').order('created_at', { ascending: false }),
     supabase.from('ot_sessions').select(`
       *, ot_assignment:ot_assignments!inner(
@@ -89,14 +88,7 @@ interface Props {
 export default async function DashboardPage({ searchParams }: Props) {
   const params = await searchParams
 
-  // 트레이너 목록 가져오기
-  const { getStaffList } = await import('@/actions/staff')
-  const staffList = await getStaffList()
-  const trainers = staffList
-    .filter((s) => !['admin'].includes(s.role))
-    .map((s) => ({ id: s.id, name: s.name }))
-
-  const [dashboardData, members] = await Promise.all([
+  const [dashboardData, members, staffList] = await Promise.all([
     getDashboardData(),
     getMembers({
       search: params.search,
@@ -105,7 +97,11 @@ export default async function DashboardPage({ searchParams }: Props) {
       from: params.from,
       to: params.to,
     }),
+    getStaffList(),
   ])
+  const trainers = staffList
+    .filter((s) => !['admin'].includes(s.role))
+    .map((s) => ({ id: s.id, name: s.name }))
 
   const { totalMembers, pendingCount, completedThisWeek, recentPending, todaySessions } = dashboardData
   const now = new Date()

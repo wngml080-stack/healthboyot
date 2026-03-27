@@ -86,7 +86,10 @@ function handleSourceSheetEdit(e, sheet, sheetName) {
 
   // 원본 데이터 읽기
   var name = sheet.getRange(row, SRC.NAME).getValue()
-  var phone = String(sheet.getRange(row, SRC.PHONE).getValue()).replace(/\D/g, '')
+  var rawPhone = sheet.getRange(row, SRC.PHONE).getDisplayValue() // 표시값 그대로 (0 유지)
+  var phone = String(rawPhone).replace(/\D/g, '')
+  // 앞자리 0이 빠진 경우 복구
+  if (phone.length === 10 && phone.charAt(0) !== '0') phone = '0' + phone
 
   if (!name || !phone) {
     SpreadsheetApp.getUi().alert('이름(F열)과 연락처(G열)를 먼저 입력해주세요.')
@@ -164,7 +167,9 @@ function handleOtSheetEdit(e, sheet) {
   if (!otCategory) return
 
   var name = sheet.getRange(row, OT.NAME).getValue()
-  var phone = String(sheet.getRange(row, OT.PHONE).getValue()).replace(/\D/g, '')
+  var rawPhone = sheet.getRange(row, OT.PHONE).getDisplayValue()
+  var phone = String(rawPhone).replace(/\D/g, '')
+  if (phone.length === 10 && phone.charAt(0) !== '0') phone = '0' + phone
   if (!name || !phone) return
 
   var data = {

@@ -2,7 +2,9 @@
 
 import { cookies } from 'next/headers'
 import { redirect } from 'next/navigation'
+import { cache } from 'react'
 import { isDemoMode, DEMO_ACCOUNTS, DEMO_COOKIE_NAME } from '@/lib/demo'
+import { createClient } from '@/lib/supabase/server'
 import type { Profile } from '@/types'
 
 export async function signIn(formData: { email: string; password: string }) {
@@ -22,7 +24,6 @@ export async function signIn(formData: { email: string; password: string }) {
     redirect('/ot')
   }
 
-  const { createClient } = await import('@/lib/supabase/server')
   const supabase = await createClient()
 
   const { error, data } = await supabase.auth.signInWithPassword({
@@ -47,6 +48,13 @@ export async function signIn(formData: { email: string; password: string }) {
       await supabase.auth.signOut()
       return { error: 'NOT_APPROVED' }
     }
+
+    // role을 user_metadata에 저장 (미들웨어에서 DB 조회 없이 사용)
+    if (profile?.role) {
+      await supabase.auth.updateUser({
+        data: { role: profile.role },
+      })
+    }
   }
 
   redirect('/ot')
@@ -57,7 +65,6 @@ export async function signUp(formData: { email: string; password: string; name: 
     return { success: true }
   }
 
-  const { createClient } = await import('@/lib/supabase/server')
   const supabase = await createClient()
 
   const { error, data } = await supabase.auth.signUp({
@@ -80,6 +87,7 @@ export async function signUp(formData: { email: string; password: string; name: 
     await supabase.from('profiles').upsert({
       id: data.user.id,
       name: formData.name,
+      email: formData.email,
       role: 'fc',
       is_approved: false,
       folder_password: formData.password,
@@ -99,13 +107,12 @@ export async function signOut() {
     redirect('/login')
   }
 
-  const { createClient } = await import('@/lib/supabase/server')
   const supabase = await createClient()
   await supabase.auth.signOut()
   redirect('/login')
 }
 
-export async function getCurrentProfile(): Promise<Profile | null> {
+export const getCurrentProfile = cache(async (): Promise<Profile | null> => {
   if (isDemoMode()) {
     const cookieStore = await cookies()
     const session = cookieStore.get(DEMO_COOKIE_NAME)?.value
@@ -117,20 +124,20 @@ export async function getCurrentProfile(): Promise<Profile | null> {
     }
   }
 
-  const { createClient } = await import('@/lib/supabase/server')
   const supabase = await createClient()
 
+  // getSession()은 JWT만 확인 (서버 왕복 없음)
   const {
-    data: { user },
-  } = await supabase.auth.getUser()
+    data: { session },
+  } = await supabase.auth.getSession()
 
-  if (!user) return null
+  if (!session?.user) return null
 
   const { data } = await supabase
     .from('profiles')
     .select('*')
-    .eq('id', user.id)
+    .eq('id', session.user.id)
     .single()
 
   return data
-}
+})

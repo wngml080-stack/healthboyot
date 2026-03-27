@@ -5,7 +5,7 @@ export type Role = 'admin' | '관리자' | '팀장' | 'trainer' | '강사' | 'fc
 export type OtStatus = '신청대기' | '배정완료' | '진행중' | '완료' | '거부' | '추후결정'
 
 // ── OT 종목 ──
-export type OtCategory = '헬스' | 'PT등록' | '필라' | '거부'
+export type OtCategory = '헬스' | 'PT등록' | '필라' | '헬스,필라' | '거부'
 
 // ── 성별 ──
 export type Gender = '남' | '여'
@@ -17,6 +17,7 @@ export type LogType = 'FC' | 'PT'
 export interface Profile {
   id: string
   name: string
+  email: string | null
   role: Role
   avatar_url: string | null
   folder_password: string | null
@@ -31,7 +32,7 @@ export interface Member {
   phone: string
   gender: Gender | null
   sports: string[]
-  duration_months: number | null
+  duration_months: string | number | null
   exercise_time: string | null
   injury_tags: string[]
   notes: string | null
@@ -39,6 +40,9 @@ export interface Member {
   detail_info: string | null
   start_date: string | null
   is_completed: boolean
+  is_renewal: boolean
+  is_existing_member?: boolean
+  registration_source?: '자동' | '수기'
   registered_at: string
   created_by: string | null
   created_at: string
@@ -61,17 +65,33 @@ export interface OtAssignment {
   week_number: number | null
   membership_start_date: string | null
   contact_status: string
+  sales_status: string
+  expected_amount: number
+  expected_sessions?: number
+  closing_probability: number
+  closing_fail_reason: string | null
+  sales_note: string | null
+  is_sales_target: boolean
+  is_pt_conversion: boolean
+  pt_assign_status: string
+  ppt_assign_status: string
   created_at: string
   updated_at: string
 }
 
+export type SalesStatus = 'OT진행중' | 'OT거부자' | '등록완료' | '스케줄미확정' | '연락두절' | '클로징실패'
+
 export interface OtSession {
   id: string
   ot_assignment_id: string
-  session_number: 1 | 2 | 3
+  session_number: number
   scheduled_at: string | null
   completed_at: string | null
   feedback: string | null
+  exercise_content: string | null
+  trainer_tip: string | null
+  cardio_type: string[] | null
+  cardio_duration: number | null
   created_at: string
   updated_at: string
 }

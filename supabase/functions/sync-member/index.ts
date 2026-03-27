@@ -39,12 +39,22 @@ serve(async (req) => {
     const detailParts = [purpose, notes].filter(Boolean)
     const detailInfo = detailParts.length > 0 ? detailParts.join(' / ') : null
 
-    // OT종목 매핑 (헬스,필라 → 헬스 우선)
+    // OT종목 매핑 (헬스,필라 → 그대로 유지)
     let mappedCategory = null
     if (ot_category) {
-      const cat = String(ot_category)
-      if (cat.includes('헬스')) mappedCategory = '헬스'
-      else if (cat.includes('필라')) mappedCategory = '필라'
+      const cat = String(ot_category).trim()
+      const hasHealth = cat.includes('헬스')
+      const hasPilates = cat.includes('필라')
+      if (hasHealth && hasPilates) mappedCategory = '헬스,필라'
+      else if (hasHealth) mappedCategory = '헬스'
+      else if (hasPilates) mappedCategory = '필라'
+      else mappedCategory = cat // 그 외 값은 그대로
+    }
+
+    // 전화번호 앞자리 0 복구
+    let normalizedPhone = String(phone).replace(/\D/g, '')
+    if (normalizedPhone.length === 10 && !normalizedPhone.startsWith('0')) {
+      normalizedPhone = '0' + normalizedPhone
     }
 
     // ── 1. 회원 upsert ───────────────────────────────────
@@ -53,12 +63,12 @@ serve(async (req) => {
       .upsert(
         {
           name,
-          phone: phone.replace(/\D/g, ''),
+          phone: normalizedPhone,
           registered_at: registered_at || new Date().toISOString().split('T')[0],
           exercise_time: exercise_time || null,
           ot_category: mappedCategory,
           detail_info: detailInfo,
-          duration_months: duration ? parseInt(duration) : null,
+          duration_months: duration ? String(duration).trim() : null,
           notes: notes || null,
         },
         { onConflict: 'phone', ignoreDuplicates: false }

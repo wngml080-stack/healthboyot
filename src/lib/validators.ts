@@ -9,10 +9,13 @@ export const memberSchema = z.object({
     .regex(/^\d{10,11}$/, '올바른 연락처 형식이 아닙니다'),
   gender: z.enum(['남', '여']).nullable().optional(),
   sports: z.array(z.string()).default([]),
-  duration_months: z.coerce.number().int().positive().nullable().optional(),
+  duration_months: z.string().nullable().optional(),
   exercise_time: z.string().nullable().optional(),
   injury_tags: z.array(z.string()).default([]),
   notes: z.string().nullable().optional(),
+  ot_category: z.string().nullable().optional(),
+  detail_info: z.string().nullable().optional(),
+  is_existing_member: z.boolean().optional(),
   registered_at: z.string().optional(),
 })
 

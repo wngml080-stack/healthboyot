@@ -87,7 +87,10 @@ function otHandleSourceEdit(e, sheet) {
   }
 
   var name = sheet.getRange(row, OT_SRC_NAME).getValue();
-  var phone = String(sheet.getRange(row, OT_SRC_PHONE).getValue()).replace(/\D/g, '');
+  var rawPhone = sheet.getRange(row, OT_SRC_PHONE).getDisplayValue(); // 표시값 그대로 (0 유지)
+  var phone = String(rawPhone).replace(/\D/g, '');
+  // 앞자리 0이 빠진 경우 복구 (10자리이고 0으로 안 시작하면)
+  if (phone.length === 10 && phone.charAt(0) !== '0') phone = '0' + phone;
   if (!name || !phone) return;
 
   var registeredAt = sheet.getRange(row, OT_SRC_DATE).getValue();
@@ -157,7 +160,9 @@ function otHandleTargetEdit(e, sheet) {
   if (row <= 1) return;
 
   var name = sheet.getRange(row, OT_DST_NAME).getValue();
-  var phone = String(sheet.getRange(row, OT_DST_PHONE).getValue()).replace(/\D/g, '');
+  var rawPhone = sheet.getRange(row, OT_DST_PHONE).getDisplayValue();
+  var phone = String(rawPhone).replace(/\D/g, '');
+  if (phone.length === 10 && phone.charAt(0) !== '0') phone = '0' + phone;
   var exerciseTime = sheet.getRange(row, OT_DST_TIME).getValue();
 
   // 운동시간이 입력되어야만 Supabase로 전송

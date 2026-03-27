@@ -1,40 +1,47 @@
 'use client'
 
-import { useEffect } from 'react'
+import { useEffect, useRef } from 'react'
 import { useQueryClient } from '@tanstack/react-query'
 import { createClient } from '@/lib/supabase/client'
 
 export function useRealtimeOT() {
   const queryClient = useQueryClient()
-  const supabase = createClient()
+  const supabaseRef = useRef(createClient())
 
   useEffect(() => {
+    const supabase = supabaseRef.current
     const channel = supabase
       .channel('ot-realtime')
-      // OT 배정 변경 → 목록 갱신
+      // OT 배정 변경 → 목록만 갱신 (INSERT/UPDATE만)
       .on(
         'postgres_changes',
-        { event: '*', schema: 'public', table: 'ot_assignments' },
+        { event: 'INSERT', schema: 'public', table: 'ot_assignments' },
         () => {
           queryClient.invalidateQueries({ queryKey: ['ot_assignments'] })
-          queryClient.invalidateQueries({ queryKey: ['dashboard'] })
         }
       )
-      // 회원 변경 → 회원 목록 갱신
       .on(
         'postgres_changes',
-        { event: '*', schema: 'public', table: 'members' },
+        { event: 'UPDATE', schema: 'public', table: 'ot_assignments' },
+        () => {
+          queryClient.invalidateQueries({ queryKey: ['ot_assignments'] })
+          queryClient.invalidateQueries({ queryKey: ['ot_detail'] })
+          queryClient.invalidateQueries({ queryKey: ['stats'] })
+        }
+      )
+      // 회원 변경 → 회원 목록만 갱신
+      .on(
+        'postgres_changes',
+        { event: 'INSERT', schema: 'public', table: 'members' },
         () => {
           queryClient.invalidateQueries({ queryKey: ['members'] })
-          queryClient.invalidateQueries({ queryKey: ['dashboard'] })
         }
       )
-      // OT 세션 변경 → 상세/목록 갱신
+      // OT 세션 변경 → 상세만 갱신
       .on(
         'postgres_changes',
-        { event: '*', schema: 'public', table: 'ot_sessions' },
+        { event: 'UPDATE', schema: 'public', table: 'ot_sessions' },
         () => {
-          queryClient.invalidateQueries({ queryKey: ['ot_assignments'] })
           queryClient.invalidateQueries({ queryKey: ['ot_detail'] })
         }
       )
@@ -43,5 +50,5 @@ export function useRealtimeOT() {
     return () => {
       supabase.removeChannel(channel)
     }
-  }, [queryClient, supabase])
+  }, [queryClient])
 }

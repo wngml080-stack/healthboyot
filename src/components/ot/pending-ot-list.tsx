@@ -20,18 +20,29 @@ export function PendingOtList({ assignments, trainers = [] }: Props) {
   const router = useRouter()
   const [expandedId, setExpandedId] = useState<string | null>(null)
   const [assigningId, setAssigningId] = useState<string | null>(null)
-  const [selectedTrainer, setSelectedTrainer] = useState('')
+  const [selectedPtTrainer, setSelectedPtTrainer] = useState('')
+  const [selectedPptTrainer, setSelectedPptTrainer] = useState('')
   const [loading, setLoading] = useState(false)
 
   const handleAssign = async (assignmentId: string) => {
-    if (!selectedTrainer) return
+    if (!selectedPtTrainer && !selectedPptTrainer) return
     setLoading(true)
-    await updateOtAssignment(assignmentId, {
-      pt_trainer_id: selectedTrainer,
+    const isSpecial = (v: string) => v === 'later' || v === 'urgent'
+    const updates: Record<string, string | null> = {
       status: '배정완료',
-    })
+    }
+    if (selectedPtTrainer) {
+      updates.pt_trainer_id = isSpecial(selectedPtTrainer) ? null : selectedPtTrainer
+      updates.pt_assign_status = isSpecial(selectedPtTrainer) ? selectedPtTrainer : 'assigned'
+    }
+    if (selectedPptTrainer) {
+      updates.ppt_trainer_id = isSpecial(selectedPptTrainer) ? null : selectedPptTrainer
+      updates.ppt_assign_status = isSpecial(selectedPptTrainer) ? selectedPptTrainer : 'assigned'
+    }
+    await updateOtAssignment(assignmentId, updates)
     setAssigningId(null)
-    setSelectedTrainer('')
+    setSelectedPtTrainer('')
+    setSelectedPptTrainer('')
     setLoading(false)
     router.refresh()
   }
@@ -52,6 +63,9 @@ export function PendingOtList({ assignments, trainers = [] }: Props) {
               <div className="flex-1">
                 <div className="flex items-center gap-2">
                   <p className="font-medium text-sm text-gray-900">{a.member.name}</p>
+                  {a.member.registration_source === '수기' && (
+                    <span className="inline-flex items-center rounded px-1 py-0.5 text-[9px] font-bold bg-amber-100 text-amber-700 border border-amber-300">수기</span>
+                  )}
                   <OtCategoryBadge category={a.member.ot_category ?? a.ot_category} />
                 </div>
                 <p className="text-xs text-gray-500 mt-0.5 tabular-nums">
@@ -69,7 +83,7 @@ export function PendingOtList({ assignments, trainers = [] }: Props) {
                 <div className="space-y-1.5 text-sm">
                   <DetailRow label="등록일" value={a.member.registered_at} />
                   <DetailRow label="운동시간" value={a.member.exercise_time} />
-                  <DetailRow label="운동기간" value={a.member.duration_months ? `${a.member.duration_months}개월` : null} />
+                  <DetailRow label="운동기간" value={a.member.duration_months ? String(a.member.duration_months) : null} />
                   <DetailRow label="종목" value={a.member.ot_category} />
                   <DetailRow label="상세정보" value={a.member.detail_info} />
                   <DetailRow label="특이사항" value={a.member.notes} />
@@ -86,33 +100,55 @@ export function PendingOtList({ assignments, trainers = [] }: Props) {
                     트레이너 배정
                   </Button>
                 ) : (
-                  <div className="flex gap-2">
-                    <Select value={selectedTrainer} onValueChange={setSelectedTrainer}>
-                      <SelectTrigger className="flex-1 h-8 text-sm bg-white text-gray-700 border-gray-300">
-                        <SelectValue placeholder="트레이너 선택" />
-                      </SelectTrigger>
-                      <SelectContent>
-                        {trainers.map((t) => (
-                          <SelectItem key={t.id} value={t.id}>{t.name}</SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
-                    <Button
-                      size="sm"
-                      className="bg-yellow-400 text-black hover:bg-yellow-500 h-8"
-                      onClick={() => handleAssign(a.id)}
-                      disabled={loading || !selectedTrainer}
-                    >
-                      {loading ? '...' : '배정'}
-                    </Button>
-                    <Button
-                      size="sm"
-                      variant="outline"
-                      className="h-8 bg-gray-100 text-gray-700"
-                      onClick={() => setAssigningId(null)}
-                    >
-                      취소
-                    </Button>
+                  <div className="space-y-2">
+                    <div className="flex items-center gap-2">
+                      <span className="text-xs font-medium text-blue-600 w-10 shrink-0">PT</span>
+                      <Select value={selectedPtTrainer} onValueChange={setSelectedPtTrainer}>
+                        <SelectTrigger className="flex-1 h-8 text-sm bg-white text-gray-900 border-gray-300">
+                          <SelectValue placeholder="PT 담당 선택" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="later">추후배정</SelectItem>
+                          <SelectItem value="urgent">긴급요청</SelectItem>
+                          {trainers.map((t) => (
+                            <SelectItem key={t.id} value={t.id}>{t.name}</SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <span className="text-xs font-medium text-purple-600 w-10 shrink-0">PPT</span>
+                      <Select value={selectedPptTrainer} onValueChange={setSelectedPptTrainer}>
+                        <SelectTrigger className="flex-1 h-8 text-sm bg-white text-gray-900 border-gray-300">
+                          <SelectValue placeholder="PPT 담당 선택" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="later">추후배정</SelectItem>
+                          <SelectItem value="urgent">긴급요청</SelectItem>
+                          {trainers.map((t) => (
+                            <SelectItem key={t.id} value={t.id}>{t.name}</SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    </div>
+                    <div className="flex gap-2">
+                      <Button
+                        size="sm"
+                        className="flex-1 bg-yellow-400 text-black hover:bg-yellow-500 h-8"
+                        onClick={() => handleAssign(a.id)}
+                        disabled={loading || (!selectedPtTrainer && !selectedPptTrainer)}
+                      >
+                        {loading ? '배정 중...' : '배정'}
+                      </Button>
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        className="h-8 bg-gray-100 text-gray-700"
+                        onClick={() => setAssigningId(null)}
+                      >
+                        취소
+                      </Button>
+                    </div>
                   </div>
                 )}
               </div>

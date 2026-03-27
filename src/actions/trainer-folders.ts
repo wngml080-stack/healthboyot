@@ -2,6 +2,7 @@
 
 import { isDemoMode } from '@/lib/demo'
 import { DEMO_OT_ASSIGNMENTS } from '@/lib/demo-data'
+import { createClient } from '@/lib/supabase/server'
 
 export interface TrainerFolder {
   id: string
@@ -9,6 +10,7 @@ export interface TrainerFolder {
   role: string
   color: string
   has_password: boolean
+  folder_order: number
   stats: {
     inProgress: number
     pending: number
@@ -17,80 +19,59 @@ export interface TrainerFolder {
   }
 }
 
-const FOLDER_COLORS = [
-  'bg-purple-400',
-  'bg-blue-500',
-  'bg-yellow-500',
-  'bg-emerald-400',
-  'bg-teal-500',
-  'bg-orange-400',
-  'bg-red-400',
-  'bg-pink-400',
-]
+// 직무별 색상
+const ROLE_COLORS: Record<string, string> = {
+  trainer: 'bg-blue-500',
+  fc: 'bg-emerald-500',
+  admin: 'bg-yellow-500',
+}
 
 export async function getTrainerFolders(): Promise<TrainerFolder[]> {
   if (isDemoMode()) {
     return getDemoFolders()
   }
 
-  const { createClient } = await import('@/lib/supabase/server')
   const supabase = await createClient()
 
-  // 모든 트레이너/관리자 조회
+  // 승인 + 폴더 활성화된 직원만 조회 (순서대로)
   const { data: trainers } = await supabase
     .from('profiles')
-    .select('id, name, role, folder_password')
+    .select('id, name, role, folder_password, folder_order')
     .neq('role', 'admin')
+    .eq('is_approved', true)
+    .eq('has_folder', true)
+    .order('folder_order', { ascending: true })
     .order('name')
 
   if (!trainers || trainers.length === 0) return []
 
-  // 모든 OT 배정 조회
+  // 해당 트레이너들의 배정만 조회 (PT 또는 PPT 담당)
+  const trainerIds = trainers.map((t) => t.id)
   const { data: assignments } = await supabase
     .from('ot_assignments')
-    .select('status, pt_trainer_id')
+    .select('status, pt_trainer_id, ppt_trainer_id, is_sales_target, is_pt_conversion')
+    .or(`pt_trainer_id.in.(${trainerIds.join(',')}),ppt_trainer_id.in.(${trainerIds.join(',')})`)
 
-  const folders: TrainerFolder[] = trainers.map((t, i) => {
+  const folders: TrainerFolder[] = trainers.map((t) => {
     const myAssignments = (assignments ?? []).filter(
-      (a) => a.pt_trainer_id === t.id
+      (a) => a.pt_trainer_id === t.id || a.ppt_trainer_id === t.id
     )
 
     return {
       id: t.id,
       name: t.name,
       role: t.role,
-      color: FOLDER_COLORS[i % FOLDER_COLORS.length],
+      color: ROLE_COLORS[t.role] ?? 'bg-gray-400',
       has_password: !!t.folder_password,
+      folder_order: t.folder_order ?? 0,
       stats: {
-        inProgress: myAssignments.filter((a) => a.status === '진행중').length,
-        pending: myAssignments.filter((a) =>
-          ['신청대기', '배정완료'].includes(a.status)
-        ).length,
-        completed: myAssignments.filter((a) => a.status === '완료').length,
+        inProgress: myAssignments.filter((a) => ['진행중', '배정완료'].includes(a.status)).length,
+        pending: myAssignments.filter((a) => a.is_sales_target).length,
+        completed: myAssignments.filter((a) => a.is_pt_conversion).length,
         total: myAssignments.length,
       },
     }
   })
-
-  // 미배정 건 추가
-  const unassigned = (assignments ?? []).filter((a) => !a.pt_trainer_id)
-  if (unassigned.length > 0) {
-    folders.push({
-      id: 'unassigned',
-      name: '미배정',
-      role: 'none',
-      color: 'bg-gray-400',
-      has_password: false,
-      stats: {
-        inProgress: unassigned.filter((a) => a.status === '진행중').length,
-        pending: unassigned.filter((a) =>
-          ['신청대기', '배정완료'].includes(a.status)
-        ).length,
-        completed: unassigned.filter((a) => a.status === '완료').length,
-        total: unassigned.length,
-      },
-    })
-  }
 
   return folders
 }
@@ -110,6 +91,7 @@ function getDemoFolders(): TrainerFolder[] {
       role: 'trainer',
       color: 'bg-blue-500',
       has_password: true,
+      folder_order: 1,
       stats: {
         inProgress: trainerAssignments.filter((a) => a.status === '진행중').length,
         pending: trainerAssignments.filter((a) =>
@@ -125,6 +107,7 @@ function getDemoFolders(): TrainerFolder[] {
       role: 'none',
       color: 'bg-gray-400',
       has_password: false,
+      folder_order: 2,
       stats: {
         inProgress: unassigned.filter((a) => a.status === '진행중').length,
         pending: unassigned.filter((a) =>
@@ -143,7 +126,6 @@ export async function verifyFolderPassword(trainerId: string, password: string):
     return password === '1234' // 데모 비밀번호
   }
 
-  const { createClient } = await import('@/lib/supabase/server')
   const supabase = await createClient()
 
   // 관리자 통합 비밀번호 체크
@@ -171,7 +153,6 @@ export async function verifyFolderPassword(trainerId: string, password: string):
 export async function setFolderPassword(trainerId: string, password: string) {
   if (isDemoMode()) return { success: true }
 
-  const { createClient } = await import('@/lib/supabase/server')
   const supabase = await createClient()
 
   const { error } = await supabase
@@ -180,5 +161,69 @@ export async function setFolderPassword(trainerId: string, password: string) {
     .eq('id', trainerId)
 
   if (error) return { error: error.message }
+  return { success: true }
+}
+
+export async function createFolder(trainerId: string, password?: string) {
+  if (isDemoMode()) return { success: true }
+
+  const supabase = await createClient()
+
+  // 현재 최대 순서 + 1
+  const { data: maxOrder } = await supabase
+    .from('profiles')
+    .select('folder_order')
+    .eq('has_folder', true)
+    .order('folder_order', { ascending: false })
+    .limit(1)
+    .single()
+
+  const nextOrder = (maxOrder?.folder_order ?? 0) + 1
+
+  const updateData: Record<string, unknown> = { has_folder: true, folder_order: nextOrder }
+  if (password) updateData.folder_password = password
+
+  const { error } = await supabase
+    .from('profiles')
+    .update(updateData)
+    .eq('id', trainerId)
+
+  if (error) return { error: error.message }
+  return { success: true }
+}
+
+export async function deleteFolder(trainerId: string) {
+  if (isDemoMode()) return { success: true }
+
+  const supabase = await createClient()
+
+  const { error } = await supabase
+    .from('profiles')
+    .update({ has_folder: false, folder_order: 0 })
+    .eq('id', trainerId)
+
+  if (error) return { error: error.message }
+  return { success: true }
+}
+
+export async function swapFolderOrder(folderId1: string, order1: number, folderId2: string, order2: number) {
+  if (isDemoMode()) return { success: true }
+
+  const supabase = await createClient()
+
+  const { error: e1 } = await supabase
+    .from('profiles')
+    .update({ folder_order: order2 })
+    .eq('id', folderId1)
+
+  if (e1) return { error: e1.message }
+
+  const { error: e2 } = await supabase
+    .from('profiles')
+    .update({ folder_order: order1 })
+    .eq('id', folderId2)
+
+  if (e2) return { error: e2.message }
+
   return { success: true }
 }

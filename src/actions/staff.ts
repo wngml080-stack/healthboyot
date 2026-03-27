@@ -1,18 +1,18 @@
 'use server'
 
 import { isDemoMode } from '@/lib/demo'
+import { createClient } from '@/lib/supabase/server'
 import type { Profile, Role } from '@/types'
 
 export async function getStaffList(): Promise<Profile[]> {
   if (isDemoMode()) {
     return [
-      { id: 'demo-admin-001', name: '김팀장', role: 'admin', avatar_url: null, folder_password: null, is_approved: true, created_at: '', updated_at: '' },
-      { id: 'demo-trainer-001', name: '박트레이너', role: 'trainer', avatar_url: null, folder_password: '1234', is_approved: true, created_at: '', updated_at: '' },
-      { id: 'demo-fc-001', name: '이FC', role: 'fc', avatar_url: null, folder_password: null, is_approved: false, created_at: '', updated_at: '' },
+      { id: 'demo-admin-001', name: '김팀장', email: 'admin@demo.com', role: 'admin', avatar_url: null, folder_password: null, is_approved: true, created_at: '', updated_at: '' },
+      { id: 'demo-trainer-001', name: '박트레이너', email: 'trainer@demo.com', role: 'trainer', avatar_url: null, folder_password: '1234', is_approved: true, created_at: '', updated_at: '' },
+      { id: 'demo-fc-001', name: '이FC', email: 'fc@demo.com', role: 'fc', avatar_url: null, folder_password: null, is_approved: false, created_at: '', updated_at: '' },
     ]
   }
 
-  const { createClient } = await import('@/lib/supabase/server')
   const supabase = await createClient()
 
   const { data, error } = await supabase
@@ -33,46 +33,27 @@ export async function createStaff(values: {
 }) {
   if (isDemoMode()) return { success: true }
 
-  const { createClient } = await import('@/lib/supabase/server')
   const supabase = await createClient()
 
-  // Supabase Auth에 유저 생성
-  const { data: authData, error: authError } = await supabase.auth.admin.createUser({
+  // signUp으로 유저 생성 (트리거가 profiles 자동 생성)
+  const { data: signUpData, error: signUpError } = await supabase.auth.signUp({
     email: values.email,
     password: values.password,
-    email_confirm: true,
-    user_metadata: { name: values.name, role: values.role },
+    options: { data: { name: values.name, role: values.role } },
   })
 
-  if (authError) {
-    // admin API 없으면 일반 signUp 시도
-    const { data: signUpData, error: signUpError } = await supabase.auth.signUp({
-      email: values.email,
-      password: values.password,
-      options: { data: { name: values.name, role: values.role } },
-    })
+  if (signUpError) return { error: signUpError.message }
 
-    if (signUpError) return { error: signUpError.message }
-
-    // profiles에 직접 upsert
-    if (signUpData.user) {
-      await supabase.from('profiles').upsert({
-        id: signUpData.user.id,
-        name: values.name,
-        role: values.role,
-      })
-    }
-
-    return { success: true }
-  }
-
-  // profiles 업데이트 (트리거가 안 되었을 경우 대비)
-  if (authData.user) {
-    await supabase.from('profiles').upsert({
-      id: authData.user.id,
+  // 트리거 후 role 보정 (트리거가 metadata role을 못 읽을 경우 대비)
+  if (signUpData.user) {
+    const { error: upsertError } = await supabase.from('profiles').upsert({
+      id: signUpData.user.id,
       name: values.name,
+      email: values.email,
       role: values.role,
+      is_approved: false,
     })
+    if (upsertError) return { error: upsertError.message }
   }
 
   return { success: true }
@@ -86,7 +67,6 @@ export async function updateStaff(id: string, values: {
 }) {
   if (isDemoMode()) return { success: true }
 
-  const { createClient } = await import('@/lib/supabase/server')
   const supabase = await createClient()
 
   const { error } = await supabase
@@ -101,7 +81,6 @@ export async function updateStaff(id: string, values: {
 export async function deleteStaff(id: string) {
   if (isDemoMode()) return { success: true }
 
-  const { createClient } = await import('@/lib/supabase/server')
   const supabase = await createClient()
 
   // profiles에서 삭제 (auth.users는 Supabase 대시보드에서 관리)

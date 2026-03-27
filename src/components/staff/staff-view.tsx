@@ -28,7 +28,7 @@ import {
   TableRow,
 } from '@/components/ui/table'
 import { Badge } from '@/components/ui/badge'
-import { Plus, Pencil, Trash2, Lock, UserPlus, CheckCircle } from 'lucide-react'
+import { Plus, Pencil, Trash2, UserPlus, CheckCircle } from 'lucide-react'
 import { PageTitle } from '@/components/shared/page-title'
 import { createStaff, updateStaff, deleteStaff } from '@/actions/staff'
 import { ROLE_LABEL } from '@/lib/constants'
@@ -63,7 +63,6 @@ export function StaffView({ staffList }: Props) {
   // 수정 폼
   const [editName, setEditName] = useState('')
   const [editRole, setEditRole] = useState<Role>('trainer')
-  const [editPassword, setEditPassword] = useState('')
 
   const handleCreate = async () => {
     if (!email || !password || !name) {
@@ -89,13 +88,7 @@ export function StaffView({ staffList }: Props) {
   const handleEdit = async () => {
     if (!editTarget) return
     setLoading(true)
-    const values: { name?: string; role?: Role; folder_password?: string | null } = {
-      name: editName,
-      role: editRole,
-    }
-    if (editPassword) values.folder_password = editPassword
-
-    await updateStaff(editTarget.id, values)
+    await updateStaff(editTarget.id, { name: editName, role: editRole })
     setEditTarget(null)
     setLoading(false)
     router.refresh()
@@ -111,7 +104,6 @@ export function StaffView({ staffList }: Props) {
     setEditTarget(staff)
     setEditName(staff.name)
     setEditRole(staff.role)
-    setEditPassword('')
   }
 
   return (
@@ -131,9 +123,9 @@ export function StaffView({ staffList }: Props) {
             <TableHeader>
               <TableRow>
                 <TableHead className="text-center">이름</TableHead>
+                <TableHead className="text-center">이메일</TableHead>
                 <TableHead className="text-center">역할</TableHead>
-                <TableHead className="text-center">승인</TableHead>
-                <TableHead className="text-center">폴더 비밀번호</TableHead>
+                <TableHead className="text-center">승인여부</TableHead>
                 <TableHead className="text-center">관리</TableHead>
               </TableRow>
             </TableHeader>
@@ -148,6 +140,7 @@ export function StaffView({ staffList }: Props) {
                 staffList.map((staff) => (
                   <TableRow key={staff.id}>
                     <TableCell className="font-medium text-center">{staff.name}</TableCell>
+                    <TableCell className="text-center text-sm text-muted-foreground">{staff.email ?? '-'}</TableCell>
                     <TableCell className="text-center">
                       <Badge variant="outline" className={ROLE_COLORS[staff.role]}>
                         {ROLE_LABEL[staff.role]}
@@ -171,16 +164,6 @@ export function StaffView({ staffList }: Props) {
                         >
                           승인하기
                         </Button>
-                      )}
-                    </TableCell>
-                    <TableCell className="text-center">
-                      {staff.folder_password ? (
-                        <span className="inline-flex items-center gap-1 text-sm text-muted-foreground">
-                          <Lock className="h-3 w-3" />
-                          설정됨
-                        </span>
-                      ) : (
-                        <span className="text-sm text-muted-foreground">미설정</span>
                       )}
                     </TableCell>
                     <TableCell className="text-center">
@@ -279,15 +262,6 @@ export function StaffView({ staffList }: Props) {
                   <SelectItem value="fc">FC</SelectItem>
                 </SelectContent>
               </Select>
-            </div>
-            <div className="space-y-2">
-              <Label>폴더 비밀번호 {editTarget?.folder_password ? '(변경)' : '(설정)'}</Label>
-              <Input
-                type="password"
-                value={editPassword}
-                onChange={(e) => setEditPassword(e.target.value)}
-                placeholder="비워두면 변경 안 함"
-              />
             </div>
             <div className="flex justify-end gap-2">
               <Button variant="outline" className="text-gray-900 border-gray-400 bg-gray-100 hover:bg-gray-200" onClick={() => setEditTarget(null)}>취소</Button>

@@ -2,6 +2,7 @@
 
 import { isDemoMode } from '@/lib/demo'
 import { DEMO_MEMBERS } from '@/lib/demo-data'
+import { createClient } from '@/lib/supabase/server'
 import type { Member, OtAssignmentWithDetails } from '@/types'
 import type { MemberWithOt } from '@/components/members/member-list'
 import type { MemberFormValues } from '@/lib/validators'
@@ -22,7 +23,6 @@ export async function getMembers(filters?: {
     )
   }
 
-  const { createClient } = await import('@/lib/supabase/server')
   const supabase = await createClient()
 
   // 트레이너/상태 필터가 있으면 ot_assignments를 JOIN
@@ -31,12 +31,13 @@ export async function getMembers(filters?: {
       .from('ot_assignments')
       .select('*, member:members!inner(*)')
       .order('created_at', { ascending: false })
+      .limit(200)
 
     if (filters.trainer && filters.trainer !== 'all') {
       if (filters.trainer === 'unassigned') {
-        query = query.is('pt_trainer_id', null)
+        query = query.is('pt_trainer_id', null).is('ppt_trainer_id', null)
       } else {
-        query = query.eq('pt_trainer_id', filters.trainer)
+        query = query.or(`pt_trainer_id.eq.${filters.trainer},ppt_trainer_id.eq.${filters.trainer}`)
       }
     }
 
@@ -71,40 +72,45 @@ export async function getMembers(filters?: {
     return members
   }
 
-  // 기본 조회 (OT 배정 정보 JOIN)
+  // 기본 조회: members 기준으로 조회하여 중복 없이 가져옴
   let query = supabase
-    .from('ot_assignments')
+    .from('members')
     .select(`
       *,
-      member:members!inner(*),
-      pt_trainer:profiles!ot_assignments_pt_trainer_id_fkey(id, name),
-      ppt_trainer:profiles!ot_assignments_ppt_trainer_id_fkey(id, name),
-      sessions:ot_sessions(*)
+      assignment:ot_assignments(
+        *,
+        pt_trainer:profiles!ot_assignments_pt_trainer_id_fkey(id, name),
+        ppt_trainer:profiles!ot_assignments_ppt_trainer_id_fkey(id, name),
+        sessions:ot_sessions(session_number, scheduled_at, completed_at)
+      )
     `)
-    .order('created_at', { ascending: false })
+    .order('registered_at', { ascending: false })
+    .limit(300)
 
   if (filters?.search) {
-    query = query.or(`name.ilike.%${filters.search}%,phone.ilike.%${filters.search}%`, { referencedTable: 'members' })
+    query = query.or(`name.ilike.%${filters.search}%,phone.ilike.%${filters.search}%`)
   }
   if (filters?.from) {
-    query = query.gte('created_at', filters.from)
+    query = query.gte('registered_at', filters.from)
   }
   if (filters?.to) {
-    query = query.lte('created_at', filters.to + 'T23:59:59Z')
+    query = query.lte('registered_at', filters.to)
   }
 
   const { data, error } = await query
   if (error) throw new Error(error.message)
 
-  const seen = new Set<string>()
-  const members: MemberWithOt[] = []
-  for (const row of (data ?? []) as unknown as OtAssignmentWithDetails[]) {
-    const m = row.member
-    if (!seen.has(m.id)) {
-      seen.add(m.id)
-      members.push({ ...m, assignment: row })
-    }
-  }
+  // 각 회원에 대해 최신 OT 배정을 연결
+  const members: MemberWithOt[] = (data ?? []).map((m) => {
+    const assignments = (m as Record<string, unknown>).assignment as OtAssignmentWithDetails[] | null
+    // 가장 최근 배정을 선택
+    const latest = assignments?.sort((a, b) =>
+      new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
+    )[0] ?? null
+    // eslint-disable-next-line @typescript-eslint/no-unused-vars
+    const { assignment: _rawAssignment, ...member } = m as Record<string, unknown> & { assignment: unknown }
+    return { ...member, assignment: latest } as MemberWithOt
+  })
   return members
 }
 
@@ -113,7 +119,6 @@ export async function getMember(id: string): Promise<Member | null> {
     return DEMO_MEMBERS.find((m) => m.id === id) ?? null
   }
 
-  const { createClient } = await import('@/lib/supabase/server')
   const supabase = await createClient()
 
   const { data, error } = await supabase
@@ -131,14 +136,13 @@ export async function createMember(values: MemberFormValues) {
     return { data: { id: 'demo-new', ...values } }
   }
 
-  const { createClient } = await import('@/lib/supabase/server')
   const supabase = await createClient()
 
   const { data: { user } } = await supabase.auth.getUser()
 
   const { data, error } = await supabase
     .from('members')
-    .insert({ ...values, created_by: user?.id })
+    .insert({ ...values, created_by: user?.id, registration_source: '자동' })
     .select()
     .single()
 
@@ -151,7 +155,6 @@ export async function updateMember(id: string, values: Partial<MemberFormValues>
     return { data: { id, ...values } }
   }
 
-  const { createClient } = await import('@/lib/supabase/server')
   const supabase = await createClient()
 
   const { data, error } = await supabase
@@ -170,7 +173,6 @@ export async function toggleMemberCompleted(id: string, current: boolean) {
     return { success: true }
   }
 
-  const { createClient } = await import('@/lib/supabase/server')
   const supabase = await createClient()
 
   const { error } = await supabase
@@ -180,4 +182,160 @@ export async function toggleMemberCompleted(id: string, current: boolean) {
 
   if (error) return { error: error.message }
   return { success: true }
+}
+
+export async function deleteMember(id: string) {
+  if (isDemoMode()) return { success: true }
+
+  const supabase = await createClient()
+
+  // ot_sessions → ot_assignments → member 순서로 삭제 (FK)
+  const { data: assignments } = await supabase
+    .from('ot_assignments')
+    .select('id')
+    .eq('member_id', id)
+
+  if (assignments) {
+    for (const a of assignments) {
+      await supabase.from('ot_sessions').delete().eq('ot_assignment_id', a.id)
+    }
+    await supabase.from('ot_assignments').delete().eq('member_id', id)
+  }
+
+  const { error } = await supabase
+    .from('members')
+    .delete()
+    .eq('id', id)
+
+  if (error) return { error: error.message }
+  return { success: true }
+}
+
+// ── 회원 검색 (이름 또는 전화번호) ──
+export async function searchMembers(query: string): Promise<Member[]> {
+  if (!query || query.length < 2) return []
+
+  if (isDemoMode()) {
+    const q = query.toLowerCase()
+    return DEMO_MEMBERS.filter(
+      (m) => m.name.toLowerCase().includes(q) || m.phone.includes(q)
+    ).slice(0, 10)
+  }
+
+  const supabase = await createClient()
+
+  const { data, error } = await supabase
+    .from('members')
+    .select('*')
+    .or(`name.ilike.%${query}%,phone.ilike.%${query}%`)
+    .order('registered_at', { ascending: false })
+    .limit(10)
+
+  if (error) return []
+  return data ?? []
+}
+
+// ── 전화번호 중복 체크 ──
+export async function checkPhoneDuplicate(phone: string): Promise<Member | null> {
+  if (isDemoMode()) {
+    return DEMO_MEMBERS.find((m) => m.phone === phone) ?? null
+  }
+
+  const supabase = await createClient()
+
+  const { data } = await supabase
+    .from('members')
+    .select('*')
+    .eq('phone', phone)
+    .maybeSingle()
+
+  return data ?? null
+}
+
+// ── 간편 회원 등록 + OT 배정 ──
+export async function quickRegisterMember(values: {
+  name: string
+  phone: string
+  trainerId: string
+  isExistingMember?: boolean
+  registered_at?: string
+  ot_category?: string | null
+  training_type?: string
+  duration_months?: string | null
+  exercise_time?: string | null
+  exercise_goal?: string
+  notes?: string | null
+}) {
+  if (isDemoMode()) {
+    return { data: { memberId: 'demo-new', assignmentId: 'demo-assign' } }
+  }
+
+  const supabase = await createClient()
+
+  // detail_info 조합: PT/PPT + 운동목적
+  const detailParts: string[] = []
+  if (values.training_type) detailParts.push(values.training_type)
+  if (values.exercise_goal) detailParts.push(values.exercise_goal)
+  const detailInfo = detailParts.length > 0 ? detailParts.join(' / ') : null
+
+  // 1. 전화번호 중복 체크
+  const existing = await checkPhoneDuplicate(values.phone)
+  if (existing) {
+    // 기존 회원이 있으면 OT 배정만 추가
+    const { data: assignment, error: assignErr } = await supabase
+      .from('ot_assignments')
+      .insert({
+        member_id: existing.id,
+        status: '배정완료',
+        pt_trainer_id: values.trainerId,
+      })
+      .select()
+      .single()
+
+    if (assignErr) return { error: assignErr.message }
+    return { data: { memberId: existing.id, assignmentId: assignment.id }, existingMember: existing }
+  }
+
+  // 2. 신규 회원 등록
+  const { data: { user } } = await supabase.auth.getUser()
+
+  const memberData: Record<string, unknown> = {
+    name: values.name,
+    phone: values.phone,
+    sports: values.ot_category ? [values.ot_category] : [],
+    ot_category: values.ot_category || null,
+    duration_months: values.duration_months || null,
+    exercise_time: values.exercise_time || null,
+    detail_info: detailInfo,
+    notes: values.notes || null,
+    injury_tags: [],
+    created_by: user?.id,
+    is_existing_member: values.isExistingMember ?? false,
+    registration_source: '수기',
+  }
+  if (values.registered_at) {
+    memberData.registered_at = values.registered_at
+  }
+
+  const { data: member, error: memberErr } = await supabase
+    .from('members')
+    .insert(memberData)
+    .select()
+    .single()
+
+  if (memberErr) return { error: memberErr.message }
+
+  // 3. OT 배정
+  const { data: assignment, error: assignErr } = await supabase
+    .from('ot_assignments')
+    .insert({
+      member_id: member.id,
+      status: '배정완료',
+      pt_trainer_id: values.trainerId,
+    })
+    .select()
+    .single()
+
+  if (assignErr) return { error: assignErr.message }
+  return { data: { memberId: member.id, assignmentId: assignment.id } }
 }

@@ -136,7 +136,7 @@ export default function LoginPage() {
 
           <Button
             variant="outline"
-            className="w-full text-white border-gray-600 bg-transparent hover:bg-white hover:text-black"
+            className="w-full text-white border-black bg-black hover:bg-gray-800 hover:text-white"
             onClick={() => {
               setMode(mode === 'login' ? 'signup' : 'login')
               setError(null)

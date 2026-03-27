@@ -1,6 +1,7 @@
 'use server'
 
 import { isDemoMode } from '@/lib/demo'
+import { createClient } from '@/lib/supabase/server'
 
 export interface SalesTarget {
   id: string
@@ -18,7 +19,6 @@ export async function getSalesTarget(year: number, month: number): Promise<Sales
     return { id: 'demo', year, month, target_amount: 20000000, week1_target: 5000000, week2_target: 5000000, week3_target: 5000000, week4_target: 5000000 }
   }
 
-  const { createClient } = await import('@/lib/supabase/server')
   const supabase = await createClient()
 
   const { data } = await supabase
@@ -42,7 +42,6 @@ export async function upsertSalesTarget(values: {
 }) {
   if (isDemoMode()) return { success: true }
 
-  const { createClient } = await import('@/lib/supabase/server')
   const supabase = await createClient()
 
   const { data: { user } } = await supabase.auth.getUser()

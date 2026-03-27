@@ -3,7 +3,7 @@
 import { useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { cn } from '@/lib/utils'
-import { Lock, Plus } from 'lucide-react'
+import { Lock, Plus, Trash2, ChevronLeft, ChevronRight, MoreVertical } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
@@ -21,19 +21,31 @@ import {
   DialogTitle,
   DialogDescription,
 } from '@/components/ui/dialog'
-import { verifyFolderPassword, setFolderPassword } from '@/actions/trainer-folders'
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from '@/components/ui/dropdown-menu'
+import { verifyFolderPassword, createFolder, deleteFolder, swapFolderOrder } from '@/actions/trainer-folders'
 import type { TrainerFolder } from '@/actions/trainer-folders'
 import type { Profile } from '@/types'
 
 interface Props {
   folders: TrainerFolder[]
-  allStaff: Pick<Profile, 'id' | 'name' | 'role'>[]
+  allStaff: Pick<Profile, 'id' | 'name' | 'role' | 'is_approved'>[]
   currentUserRole: string
 }
 
+const FULL_ACCESS_ROLES = ['admin', '관리자', 'fc']
+
 export function TrainerFolderGrid({ folders, allStaff, currentUserRole }: Props) {
   const router = useRouter()
-  const isAdmin = currentUserRole === 'admin'
+  const isAdmin = currentUserRole === 'admin' || currentUserRole === '관리자'
+  const canOpenFolder = FULL_ACCESS_ROLES.includes(currentUserRole)
+
+  // 권한 없음 팝업
+  const [showNoAccess, setShowNoAccess] = useState(false)
 
   // 비밀번호 입력
   const [selectedFolder, setSelectedFolder] = useState<TrainerFolder | null>(null)
@@ -47,15 +59,25 @@ export function TrainerFolderGrid({ folders, allStaff, currentUserRole }: Props)
   const [folderPw, setFolderPw] = useState('')
   const [addLoading, setAddLoading] = useState(false)
 
+  // 삭제 확인
+  const [deleteTarget, setDeleteTarget] = useState<TrainerFolder | null>(null)
+  const [deleteLoading, setDeleteLoading] = useState(false)
+
   // 이미 폴더가 있는 직원 ID 목록
   const existingFolderIds = folders.map((f) => f.id)
-  // 폴더가 없는 직원 선택 가능 (admin 제외)
+  // 승인된 + 폴더 없는 직원만 선택 가능 (admin 제외)
   const availableStaff = allStaff.filter(
-    (s) => s.role !== 'admin' && !existingFolderIds.includes(s.id)
+    (s) => s.role !== 'admin' && s.is_approved && !existingFolderIds.includes(s.id)
   )
 
   const handleFolderClick = (folder: TrainerFolder) => {
-    // 관리자는 비밀번호 없이 바로 접근
+    // 권한 없는 역할은 접근 불가
+    if (!canOpenFolder) {
+      setShowNoAccess(true)
+      return
+    }
+
+    // 관리자/FC는 비밀번호 없이 바로 접근
     if (isAdmin) {
       router.push(`/ot?trainer=${folder.id}`)
       return
@@ -89,10 +111,7 @@ export function TrainerFolderGrid({ folders, allStaff, currentUserRole }: Props)
     if (!selectedStaffId) return
     setAddLoading(true)
 
-    // 비밀번호 설정 (입력했으면)
-    if (folderPw) {
-      await setFolderPassword(selectedStaffId, folderPw)
-    }
+    await createFolder(selectedStaffId, folderPw || undefined)
 
     setShowAdd(false)
     setSelectedStaffId('')
@@ -101,41 +120,99 @@ export function TrainerFolderGrid({ folders, allStaff, currentUserRole }: Props)
     router.refresh()
   }
 
+  const handleDelete = async () => {
+    if (!deleteTarget) return
+    setDeleteLoading(true)
+    await deleteFolder(deleteTarget.id)
+    setDeleteTarget(null)
+    setDeleteLoading(false)
+    router.refresh()
+  }
+
+  const handleMove = async (index: number, direction: 'left' | 'right') => {
+    const targetIndex = direction === 'left' ? index - 1 : index + 1
+    if (targetIndex < 0 || targetIndex >= folders.length) return
+
+    const current = folders[index]
+    const target = folders[targetIndex]
+
+    await swapFolderOrder(current.id, current.folder_order, target.id, target.folder_order)
+    router.refresh()
+  }
+
   return (
     <>
       <div className="grid gap-4 grid-cols-1 sm:grid-cols-2 lg:grid-cols-3">
-        {folders.map((folder) => (
-          <button
-            key={folder.id}
-            onClick={() => handleFolderClick(folder)}
-            className="group block text-left w-full"
-          >
-            <div className="rounded-xl border border-gray-200 bg-white shadow-sm hover:shadow-xl hover:border-yellow-400 hover:-translate-y-1 transition-all overflow-hidden">
-              <div className={cn('h-1.5', folder.color)} />
-              <div className="p-5">
-                <div className="flex items-start justify-between mb-1">
-                  <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-gray-100 text-gray-500 group-hover:bg-yellow-400 group-hover:text-black transition-colors">
-                    <svg className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
-                      <path strokeLinecap="round" strokeLinejoin="round" d="M15.75 6a3.75 3.75 0 1 1-7.5 0 3.75 3.75 0 0 1 7.5 0ZM4.501 20.118a7.5 7.5 0 0 1 14.998 0A17.933 17.933 0 0 1 12 21.75c-2.676 0-5.216-.584-7.499-1.632Z" />
-                    </svg>
+        {folders.map((folder, idx) => (
+          <div key={folder.id} className="group/card relative">
+            {/* 관리자 메뉴 */}
+            {isAdmin && (
+              <div className="absolute top-3 right-3 z-10">
+                <DropdownMenu>
+                  <DropdownMenuTrigger asChild>
+                    <button className="opacity-0 group-hover/card:opacity-100 transition-opacity h-8 w-8 flex items-center justify-center rounded-lg bg-white/80 hover:bg-white shadow-sm border border-gray-200">
+                      <MoreVertical className="h-4 w-4 text-gray-600" />
+                    </button>
+                  </DropdownMenuTrigger>
+                  <DropdownMenuContent align="end">
+                    {idx > 0 && (
+                      <DropdownMenuItem onClick={() => handleMove(idx, 'left')}>
+                        <ChevronLeft className="h-4 w-4 mr-2" />
+                        왼쪽으로 이동
+                      </DropdownMenuItem>
+                    )}
+                    {idx < folders.length - 1 && (
+                      <DropdownMenuItem onClick={() => handleMove(idx, 'right')}>
+                        <ChevronRight className="h-4 w-4 mr-2" />
+                        오른쪽으로 이동
+                      </DropdownMenuItem>
+                    )}
+                    <DropdownMenuItem
+                      className="text-red-600 focus:text-red-600"
+                      onClick={() => setDeleteTarget(folder)}
+                    >
+                      <Trash2 className="h-4 w-4 mr-2" />
+                      폴더 삭제
+                    </DropdownMenuItem>
+                  </DropdownMenuContent>
+                </DropdownMenu>
+              </div>
+            )}
+
+            <button
+              onClick={() => handleFolderClick(folder)}
+              className="block text-left w-full"
+            >
+              <div className="rounded-xl border border-gray-200 bg-white shadow-sm hover:shadow-xl hover:border-yellow-400 hover:-translate-y-1 transition-all overflow-hidden">
+                {/* 직무별 색상 바 (두꺼운 상단 라인) */}
+                <div className={cn('h-2', folder.color)} />
+                <div className="p-5">
+                  <div className="flex items-start justify-between mb-1">
+                    <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-gray-100 text-gray-500 group-hover/card:bg-yellow-400 group-hover/card:text-black transition-colors">
+                      <svg className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
+                        <path strokeLinecap="round" strokeLinejoin="round" d="M15.75 6a3.75 3.75 0 1 1-7.5 0 3.75 3.75 0 0 1 7.5 0ZM4.501 20.118a7.5 7.5 0 0 1 14.998 0A17.933 17.933 0 0 1 12 21.75c-2.676 0-5.216-.584-7.499-1.632Z" />
+                      </svg>
+                    </div>
+                    {folder.has_password && !isAdmin && (
+                      <Lock className="h-4 w-4 text-gray-400" />
+                    )}
                   </div>
-                  {folder.has_password && !isAdmin && (
-                    <Lock className="h-4 w-4 text-gray-400" />
-                  )}
-                </div>
 
-                <h3 className="font-bold text-lg mt-3 text-gray-900">{folder.name}</h3>
-                <p className="text-xs text-gray-500">트레이너</p>
+                  <h3 className="font-bold text-lg mt-3 text-gray-900">{folder.name}</h3>
+                  <p className="text-xs text-gray-500">
+                    {folder.role === 'trainer' ? '트레이너' : folder.role === 'fc' ? 'FC' : folder.role}
+                  </p>
 
-                <div className="grid grid-cols-4 gap-2 mt-4">
-                  <StatItem value={folder.stats.inProgress} label="금일 OT" color="text-green-600" />
-                  <StatItem value={folder.stats.pending} label="금일 대상자" color="text-red-500" />
-                  <StatItem value={folder.stats.completed} label="PT전환" color="text-blue-600" />
-                  <StatItem value={folder.stats.total} label="전체회원" color="text-gray-900" />
+                  <div className="grid grid-cols-4 gap-2 mt-4">
+                    <StatItem value={folder.stats.inProgress} label="금일 OT" color="text-green-600" />
+                    <StatItem value={folder.stats.pending} label="매출대상자" color="text-red-500" />
+                    <StatItem value={folder.stats.completed} label="PT전환" color="text-blue-600" />
+                    <StatItem value={folder.stats.total} label="전체회원" color="text-gray-900" />
+                  </div>
                 </div>
               </div>
-            </div>
-          </button>
+            </button>
+          </div>
         ))}
 
         {/* 폴더 추가 버튼 (관리자만) */}
@@ -240,6 +317,44 @@ export function TrainerFolderGrid({ folders, allStaff, currentUserRole }: Props)
               </Button>
             </div>
           </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* 삭제 확인 다이얼로그 */}
+      <Dialog open={!!deleteTarget} onOpenChange={() => setDeleteTarget(null)}>
+        <DialogContent className="max-w-sm">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2 text-red-600">
+              <Trash2 className="h-4 w-4" />
+              폴더 삭제
+            </DialogTitle>
+            <DialogDescription>
+              <strong>{deleteTarget?.name}</strong> 폴더를 삭제하시겠습니까?<br />
+              배정된 회원 데이터는 유지되며, 폴더만 목록에서 제거됩니다.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="flex justify-end gap-2 mt-2">
+            <Button variant="outline" className="text-gray-900 border-gray-400 bg-gray-100 hover:bg-gray-200" onClick={() => setDeleteTarget(null)}>취소</Button>
+            <Button variant="destructive" onClick={handleDelete} disabled={deleteLoading}>
+              {deleteLoading ? '삭제 중...' : '삭제'}
+            </Button>
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* 권한 없음 팝업 */}
+      <Dialog open={showNoAccess} onOpenChange={setShowNoAccess}>
+        <DialogContent className="max-w-xs text-center">
+          <DialogHeader>
+            <DialogTitle className="text-red-600">권한 없음</DialogTitle>
+            <DialogDescription>
+              해당 폴더에 대한 열람 권한이 없습니다.<br />
+              관리자에게 문의해주세요.
+            </DialogDescription>
+          </DialogHeader>
+          <Button className="w-full" onClick={() => setShowNoAccess(false)}>
+            확인
+          </Button>
         </DialogContent>
       </Dialog>
     </>

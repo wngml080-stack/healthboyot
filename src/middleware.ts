@@ -1,5 +1,6 @@
 import { NextResponse, type NextRequest } from 'next/server'
 import { isDemoMode, DEMO_COOKIE_NAME } from '@/lib/demo'
+import { updateSession } from '@/lib/supabase/middleware'
 
 export async function middleware(request: NextRequest) {
   const pathname = request.nextUrl.pathname
@@ -31,7 +32,6 @@ export async function middleware(request: NextRequest) {
   }
 
   // 실제 Supabase 모드
-  const { updateSession } = await import('@/lib/supabase/middleware')
   return await updateSession(request)
 }
 

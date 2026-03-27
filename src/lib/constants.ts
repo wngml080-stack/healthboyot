@@ -60,11 +60,12 @@ export const NAV_ITEMS = [
 export const SPORTS_OPTIONS = ['헬스', '필라테스', 'PT등록', '수영', '골프', 'GX'] as const
 
 // ── OT 종목 (스프레드시트 색상 기준) ──
-export const OT_CATEGORY_OPTIONS: OtCategory[] = ['헬스', 'PT등록', '필라', '거부']
+export const OT_CATEGORY_OPTIONS: OtCategory[] = ['헬스', '필라', '헬스,필라', 'PT등록', '거부']
 
 export const OT_CATEGORY_COLOR: Record<OtCategory, string> = {
   '헬스': 'bg-blue-500 text-white',
+  '필라': 'bg-pink-500 text-white',
+  '헬스,필라': 'bg-emerald-500 text-white',
   'PT등록': 'bg-red-500 text-white',
-  '필라': 'bg-yellow-400 text-black',
   '거부': 'bg-gray-400 text-white',
 }
