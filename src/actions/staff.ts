@@ -17,11 +17,14 @@ export async function getStaffList(): Promise<Profile[]> {
 
   const { data, error } = await supabase
     .from('profiles')
-    .select('*')
+    .select('id, name, email, role, avatar_url, folder_password, is_approved, has_folder, folder_order, created_at, updated_at')
     .order('role')
     .order('name')
 
-  if (error) throw new Error(error.message)
+  if (error) {
+    console.error('[getStaffList] DB Error:', error.message, error.details, error.hint)
+    throw new Error(error.message)
+  }
   return data ?? []
 }
 

@@ -1,6 +1,8 @@
+import { Suspense } from 'react'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
 import { PageTitle } from '@/components/shared/page-title'
+import { TableSkeleton } from '@/components/shared/loading-skeleton'
 import { Users, ClipboardList, CheckCircle, Clock } from 'lucide-react'
 import { format, startOfWeek, endOfWeek } from 'date-fns'
 import { ko } from 'date-fns/locale'
@@ -47,17 +49,20 @@ async function getDashboardData() {
     { data: recentPending },
     { data: todaySessionsRaw },
   ] = await Promise.all([
-    supabase.from('members').select('*', { count: 'exact', head: true }),
-    supabase.from('ot_assignments').select('*', { count: 'exact', head: true }).eq('status', '신청대기'),
-    supabase.from('ot_assignments').select('*', { count: 'exact', head: true }).eq('status', '완료')
+    supabase.from('members').select('id', { count: 'exact', head: true }),
+    supabase.from('ot_assignments').select('id', { count: 'exact', head: true }).eq('status', '신청대기'),
+    supabase.from('ot_assignments').select('id', { count: 'exact', head: true }).eq('status', '완료')
       .gte('updated_at', weekStart.toISOString()).lte('updated_at', weekEnd.toISOString()),
     supabase.from('ot_assignments').select(`
-      *, member:members!inner(id, name, phone, ot_category, exercise_time, duration_months, detail_info, notes, registered_at, registration_source),
+      id, status, ot_category, pt_trainer_id, ppt_trainer_id, created_at,
+      sales_status, contact_status, is_sales_target, is_pt_conversion,
+      member:members!inner(id, name, phone, ot_category, exercise_time, duration_months, detail_info, notes, registered_at, registration_source),
       pt_trainer:profiles!ot_assignments_pt_trainer_id_fkey(id, name),
       ppt_trainer:profiles!ot_assignments_ppt_trainer_id_fkey(id, name)
-    `).eq('status', '신청대기').order('created_at', { ascending: false }),
+    `).eq('status', '신청대기').order('created_at', { ascending: false }).limit(20),
     supabase.from('ot_sessions').select(`
-      *, ot_assignment:ot_assignments!inner(
+      id, session_number, scheduled_at,
+      ot_assignment:ot_assignments!inner(
         member:members!inner(name),
         pt_trainer:profiles!ot_assignments_pt_trainer_id_fkey(name)
       )
@@ -81,15 +86,9 @@ async function getDashboardData() {
   }
 }
 
-interface Props {
-  searchParams: Promise<{ search?: string; trainer?: string; status?: string; from?: string; to?: string }>
-}
-
-export default async function DashboardPage({ searchParams }: Props) {
-  const params = await searchParams
-
-  const [dashboardData, members, staffList] = await Promise.all([
-    getDashboardData(),
+// 회원 목록 — 별도 서버 컴포넌트 (Suspense로 분리)
+async function MemberListSection({ params }: { params: { search?: string; trainer?: string; status?: string; from?: string; to?: string } }) {
+  const [members, staffList] = await Promise.all([
     getMembers({
       search: params.search,
       trainer: params.trainer,
@@ -103,12 +102,30 @@ export default async function DashboardPage({ searchParams }: Props) {
     .filter((s) => !['admin'].includes(s.role))
     .map((s) => ({ id: s.id, name: s.name }))
 
+  return <MemberList initialMembers={members} trainers={trainers} />
+}
+
+interface Props {
+  searchParams: Promise<{ search?: string; trainer?: string; status?: string; from?: string; to?: string }>
+}
+
+export default async function DashboardPage({ searchParams }: Props) {
+  const params = await searchParams
+
+  const [dashboardData, staffList] = await Promise.all([
+    getDashboardData(),
+    getStaffList(),
+  ])
+  const trainers = staffList
+    .filter((s) => !['admin'].includes(s.role))
+    .map((s) => ({ id: s.id, name: s.name }))
+
   const { totalMembers, pendingCount, completedThisWeek, recentPending, todaySessions } = dashboardData
   const now = new Date()
 
   return (
     <div className="space-y-6">
-      {/* 요약 카드 */}
+      {/* 요약 카드 — 즉시 렌더 */}
       <div className="grid gap-4 grid-cols-2 md:grid-cols-4">
         <StatCard title="전체 회원" value={totalMembers} icon={<Users className="h-4 w-4 text-gray-400" />} />
         <StatCard title="신청 대기" value={pendingCount} icon={<Clock className="h-4 w-4 text-yellow-500" />} highlight={pendingCount > 0} />
@@ -117,7 +134,7 @@ export default async function DashboardPage({ searchParams }: Props) {
       </div>
 
       <div className="grid gap-6 md:grid-cols-2">
-        {/* 신규 OT 대기 (전화번호 + 클릭시 상세) */}
+        {/* 신규 OT 대기 */}
         <Card>
           <CardHeader className="flex flex-row items-center justify-between pb-2">
             <CardTitle className="text-base text-gray-900">신규 OT 대기</CardTitle>
@@ -134,7 +151,7 @@ export default async function DashboardPage({ searchParams }: Props) {
           </CardContent>
         </Card>
 
-        {/* 전체 OT 일정 (모든 트레이너) */}
+        {/* 전체 OT 일정 */}
         <Card>
           <CardHeader className="pb-2">
             <CardTitle className="text-base text-gray-900">
@@ -163,10 +180,12 @@ export default async function DashboardPage({ searchParams }: Props) {
         </Card>
       </div>
 
-      {/* 회원 리스트 */}
+      {/* 회원 리스트 — Suspense로 분리 (나머지 먼저 보임) */}
       <div>
         <div className="mb-3"><PageTitle>회원 목록</PageTitle></div>
-        <MemberList initialMembers={members} trainers={trainers} />
+        <Suspense fallback={<TableSkeleton />}>
+          <MemberListSection params={params} />
+        </Suspense>
       </div>
     </div>
   )

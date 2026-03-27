@@ -83,7 +83,8 @@ export async function getMembers(filters?: {
     .select(`
       id, name, phone, gender, ot_category, exercise_time, duration_months,
       detail_info, notes, registered_at, registration_source, is_existing_member,
-      is_completed, start_date, created_at,
+      is_completed, start_date, created_at, created_by,
+      creator:profiles!members_created_by_fkey(name, role),
       assignment:ot_assignments(
         id, status, ot_category, pt_trainer_id, ppt_trainer_id,
         sales_status, contact_status, is_sales_target, is_pt_conversion, created_at,
@@ -110,14 +111,17 @@ export async function getMembers(filters?: {
 
   // 각 회원에 대해 최신 OT 배정을 연결
   const members: MemberWithOt[] = (data ?? []).map((m) => {
-    const assignments = (m as Record<string, unknown>).assignment as OtAssignmentWithDetails[] | null
+    const raw = m as Record<string, unknown>
+    const assignments = raw.assignment as OtAssignmentWithDetails[] | null
     // 가장 최근 배정을 선택
     const latest = assignments?.sort((a, b) =>
       new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
     )[0] ?? null
+    const creator = raw.creator as { name: string; role: string } | null
+    const creatorName = (creator && creator.role !== 'admin') ? creator.name : null
     // eslint-disable-next-line @typescript-eslint/no-unused-vars
-    const { assignment: _rawAssignment, ...member } = m as Record<string, unknown> & { assignment: unknown }
-    return { ...member, assignment: latest } as MemberWithOt
+    const { assignment: _rawAssignment, creator: _rawCreator, ...member } = raw as Record<string, unknown> & { assignment: unknown; creator: unknown }
+    return { ...member, assignment: latest, creator_name: creatorName } as MemberWithOt
   })
   return members
 }
@@ -265,6 +269,7 @@ export async function quickRegisterMember(values: {
   name: string
   phone: string
   trainerId: string
+  trainerRole?: 'pt' | 'ppt'
   isExistingMember?: boolean
   registered_at?: string
   ot_category?: string | null
@@ -286,6 +291,11 @@ export async function quickRegisterMember(values: {
   if (values.exercise_goal) detailParts.push(values.exercise_goal)
   const detailInfo = detailParts.length > 0 ? detailParts.join(' / ') : null
 
+  // trainerId가 빈 문자열이나 'none'이면 미배정
+  const trainerId = (values.trainerId && values.trainerId !== 'none') ? values.trainerId : null
+  const isPpt = values.trainerRole === 'ppt'
+  const assignStatus = trainerId ? '배정완료' : '신청대기'
+
   // 1. 전화번호 중복 체크
   const existing = await checkPhoneDuplicate(values.phone)
   if (existing) {
@@ -294,8 +304,11 @@ export async function quickRegisterMember(values: {
       .from('ot_assignments')
       .insert({
         member_id: existing.id,
-        status: '배정완료',
-        pt_trainer_id: values.trainerId,
+        status: assignStatus,
+        pt_trainer_id: isPpt ? null : trainerId,
+        ppt_trainer_id: isPpt ? trainerId : null,
+        pt_assign_status: isPpt ? 'none' : (trainerId ? 'assigned' : 'none'),
+        ppt_assign_status: isPpt ? (trainerId ? 'assigned' : 'none') : 'none',
       })
       .select()
       .single()
@@ -338,8 +351,11 @@ export async function quickRegisterMember(values: {
     .from('ot_assignments')
     .insert({
       member_id: member.id,
-      status: '배정완료',
-      pt_trainer_id: values.trainerId,
+      status: assignStatus,
+      pt_trainer_id: isPpt ? null : trainerId,
+      ppt_trainer_id: isPpt ? trainerId : null,
+      pt_assign_status: isPpt ? 'none' : (trainerId ? 'assigned' : 'none'),
+      ppt_assign_status: isPpt ? (trainerId ? 'assigned' : 'none') : 'none',
     })
     .select()
     .single()

@@ -44,6 +44,7 @@ const SLOT_HEIGHT = 40 // px per 30min
 const TYPE_COLORS: Record<string, string> = {
   OT: 'bg-emerald-200 border-emerald-400 text-emerald-900',
   PT: 'bg-blue-200 border-blue-400 text-blue-900',
+  PPT: 'bg-purple-200 border-purple-400 text-purple-900',
   식사: 'bg-orange-200 border-orange-400 text-orange-900',
   홍보: 'bg-pink-200 border-pink-400 text-pink-900',
   회의: 'bg-yellow-200 border-yellow-400 text-yellow-900',
@@ -51,7 +52,7 @@ const TYPE_COLORS: Record<string, string> = {
   기타: 'bg-gray-200 border-gray-400 text-gray-900',
 }
 
-const SCHEDULE_TYPES = ['OT', 'PT', '식사', '홍보', '회의', '간담회', '기타'] as const
+const SCHEDULE_TYPES = ['OT', 'PT', 'PPT', '식사', '홍보', '회의', '간담회', '기타'] as const
 
 const STATUS_OPTIONS: OtStatus[] = ['신청대기', '배정완료', '진행중', '완료', '거부', '추후결정']
 
@@ -201,8 +202,8 @@ export function WeeklyCalendar({ assignments, trainerId }: Props) {
 
   const handleCreate = async () => {
     if (createType === 'OT' && !createOtSessionId) return
-    if (createType === 'PT' && !createName && !selectedMember) return
-    if (createType !== 'OT' && createType !== 'PT' && !createName) return
+    if ((createType === 'PT' || createType === 'PPT') && !createName && !selectedMember) return
+    if (createType !== 'OT' && createType !== 'PT' && createType !== 'PPT' && !createName) return
 
     setCreateSaving(true)
 
@@ -258,7 +259,7 @@ export function WeeklyCalendar({ assignments, trainerId }: Props) {
           })
         }
       }
-    } else if (createType === 'PT' && (createIsSalesTarget || createExpectedAmount > 0)) {
+    } else if ((createType === 'PT' || createType === 'PPT') && (createIsSalesTarget || createExpectedAmount > 0)) {
       const assignment = otMembers.find((a) => a.member.name === createName)
       if (assignment) {
         await updateOtAssignment(assignment.id, {
@@ -422,7 +423,7 @@ export function WeeklyCalendar({ assignments, trainerId }: Props) {
                     const top = slot * SLOT_HEIGHT
                     const height = heightSlots * SLOT_HEIGHT - 2
                     const color = TYPE_COLORS[s.schedule_type] ?? TYPE_COLORS.OT
-                    const matched = (s.schedule_type === 'OT' || s.schedule_type === 'PT')
+                    const matched = (s.schedule_type === 'OT' || s.schedule_type === 'PT' || s.schedule_type === 'PPT')
                       ? assignments.find((a) => a.member.name === s.member_name)
                       : null
                     const isSales = matched?.is_sales_target
@@ -527,8 +528,8 @@ export function WeeklyCalendar({ assignments, trainerId }: Props) {
               </div>
             )}
 
-            {/* PT: 회원 검색 + 간편 등록 */}
-            {createType === 'PT' && !showQuickRegister && (
+            {/* PT/PPT: 회원 검색 + 간편 등록 */}
+            {(createType === 'PT' || createType === 'PPT') && !showQuickRegister && (
               <div className="space-y-2">
                 <Label className="flex items-center gap-1">
                   <Search className="h-3 w-3" /> 회원 검색
@@ -589,8 +590,8 @@ export function WeeklyCalendar({ assignments, trainerId }: Props) {
               </div>
             )}
 
-            {/* PT: 간편 등록 폼 */}
-            {createType === 'PT' && showQuickRegister && (
+            {/* PT/PPT: 간편 등록 폼 */}
+            {(createType === 'PT' || createType === 'PPT') && showQuickRegister && (
               <div className="space-y-3 rounded-lg border-2 border-blue-200 bg-blue-50/50 p-3">
                 <div className="flex items-center justify-between">
                   <p className="text-xs font-bold text-blue-700 flex items-center gap-1">
@@ -634,7 +635,7 @@ export function WeeklyCalendar({ assignments, trainerId }: Props) {
             )}
 
             {/* 기타 타입: 수기 입력 */}
-            {createType !== 'OT' && createType !== 'PT' && (
+            {createType !== 'OT' && createType !== 'PT' && createType !== 'PPT' && (
               <div className="space-y-2">
                 <Label>내용</Label>
                 <Input value={createName} onChange={(e) => setCreateName(e.target.value)} placeholder={`${createType} 내용`} />
@@ -672,8 +673,8 @@ export function WeeklyCalendar({ assignments, trainerId }: Props) {
               </div>
             </div>
 
-            {/* 매출 정보 (OT/PT) */}
-            {(createType === 'OT' || createType === 'PT') && (
+            {/* 매출 정보 (OT/PT/PPT) */}
+            {(createType === 'OT' || createType === 'PT' || createType === 'PPT') && (
               <div className="space-y-3 border-t border-gray-100 pt-3">
                 <button
                   type="button"
@@ -835,8 +836,122 @@ export function WeeklyCalendar({ assignments, trainerId }: Props) {
                   />
                 </div>
 
+                {/* 스케줄 시간/수업시간 수정 */}
+                {editSchedule && (
+                  <div className="space-y-3 rounded-lg border border-gray-200 bg-gray-50 p-3">
+                    <p className="text-sm font-bold text-gray-900">스케줄 수정</p>
+                    <div className="space-y-2">
+                      <p className="text-xs font-medium text-gray-600">시간</p>
+                      <div className="grid grid-cols-5 gap-1">
+                        {Array.from({ length: 17 }, (_, i) => `${String(i + 6).padStart(2, '0')}:00`).map((slot) => (
+                          <button
+                            key={slot}
+                            type="button"
+                            className={`rounded border px-1 py-1 text-xs font-medium transition-colors ${
+                              editTime === slot
+                                ? 'bg-yellow-400 text-black border-yellow-400 font-bold'
+                                : 'bg-white text-gray-700 border-gray-300 hover:bg-gray-100'
+                            }`}
+                            onClick={() => setEditTime(slot)}
+                          >
+                            {slot}
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+                    <div className="space-y-2">
+                      <p className="text-xs font-medium text-gray-600">수업시간</p>
+                      <div className="flex gap-2">
+                        {[30, 50].map((d) => (
+                          <button
+                            key={d}
+                            type="button"
+                            className={`flex-1 rounded-md border px-3 py-2 text-sm font-bold transition-colors ${
+                              editDuration === d
+                                ? 'bg-yellow-400 text-black border-yellow-400'
+                                : 'bg-white text-gray-700 border-gray-300 hover:bg-gray-100'
+                            }`}
+                            onClick={() => setEditDuration(d)}
+                          >
+                            {d}분
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+                    <Button
+                      size="sm"
+                      className="w-full bg-gray-900 hover:bg-gray-800 text-white font-bold"
+                      onClick={handleEditScheduleSave}
+                      disabled={editSaving}
+                    >
+                      {editSaving ? '저장 중...' : '스케줄 수정 저장'}
+                    </Button>
+                  </div>
+                )}
+
                 <Button className="w-full bg-yellow-400 hover:bg-yellow-500 text-black font-bold" onClick={handleDetailSave} disabled={detailSaving}>
                   {detailSaving ? '저장 중...' : '저장'}
+                </Button>
+              </div>
+            </>
+          )}
+        </DialogContent>
+      </Dialog>
+
+      {/* 스케줄 수정 다이얼로그 */}
+      <Dialog open={!!editSchedule && !detailAssignment} onOpenChange={() => setEditSchedule(null)}>
+        <DialogContent className="max-w-sm">
+          {editSchedule && (
+            <>
+              <DialogHeader>
+                <DialogTitle>스케줄 수정</DialogTitle>
+                <DialogDescription>{editSchedule.member_name} · {editSchedule.schedule_type}</DialogDescription>
+              </DialogHeader>
+              <div className="space-y-4">
+                <div className="space-y-2">
+                  <p className="text-sm font-medium text-gray-700">시간</p>
+                  <div className="grid grid-cols-4 gap-1.5">
+                    {Array.from({ length: 17 }, (_, i) => `${String(i + 6).padStart(2, '0')}:00`).map((slot) => (
+                      <button
+                        key={slot}
+                        type="button"
+                        className={`rounded-md border px-1 py-1.5 text-xs font-medium transition-colors ${
+                          editTime === slot
+                            ? 'bg-yellow-400 text-black border-yellow-400 font-bold'
+                            : 'bg-white text-gray-700 border-gray-300 hover:bg-gray-100'
+                        }`}
+                        onClick={() => setEditTime(slot)}
+                      >
+                        {slot}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+                <div className="space-y-2">
+                  <p className="text-sm font-medium text-gray-700">수업시간</p>
+                  <div className="flex gap-2">
+                    {[30, 50].map((d) => (
+                      <button
+                        key={d}
+                        type="button"
+                        className={`flex-1 rounded-md border px-3 py-2.5 text-sm font-bold transition-colors ${
+                          editDuration === d
+                            ? 'bg-yellow-400 text-black border-yellow-400'
+                            : 'bg-white text-gray-700 border-gray-300 hover:bg-gray-100'
+                        }`}
+                        onClick={() => setEditDuration(d)}
+                      >
+                        {d}분
+                      </button>
+                    ))}
+                  </div>
+                </div>
+                <Button
+                  className="w-full bg-gray-900 hover:bg-gray-800 text-white font-bold"
+                  onClick={handleEditScheduleSave}
+                  disabled={editSaving}
+                >
+                  {editSaving ? '저장 중...' : '수정 저장'}
                 </Button>
               </div>
             </>

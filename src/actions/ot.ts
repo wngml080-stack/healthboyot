@@ -44,7 +44,10 @@ export async function getOtAssignments(params?: {
   }
 
   const { data, error } = await query
-  if (error) throw new Error(error.message)
+  if (error) {
+    console.error('[getOtAssignments] DB Error:', error.message, error.details, error.hint)
+    throw new Error(error.message)
+  }
   return (data as unknown as OtAssignmentWithDetails[]) ?? []
 }
 
@@ -140,6 +143,7 @@ export async function upsertOtSession(values: {
   trainer_tip?: string | null
   cardio_type?: string[] | null
   cardio_duration?: number | null
+  duration?: number
 }) {
   if (isDemoMode()) {
     return { success: true }
@@ -147,9 +151,13 @@ export async function upsertOtSession(values: {
 
   const supabase = await createClient()
 
+  // duration은 trainer_schedules용 — ot_sessions에는 보내지 않음
+  const { duration: scheduleDuration, ...sessionValues } = values
+  const durationMin = scheduleDuration ?? 30
+
   // 1. 세션 upsert + assignment 데이터 한 번에 조회 (병렬)
   const [upsertResult, assignResult, authResult] = await Promise.all([
-    supabase.from('ot_sessions').upsert(values, { onConflict: 'ot_assignment_id,session_number' }),
+    supabase.from('ot_sessions').upsert(sessionValues, { onConflict: 'ot_assignment_id,session_number' }),
     supabase.from('ot_assignments')
       .select('status, pt_trainer_id, ppt_trainer_id, member:members!inner(name, phone), pt_trainer:profiles!ot_assignments_pt_trainer_id_fkey(name), ppt_trainer:profiles!ot_assignments_ppt_trainer_id_fkey(name)')
       .eq('id', values.ot_assignment_id)
@@ -221,24 +229,26 @@ export async function upsertOtSession(values: {
         )
       }
 
-      // trainer_schedules 동기화
-      const trainerId = assignData.pt_trainer_id || assignData.ppt_trainer_id
-      if (trainerId) {
+      // trainer_schedules 동기화 (PT + PPT 둘 다 생성)
+      const trainerIds = [assignData.pt_trainer_id, assignData.ppt_trainer_id].filter(Boolean) as string[]
+      if (trainerIds.length > 0) {
         const scheduledDate = new Date(values.scheduled_at)
         const dateStr = `${scheduledDate.getFullYear()}-${String(scheduledDate.getMonth() + 1).padStart(2, '0')}-${String(scheduledDate.getDate()).padStart(2, '0')}`
         const timeStr = `${String(scheduledDate.getHours()).padStart(2, '0')}:${String(scheduledDate.getMinutes()).padStart(2, '0')}`
 
-        statusPromises.push(
-          supabase.from('trainer_schedules').delete()
-            .eq('trainer_id', trainerId).eq('member_name', member.name)
-            .eq('schedule_type', 'OT').eq('scheduled_date', dateStr)
-            .then(() =>
-              supabase.from('trainer_schedules').insert({
-                trainer_id: trainerId, schedule_type: 'OT', member_name: member.name,
-                scheduled_date: dateStr, start_time: timeStr, duration: 50,
-              })
-            )
-        )
+        for (const tid of trainerIds) {
+          statusPromises.push(
+            supabase.from('trainer_schedules').delete()
+              .eq('trainer_id', tid).eq('member_name', member.name)
+              .eq('schedule_type', 'OT').eq('scheduled_date', dateStr)
+              .then(() =>
+                supabase.from('trainer_schedules').insert({
+                  trainer_id: tid, schedule_type: 'OT', member_name: member.name,
+                  scheduled_date: dateStr, start_time: timeStr, duration: durationMin,
+                })
+              )
+          )
+        }
       }
     }
 

@@ -41,12 +41,38 @@ export default async function OtPage({ searchParams }: OtPageProps) {
     )
   }
 
-  // 트레이너 데이터 — DB에서 바로 필터링 + 프로필 + 스태프 병렬
-  const [trainerAssignments, profile, staffList] = await Promise.all([
-    getOtAssignments({ trainerId }),
-    getCurrentProfile(),
-    getStaffList(),
-  ])
+  // 트레이너 데이터
+  let trainerAssignments: Awaited<ReturnType<typeof getOtAssignments>> = []
+  let staffList: Awaited<ReturnType<typeof getStaffList>> = []
+  let profile: Awaited<ReturnType<typeof getCurrentProfile>> = null
+
+  try {
+    const results = await Promise.all([
+      getOtAssignments({ trainerId }),
+      getCurrentProfile(),
+      getStaffList(),
+    ])
+    trainerAssignments = results[0]
+    profile = results[1]
+    staffList = results[2]
+  } catch (err) {
+    console.error('[OtPage] Error loading trainer data:', err)
+    return (
+      <div className="space-y-4">
+        <div className="flex items-center gap-3">
+          <Link href="/ot" className="flex items-center gap-1 text-sm text-muted-foreground hover:text-foreground transition-colors">
+            <ArrowLeft className="h-4 w-4" />
+            전체 목록
+          </Link>
+        </div>
+        <div className="rounded-lg border border-red-200 bg-red-50 p-6 text-center">
+          <p className="text-red-700 font-medium">데이터를 불러오는 중 오류가 발생했습니다</p>
+          <p className="text-sm text-red-500 mt-1">{err instanceof Error ? err.message : '알 수 없는 오류'}</p>
+        </div>
+      </div>
+    )
+  }
+
   const allTrainers = staffList
     .filter((s) => !['admin'].includes(s.role))
     .map((s) => ({ id: s.id, name: s.name }))
@@ -106,4 +132,3 @@ export default async function OtPage({ searchParams }: OtPageProps) {
     </div>
   )
 }
-

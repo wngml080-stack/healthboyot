@@ -29,7 +29,7 @@ import {
   TableHeader,
   TableRow,
 } from '@/components/ui/table'
-import { updateMember, deleteMember, createMember } from '@/actions/members'
+import { updateMember, deleteMember, quickRegisterMember } from '@/actions/members'
 import { changeTrainer } from '@/actions/ot'
 import { addChangeLog } from '@/actions/change-log'
 import { updateOtAssignment } from '@/actions/ot'
@@ -37,6 +37,7 @@ import type { Member, OtAssignmentWithDetails, Profile } from '@/types'
 
 export interface MemberWithOt extends Member {
   assignment?: OtAssignmentWithDetails | null
+  creator_name?: string | null
 }
 
 interface Props {
@@ -115,12 +116,13 @@ export function MemberList({ initialMembers, trainers = [] }: Props) {
   const [addExerciseTime, setAddExerciseTime] = useState('')
   const [addExerciseGoal, setAddExerciseGoal] = useState('')
   const [addNotes, setAddNotes] = useState('')
+  const [addTrainerId, setAddTrainerId] = useState('')
   const [addLoading, setAddLoading] = useState(false)
 
   const resetAddForm = () => {
     setAddName(''); setAddPhone(''); setAddAssignDate(''); setAddDateUnknown(false)
     setAddCategory(''); setAddTrainingType(''); setAddDuration('')
-    setAddExerciseTime(''); setAddExerciseGoal(''); setAddNotes('')
+    setAddExerciseTime(''); setAddExerciseGoal(''); setAddNotes(''); setAddTrainerId('')
   }
 
   const handleAddMember = async () => {
@@ -134,27 +136,20 @@ export function MemberList({ initialMembers, trainers = [] }: Props) {
       alert('올바른 전화번호를 입력해주세요 (10~11자리)')
       return
     }
-    // detail_info 조합: PT/PPT + 운동목적
-    const detailParts: string[] = []
-    if (addTrainingType) detailParts.push(addTrainingType)
-    if (addExerciseGoal) detailParts.push(addExerciseGoal)
-    const detailInfo = detailParts.length > 0 ? detailParts.join(' / ') : null
 
     setAddLoading(true)
-    const values: Record<string, unknown> = {
+    const result = await quickRegisterMember({
       name: addName,
       phone,
-      sports: addCategory ? [addCategory] : [],
+      trainerId: addTrainerId || '',
+      registered_at: addDateUnknown ? undefined : addAssignDate || undefined,
       ot_category: addCategory || null,
+      training_type: addTrainingType || undefined,
       duration_months: addDuration || null,
       exercise_time: addExerciseTime || null,
-      detail_info: detailInfo,
+      exercise_goal: addExerciseGoal || undefined,
       notes: addNotes || null,
-    }
-    if (!addDateUnknown && addAssignDate) {
-      values.registered_at = addAssignDate
-    }
-    const result = await createMember(values as Parameters<typeof createMember>[0])
+    })
     if (result.error) {
       alert('등록 실패: ' + result.error)
     } else {
@@ -474,7 +469,9 @@ export function MemberList({ initialMembers, trainers = [] }: Props) {
                           {m.is_renewal ? '리뉴' : m.is_existing_member ? '이전' : '신규'}
                         </span>
                         {m.registration_source === '수기' && (
-                          <span className="inline-flex items-center rounded px-1 py-0.5 text-[9px] font-bold mr-1 bg-amber-100 text-amber-700 border border-amber-300">수기</span>
+                          <span className="inline-flex items-center rounded px-1 py-0.5 text-[9px] font-bold mr-1 bg-amber-100 text-amber-700 border border-amber-300">
+                            {m.creator_name ? `${m.creator_name} 수기` : '수기'}
+                          </span>
                         )}
                         {m.name}
                         {duplicateIds.has(m.id) && (
@@ -861,6 +858,21 @@ export function MemberList({ initialMembers, trainers = [] }: Props) {
                   모름
                 </button>
               </div>
+            </div>
+            {/* 담당 트레이너 */}
+            <div className="space-y-2">
+              <Label>담당 트레이너</Label>
+              <Select value={addTrainerId} onValueChange={setAddTrainerId}>
+                <SelectTrigger>
+                  <SelectValue placeholder="선택 안함 (미배정)" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="none">미배정</SelectItem>
+                  {trainers.map((t) => (
+                    <SelectItem key={t.id} value={t.id}>{t.name}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
             </div>
             {/* 종목 * */}
             <div className="space-y-2">

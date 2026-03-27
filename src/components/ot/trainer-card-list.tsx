@@ -52,7 +52,7 @@ export function TrainerCardList({ assignments, trainers = [], trainerId }: Props
 
   // 필터
   const [filter, setFilter] = useState<string>('전체')
-  const FILTERS = ['전체', '1차', '2차', '3차', '거부', '연락두절', '스케줄미확정', '클로징실패', '등록완료', '매출대상', 'PT전환']
+  const FILTERS = ['전체', 'PT', 'PPT', '1차', '2차', '3차', '거부', '연락두절', '스케줄미확정', '클로징실패', '등록완료', '매출대상', 'PT전환']
 
   // 펼침
   const [expandedId, setExpandedId] = useState<string | null>(null)
@@ -73,7 +73,7 @@ export function TrainerCardList({ assignments, trainers = [], trainerId }: Props
   const [completeFailReason, setCompleteFailReason] = useState('')
 
   // 인라인 스케줄 편집
-  const [scheduleEdit, setScheduleEdit] = useState<{ assignmentId: string; sessionNumber: number; date: string; time: string; feedback?: string } | null>(null)
+  const [scheduleEdit, setScheduleEdit] = useState<{ assignmentId: string; sessionNumber: number; date: string; time: string; feedback?: string; duration: number } | null>(null)
   const [scheduleLoading, setScheduleLoading] = useState(false)
 
   // 완료된 세션 수정 모드
@@ -91,6 +91,7 @@ export function TrainerCardList({ assignments, trainers = [], trainerId }: Props
   const [addExerciseTime, setAddExerciseTime] = useState('')
   const [addExerciseGoal, setAddExerciseGoal] = useState('')
   const [addNotes, setAddNotes] = useState('')
+  const [addRole, setAddRole] = useState<'pt' | 'ppt'>('pt')
   const [addLoading, setAddLoading] = useState(false)
 
   // 회원 퀵뷰
@@ -172,6 +173,10 @@ export function TrainerCardList({ assignments, trainers = [], trainerId }: Props
     const counts: Record<string, number> = { '전체': assignments.length }
     for (const a of assignments) {
       const done = a.sessions?.filter((s) => s.completed_at).length ?? 0
+      if (trainerId && trainerId !== 'unassigned') {
+        if (a.pt_trainer_id === trainerId) counts['PT'] = (counts['PT'] ?? 0) + 1
+        if (a.ppt_trainer_id === trainerId) counts['PPT'] = (counts['PPT'] ?? 0) + 1
+      }
       if (done === 0 && !['거부','추후결정'].includes(a.status)) counts['1차'] = (counts['1차'] ?? 0) + 1
       if (done === 1) counts['2차'] = (counts['2차'] ?? 0) + 1
       if (done === 2) counts['3차'] = (counts['3차'] ?? 0) + 1
@@ -191,6 +196,8 @@ export function TrainerCardList({ assignments, trainers = [], trainerId }: Props
     if (filter === '전체') return assignments
     return assignments.filter((a) => {
       const done = a.sessions?.filter((s) => s.completed_at).length ?? 0
+      if (filter === 'PT') return a.pt_trainer_id === trainerId
+      if (filter === 'PPT') return a.ppt_trainer_id === trainerId
       if (filter === '1차') return done === 0 && !['거부','추후결정'].includes(a.status)
       if (filter === '2차') return done === 1
       if (filter === '3차') return done === 2
@@ -311,7 +318,10 @@ export function TrainerCardList({ assignments, trainers = [], trainerId }: Props
               <UserPlus className="h-3.5 w-3.5 mr-1" />회원 추가
             </Button>
           )}
-          {FILTERS.map((f) => {
+          {FILTERS.filter((f) => {
+            if ((f === 'PT' || f === 'PPT') && (!trainerId || trainerId === 'unassigned')) return false
+            return true
+          }).map((f) => {
             const count = filterCounts[f] ?? 0
             return (
               <button
@@ -359,6 +369,13 @@ export function TrainerCardList({ assignments, trainers = [], trainerId }: Props
                           <span className="font-bold text-gray-900">{a.member.name}</span>
                           {a.member.registration_source === '수기' && (
                             <span className="inline-flex items-center rounded px-1 py-0.5 text-[9px] font-bold bg-amber-100 text-amber-700 border border-amber-300">수기</span>
+                          )}
+                          {trainerId && trainerId !== 'unassigned' && (
+                            <Badge variant="outline" className={`text-[10px] px-1.5 font-bold ${
+                              a.pt_trainer_id === trainerId ? 'bg-blue-50 text-blue-700 border-blue-300' : 'bg-violet-50 text-violet-700 border-violet-300'
+                            }`}>
+                              {a.pt_trainer_id === trainerId ? 'PT' : 'PPT'}
+                            </Badge>
                           )}
                           <Badge variant="outline" className={`text-[10px] px-1.5 ${progress.color}`}>
                             {progress.label}
@@ -423,6 +440,12 @@ export function TrainerCardList({ assignments, trainers = [], trainerId }: Props
                                 const localDate = isEditingThis ? scheduleEdit!.date : (s?.scheduled_at ? format(new Date(s.scheduled_at), 'yyyy-MM-dd') : '')
                                 const localTime = isEditingThis ? scheduleEdit!.time : (s?.scheduled_at ? format(new Date(s.scheduled_at), 'HH:mm') : '')
                                 const localFeedback = isEditingThis ? scheduleEdit?.feedback ?? (s?.feedback ?? '') : (s?.feedback ?? '')
+                                const ensureEdit = (patch: Partial<typeof scheduleEdit>) => {
+                                  const base = scheduleEdit?.assignmentId === a.id && scheduleEdit?.sessionNumber === num
+                                    ? scheduleEdit
+                                    : { assignmentId: a.id, sessionNumber: num, date: localDate, time: localTime, feedback: localFeedback, duration: 30 }
+                                  setScheduleEdit({ ...base, ...patch })
+                                }
 
                                 return (
                                   <div key={num} className={`rounded-xl border-2 p-4 space-y-3 ${
@@ -439,7 +462,7 @@ export function TrainerCardList({ assignments, trainers = [], trainerId }: Props
                                           className="h-7 text-xs text-gray-500 hover:text-gray-700"
                                           onClick={() => {
                                             setEditingCompletedSession({ assignmentId: a.id, sessionNumber: num })
-                                            setScheduleEdit({ assignmentId: a.id, sessionNumber: num, date: localDate, time: localTime, feedback: localFeedback })
+                                            setScheduleEdit({ assignmentId: a.id, sessionNumber: num, date: localDate, time: localTime, feedback: localFeedback, duration: 30 })
                                           }}
                                         >
                                           <Pencil className="h-3 w-3 mr-1" />수정
@@ -478,7 +501,7 @@ export function TrainerCardList({ assignments, trainers = [], trainerId }: Props
                                           <Input
                                             type="date"
                                             value={localDate}
-                                            onChange={(e) => setScheduleEdit({ assignmentId: a.id, sessionNumber: num, date: e.target.value, time: localTime, feedback: localFeedback })}
+                                            onChange={(e) => ensureEdit({ date: e.target.value })}
                                             className="h-9 text-sm bg-white border-gray-300"
                                           />
                                         </div>
@@ -499,7 +522,7 @@ export function TrainerCardList({ assignments, trainers = [], trainerId }: Props
                                                     ? 'bg-yellow-400 text-black border-yellow-400 font-bold'
                                                     : 'bg-white text-gray-700 border-gray-300 hover:bg-gray-100'
                                                 }`}
-                                                onClick={() => setScheduleEdit({ assignmentId: a.id, sessionNumber: num, date: localDate, time: slot, feedback: localFeedback })}
+                                                onClick={() => ensureEdit({ time: slot })}
                                               >
                                                 {slot}
                                               </button>
@@ -510,6 +533,27 @@ export function TrainerCardList({ assignments, trainers = [], trainerId }: Props
                                           )}
                                         </div>
 
+                                        {/* 수업시간 */}
+                                        <div className="space-y-1">
+                                          <p className="text-xs font-medium text-gray-600">수업시간</p>
+                                          <div className="flex gap-2">
+                                            {[30, 50].map((d) => (
+                                              <button
+                                                key={d}
+                                                type="button"
+                                                className={`flex-1 rounded-md border px-3 py-2 text-sm font-bold transition-colors ${
+                                                  (scheduleEdit?.duration ?? 30) === d
+                                                    ? 'bg-yellow-400 text-black border-yellow-400'
+                                                    : 'bg-white text-gray-700 border-gray-300 hover:bg-gray-100'
+                                                }`}
+                                                onClick={() => ensureEdit({ duration: d })}
+                                              >
+                                                {d}분
+                                              </button>
+                                            ))}
+                                          </div>
+                                        </div>
+
                                         {/* 피드백 */}
                                         <div className="space-y-1">
                                           <p className="text-xs font-medium text-gray-600">피드백</p>
@@ -517,7 +561,7 @@ export function TrainerCardList({ assignments, trainers = [], trainerId }: Props
                                             className="w-full rounded-md border border-gray-300 bg-white px-3 py-2 text-sm placeholder:text-gray-400 focus:outline-none focus:ring-2 focus:ring-yellow-400 resize-y min-h-[60px]"
                                             placeholder="회원 피드백을 입력하세요"
                                             value={localFeedback}
-                                            onChange={(e) => setScheduleEdit({ assignmentId: a.id, sessionNumber: num, date: localDate, time: localTime, feedback: e.target.value })}
+                                            onChange={(e) => ensureEdit({ feedback: e.target.value })}
                                           />
                                         </div>
 
@@ -535,6 +579,7 @@ export function TrainerCardList({ assignments, trainers = [], trainerId }: Props
                                                 session_number: num,
                                                 scheduled_at: new Date(`${localDate}T${localTime}:00`).toISOString(),
                                                 feedback: localFeedback || null,
+                                                duration: scheduleEdit?.duration ?? 30,
                                               }
                                               // 완료된 세션 수정 시 completed_at 유지
                                               if (isEditingCompleted && s?.completed_at) {
@@ -604,7 +649,7 @@ export function TrainerCardList({ assignments, trainers = [], trainerId }: Props
                                 onClick={() => {
                                   const maxSession = Math.max(3, ...(a.sessions?.map(s => s.session_number) ?? [0]))
                                   const newNum = maxSession + 1
-                                  setScheduleEdit({ assignmentId: a.id, sessionNumber: newNum, date: '', time: '', feedback: '' })
+                                  setScheduleEdit({ assignmentId: a.id, sessionNumber: newNum, date: '', time: '', feedback: '', duration: 30 })
                                 }}
                               >
                                 <Plus className="h-4 w-4" /> 세션 추가 ({Math.max(3, ...(a.sessions?.map(s => s.session_number) ?? [0])) + 1}차)
@@ -1127,6 +1172,34 @@ export function TrainerCardList({ assignments, trainers = [], trainerId }: Props
             <DialogDescription>새 회원을 등록하고 이 트레이너에 배정합니다</DialogDescription>
           </DialogHeader>
           <div className="space-y-4">
+            {/* 담당 역할 */}
+            <div className="space-y-2">
+              <Label>내 담당 *</Label>
+              <div className="flex gap-2">
+                <button
+                  type="button"
+                  className={`flex-1 rounded-md border py-2.5 text-sm font-bold transition-colors ${
+                    addRole === 'pt'
+                      ? 'bg-blue-600 text-white border-blue-600'
+                      : 'bg-white text-gray-700 border-gray-300 hover:bg-gray-50'
+                  }`}
+                  onClick={() => setAddRole('pt')}
+                >
+                  PT 담당
+                </button>
+                <button
+                  type="button"
+                  className={`flex-1 rounded-md border py-2.5 text-sm font-bold transition-colors ${
+                    addRole === 'ppt'
+                      ? 'bg-purple-600 text-white border-purple-600'
+                      : 'bg-white text-gray-700 border-gray-300 hover:bg-gray-50'
+                  }`}
+                  onClick={() => setAddRole('ppt')}
+                >
+                  PPT 담당
+                </button>
+              </div>
+            </div>
             {/* 이름 * */}
             <div className="space-y-2">
               <Label>이름 *</Label>
@@ -1206,6 +1279,7 @@ export function TrainerCardList({ assignments, trainers = [], trainerId }: Props
                   name: addName,
                   phone,
                   trainerId: trainerId!,
+                  trainerRole: addRole,
                   registered_at: addDateUnknown ? undefined : addAssignDate || undefined,
                   ot_category: addCategory || null,
                   training_type: addTrainingType || undefined,
