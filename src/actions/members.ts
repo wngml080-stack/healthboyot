@@ -29,7 +29,12 @@ export async function getMembers(filters?: {
   if (filters?.trainer || filters?.status) {
     let query = supabase
       .from('ot_assignments')
-      .select('*, member:members!inner(*)')
+      .select(`
+        id, status, ot_category, pt_trainer_id, ppt_trainer_id, sales_status, contact_status,
+        is_sales_target, is_pt_conversion, created_at,
+        member:members!inner(id, name, phone, gender, ot_category, exercise_time, duration_months, detail_info, notes, registered_at, registration_source, is_existing_member, is_completed),
+        sessions:ot_sessions(id, session_number, scheduled_at, completed_at)
+      `)
       .order('created_at', { ascending: false })
       .limit(200)
 
@@ -76,16 +81,19 @@ export async function getMembers(filters?: {
   let query = supabase
     .from('members')
     .select(`
-      *,
+      id, name, phone, gender, ot_category, exercise_time, duration_months,
+      detail_info, notes, registered_at, registration_source, is_existing_member,
+      is_completed, start_date, created_at,
       assignment:ot_assignments(
-        *,
+        id, status, ot_category, pt_trainer_id, ppt_trainer_id,
+        sales_status, contact_status, is_sales_target, is_pt_conversion, created_at,
         pt_trainer:profiles!ot_assignments_pt_trainer_id_fkey(id, name),
         ppt_trainer:profiles!ot_assignments_ppt_trainer_id_fkey(id, name),
-        sessions:ot_sessions(session_number, scheduled_at, completed_at)
+        sessions:ot_sessions(id, session_number, scheduled_at, completed_at)
       )
     `)
     .order('registered_at', { ascending: false })
-    .limit(300)
+    .limit(200)
 
   if (filters?.search) {
     query = query.or(`name.ilike.%${filters.search}%,phone.ilike.%${filters.search}%`)

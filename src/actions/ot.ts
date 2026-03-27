@@ -21,14 +21,20 @@ export async function getOtAssignments(params?: {
   let query = supabase
     .from('ot_assignments')
     .select(`
-      *,
-      member:members!inner(*),
+      id, member_id, status, ot_category, pt_trainer_id, ppt_trainer_id,
+      assigned_by, notes, registration_type, registration_route,
+      expected_sales, actual_sales, week_number, membership_start_date,
+      contact_status, sales_status, expected_amount, expected_sessions,
+      closing_probability, closing_fail_reason, sales_note,
+      is_sales_target, is_pt_conversion, pt_assign_status, ppt_assign_status,
+      created_at, updated_at,
+      member:members!inner(id, name, phone, ot_category, exercise_time, duration_months, detail_info, notes, registered_at, registration_source, is_existing_member, gender, start_date, is_completed),
       pt_trainer:profiles!ot_assignments_pt_trainer_id_fkey(id, name),
       ppt_trainer:profiles!ot_assignments_ppt_trainer_id_fkey(id, name),
-      sessions:ot_sessions(session_number, scheduled_at, completed_at, feedback)
+      sessions:ot_sessions(id, session_number, scheduled_at, completed_at, feedback, exercise_content, trainer_tip, cardio_type, cardio_duration)
     `)
     .order('created_at', { ascending: false })
-    .limit(500)
+    .limit(200)
 
   if (params?.status) {
     query = query.eq('status', params.status)
@@ -141,162 +147,115 @@ export async function upsertOtSession(values: {
 
   const supabase = await createClient()
 
-  const { error } = await supabase
-    .from('ot_sessions')
-    .upsert(values, { onConflict: 'ot_assignment_id,session_number' })
-
-  if (error) return { error: error.message }
-
-  // ── 로그 기록 ──
-  try {
-    const { data: { session } } = await supabase.auth.getSession()
-    const { data: assignData } = await supabase
-      .from('ot_assignments')
-      .select('member:members!inner(name), pt_trainer:profiles!ot_assignments_pt_trainer_id_fkey(name), ppt_trainer:profiles!ot_assignments_ppt_trainer_id_fkey(name)')
+  // 1. 세션 upsert + assignment 데이터 한 번에 조회 (병렬)
+  const [upsertResult, assignResult, authResult] = await Promise.all([
+    supabase.from('ot_sessions').upsert(values, { onConflict: 'ot_assignment_id,session_number' }),
+    supabase.from('ot_assignments')
+      .select('status, pt_trainer_id, ppt_trainer_id, member:members!inner(name, phone), pt_trainer:profiles!ot_assignments_pt_trainer_id_fkey(name), ppt_trainer:profiles!ot_assignments_ppt_trainer_id_fkey(name)')
       .eq('id', values.ot_assignment_id)
-      .single()
+      .single(),
+    supabase.auth.getSession(),
+  ])
 
-    if (assignData) {
-      const memberName = (assignData.member as unknown as { name: string }).name
-      const ptName = (assignData.pt_trainer as unknown as { name: string } | null)?.name
-      const pptName = (assignData.ppt_trainer as unknown as { name: string } | null)?.name
-      const trainerLabel = [ptName, pptName].filter(Boolean).join('/')
+  if (upsertResult.error) return { error: upsertResult.error.message }
 
+  const assignData = assignResult.data
+  const userId = authResult.data?.session?.user?.id ?? null
+
+  // 2. 로그 기록 + 알림 + 상태 전환 (assignData 재사용)
+  if (assignData) {
+    const member = assignData.member as unknown as { name: string; phone: string }
+    const ptName = (assignData.pt_trainer as unknown as { name: string } | null)?.name
+    const pptName = (assignData.ppt_trainer as unknown as { name: string } | null)?.name
+    const trainerLabel = [ptName, pptName].filter(Boolean).join('/')
+
+    // 로그 기록
+    try {
       let action = ''
       let note = ''
       if (values.completed_at) {
         action = `${values.session_number}차 OT 완료`
-        note = `${memberName} 회원 — ${trainerLabel} 담당`
+        note = `${member.name} 회원 — ${trainerLabel} 담당`
       } else if (values.scheduled_at && !values.completed_at) {
         const date = new Date(values.scheduled_at)
         const dateStr = `${date.getMonth() + 1}/${date.getDate()} ${String(date.getHours()).padStart(2, '0')}:${String(date.getMinutes()).padStart(2, '0')}`
         action = `${values.session_number}차 OT 일정 등록`
-        note = `${memberName} 회원 — ${dateStr} / ${trainerLabel} 담당`
+        note = `${member.name} 회원 — ${dateStr} / ${trainerLabel} 담당`
       } else if (values.completed_at === null) {
         action = `${values.session_number}차 OT 완료 취소`
-        note = `${memberName} 회원 — ${trainerLabel} 담당`
+        note = `${member.name} 회원 — ${trainerLabel} 담당`
       }
 
       if (action) {
         await supabase.from('change_logs').insert({
-          target_type: 'ot_session',
-          target_id: values.ot_assignment_id,
-          action,
-          note,
-          changed_by: session?.user?.id ?? null,
+          target_type: 'ot_session', target_id: values.ot_assignment_id,
+          action, note, changed_by: userId,
         })
       }
-    }
-  } catch {}
+    } catch {}
 
-  // ── 알림 발송 ──
-  if (values.scheduled_at && !values.completed_at) {
+    // 알림 발송
     try {
-      const { data: assignment } = await supabase
-        .from('ot_assignments')
-        .select('member:members!inner(name, phone), pt_trainer:profiles!ot_assignments_pt_trainer_id_fkey(name)')
-        .eq('id', values.ot_assignment_id)
-        .single()
-
-      if (assignment) {
+      if (values.scheduled_at && !values.completed_at) {
         const { notifyScheduleConfirmed } = await import('./notify')
-        const member = assignment.member as unknown as { name: string; phone: string }
-        const trainer = assignment.pt_trainer as unknown as { name: string } | null
         await notifyScheduleConfirmed({
-          memberName: member.name,
-          memberPhone: member.phone,
-          trainerName: trainer?.name ?? '담당자',
-          sessionNumber: values.session_number,
+          memberName: member.name, memberPhone: member.phone,
+          trainerName: ptName ?? '담당자', sessionNumber: values.session_number,
           scheduledAt: values.scheduled_at,
         })
       }
-    } catch {}
-  }
-
-  // 3차 완료 → OT 완료 알림
-  if (values.completed_at && values.session_number === 3) {
-    try {
-      const { data: assignment } = await supabase
-        .from('ot_assignments')
-        .select('member:members!inner(name, phone)')
-        .eq('id', values.ot_assignment_id)
-        .single()
-
-      if (assignment) {
+      if (values.completed_at && values.session_number === 3) {
         const { notifyOtCompleted } = await import('./notify')
-        const member = assignment.member as unknown as { name: string; phone: string }
         await notifyOtCompleted({ memberName: member.name, memberPhone: member.phone })
       }
     } catch {}
-  }
 
-  // ── 자동 상태 전환 ──
-  // 일정 저장 → 진행중
-  if (values.scheduled_at && !values.completed_at) {
-    await supabase
-      .from('ot_assignments')
-      .update({ status: '진행중' })
-      .eq('id', values.ot_assignment_id)
-      .in('status', ['신청대기', '배정완료'])
-  }
+    // 자동 상태 전환 + trainer_schedules 동기화 (병렬)
+    const statusPromises: PromiseLike<unknown>[] = []
 
-  // 완료 처리 시 → 세션 완료 개수 확인
-  if (values.completed_at) {
-    const { data: sessions } = await supabase
-      .from('ot_sessions')
-      .select('session_number, completed_at')
-      .eq('ot_assignment_id', values.ot_assignment_id)
+    if (values.scheduled_at && !values.completed_at) {
+      // 일정 저장 → 진행중
+      if (['신청대기', '배정완료'].includes(assignData.status)) {
+        statusPromises.push(
+          supabase.from('ot_assignments').update({ status: '진행중' }).eq('id', values.ot_assignment_id).then() as Promise<unknown>
+        )
+      }
 
-    const completedCount = sessions?.filter((s) => s.completed_at).length ?? 0
-
-    if (completedCount >= 3) {
-      // 3차 완료 → 자동으로 완료 상태
-      await supabase
-        .from('ot_assignments')
-        .update({ status: '완료' })
-        .eq('id', values.ot_assignment_id)
-    }
-  }
-
-  // ── trainer_schedules 동기화 ──
-  if (values.scheduled_at && !values.completed_at) {
-    try {
-      const { data: assignData } = await supabase
-        .from('ot_assignments')
-        .select('pt_trainer_id, ppt_trainer_id, member:members!inner(name)')
-        .eq('id', values.ot_assignment_id)
-        .single()
-
-      if (assignData) {
-        const trainerId = assignData.pt_trainer_id || assignData.ppt_trainer_id
-        const memberName = (assignData.member as unknown as { name: string }).name
+      // trainer_schedules 동기화
+      const trainerId = assignData.pt_trainer_id || assignData.ppt_trainer_id
+      if (trainerId) {
         const scheduledDate = new Date(values.scheduled_at)
         const dateStr = `${scheduledDate.getFullYear()}-${String(scheduledDate.getMonth() + 1).padStart(2, '0')}-${String(scheduledDate.getDate()).padStart(2, '0')}`
         const timeStr = `${String(scheduledDate.getHours()).padStart(2, '0')}:${String(scheduledDate.getMinutes()).padStart(2, '0')}`
 
-        if (trainerId) {
-          // 기존 동일 스케줄 삭제 후 재생성
-          await supabase
-            .from('trainer_schedules')
-            .delete()
-            .eq('trainer_id', trainerId)
-            .eq('member_name', memberName)
-            .eq('schedule_type', 'OT')
-            .eq('scheduled_date', dateStr)
-
-          await supabase
-            .from('trainer_schedules')
-            .insert({
-              trainer_id: trainerId,
-              schedule_type: 'OT',
-              member_name: memberName,
-              scheduled_date: dateStr,
-              start_time: timeStr,
-              duration: 50,
-            })
-        }
+        statusPromises.push(
+          supabase.from('trainer_schedules').delete()
+            .eq('trainer_id', trainerId).eq('member_name', member.name)
+            .eq('schedule_type', 'OT').eq('scheduled_date', dateStr)
+            .then(() =>
+              supabase.from('trainer_schedules').insert({
+                trainer_id: trainerId, schedule_type: 'OT', member_name: member.name,
+                scheduled_date: dateStr, start_time: timeStr, duration: 50,
+              })
+            )
+        )
       }
-    } catch {}
+    }
+
+    if (values.completed_at) {
+      // 세션 완료 수 확인 → 3개 이상이면 자동 완료
+      statusPromises.push(
+        supabase.from('ot_sessions').select('completed_at').eq('ot_assignment_id', values.ot_assignment_id)
+          .then(({ data: sessions }) => {
+            const completedCount = sessions?.filter((s) => s.completed_at).length ?? 0
+            if (completedCount >= 3) {
+              return supabase.from('ot_assignments').update({ status: '완료' }).eq('id', values.ot_assignment_id)
+            }
+          })
+      )
+    }
+
+    await Promise.all(statusPromises)
   }
 
   return { success: true }
