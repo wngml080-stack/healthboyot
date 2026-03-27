@@ -1164,42 +1164,7 @@ export function TrainerCardList({ assignments, trainers = [], trainerId }: Props
             {/* 종목 * */}
             <div className="space-y-2">
               <Label>종목 *</Label>
-              <div className="flex gap-2">
-                {['헬스', '필라', '헬스,필라'].map((cat) => (
-                  <button
-                    key={cat}
-                    type="button"
-                    className={`flex-1 rounded-md border px-3 py-2 text-sm font-medium transition-colors ${
-                      addCategory === cat
-                        ? 'bg-yellow-400 text-black border-yellow-400 font-bold'
-                        : 'bg-white text-gray-700 border-gray-300 hover:bg-gray-50'
-                    }`}
-                    onClick={() => setAddCategory(addCategory === cat ? '' : cat)}
-                  >
-                    {cat}
-                  </button>
-                ))}
-              </div>
-            </div>
-            {/* PT / PPT */}
-            <div className="space-y-2">
-              <Label>PT / PPT</Label>
-              <div className="flex gap-2">
-                {['PT', 'PPT', 'PT,PPT'].map((t) => (
-                  <button
-                    key={t}
-                    type="button"
-                    className={`flex-1 rounded-md border px-3 py-2 text-sm font-medium transition-colors ${
-                      addTrainingType === t
-                        ? 'bg-blue-500 text-white border-blue-500 font-bold'
-                        : 'bg-white text-gray-700 border-gray-300 hover:bg-gray-50'
-                    }`}
-                    onClick={() => setAddTrainingType(addTrainingType === t ? '' : t)}
-                  >
-                    {t}
-                  </button>
-                ))}
-              </div>
+              <Input value={addCategory} onChange={(e) => setAddCategory(e.target.value)} placeholder="예: 헬스, 필라, 헬스+필라" />
             </div>
             {/* 운동기간 */}
             <div className="space-y-2">
