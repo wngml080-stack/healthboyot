@@ -1,0 +1,1 @@
+ALTER TABLE ot_assignments ADD COLUMN IF NOT EXISTS actual_sessions INTEGER NOT NULL DEFAULT 0;

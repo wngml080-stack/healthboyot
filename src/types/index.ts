@@ -45,6 +45,7 @@ export interface Member {
   registration_source?: '자동' | '수기'
   registered_at: string
   created_by: string | null
+  creator_name?: string | null
   created_at: string
   updated_at: string
 }
@@ -103,6 +104,120 @@ export interface WorkLog {
   log_type: LogType
   content: string | null
   created_at: string
+}
+
+// ── 신규회원 상담카드 ──
+export interface ConsultationCard {
+  id: string
+  member_id: string | null
+  status: '미연결' | '연결완료'
+  member_name: string | null
+  member_phone: string | null
+  member_gender: string | null
+  fc_name: string | null
+  consultation_date: string | null
+  registration_product: string | null
+  expiry_date: string | null
+  age: string | null
+  occupation: string | null
+  exercise_time_preference: string | null
+  instagram_id: string | null
+  residence_area: string | null
+  desired_body_type: string | null
+  referral_sources: string[]
+  referral_detail: string | null
+  exercise_goals: string[]
+  medical_conditions: string[]
+  medical_detail: string | null
+  surgery_history: string | null
+  surgery_detail: string | null
+  exercise_experiences: string[]
+  exercise_experience_detail: string | null
+  exercise_duration: string | null
+  pt_satisfaction: string | null
+  pt_satisfaction_reason: string | null
+  exercise_personality: string[]
+  exercise_goal_detail: string | null
+  body_correction_area: string | null
+  exercise_experience_history: string | null
+  created_by: string | null
+  created_at: string
+  updated_at: string
+}
+
+// ── OT 프로그램 ──
+export interface OtProgramExercise {
+  name: string
+  weight: string
+  sets: string
+}
+
+export interface OtProgramSession {
+  date: string
+  time: string
+  exercises: OtProgramExercise[]
+  tip: string
+  next_ot_date: string
+  cardio: { types: string[]; duration_min: string }
+  inbody: boolean
+  images: string[]
+  completed: boolean
+}
+
+export interface OtProgramConsultationData {
+  exercise_goals: string[]
+  exercise_goal_detail: string | null
+  body_correction_area: string | null
+  medical_conditions: string[]
+  medical_detail: string | null
+  surgery_detail: string | null
+  exercise_experiences: string[]
+  exercise_experience_history: string | null
+  exercise_duration: string | null
+  exercise_personality: string[]
+  desired_body_type: string | null
+}
+
+export interface OtProgramInbodyData {
+  current_weight: string
+  target_weight: string
+  current_body_fat: string
+  target_body_fat: string
+  current_muscle_mass: string
+  target_muscle_mass: string
+  current_bmr: string
+  target_bmr: string
+}
+
+export type OtProgramApprovalStatus = '작성중' | '제출완료' | '승인' | '반려'
+
+export interface OtProgram {
+  id: string
+  ot_assignment_id: string
+  member_id: string
+  trainer_name: string | null
+  athletic_goal: string | null
+  total_sets_per_day: number | null
+  recommended_days_per_week: number | null
+  exercise_duration_min: number | null
+  target_heart_rate: number | null
+  member_start_date: string | null
+  member_end_date: string | null
+  session_1?: OtProgramSession
+  session_2?: OtProgramSession
+  session_3?: OtProgramSession
+  sessions: OtProgramSession[]
+  consultation_data: OtProgramConsultationData
+  inbody_data: OtProgramInbodyData
+  images: string[]
+  approval_status: OtProgramApprovalStatus
+  submitted_at: string | null
+  approved_at: string | null
+  approved_by: string | null
+  rejection_reason: string | null
+  created_by: string | null
+  created_at: string
+  updated_at: string
 }
 
 // ── JOIN 결과 타입 ──

@@ -2,7 +2,7 @@
 
 import Link from 'next/link'
 import { usePathname } from 'next/navigation'
-import { LayoutDashboard, ClipboardList, Users, BarChart3, LogOut } from 'lucide-react'
+import { LayoutDashboard, ClipboardList, Users, BarChart3, FileText, CheckSquare, LogOut } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { NAV_ITEMS } from '@/lib/constants'
 import { signOut } from '@/actions/auth'
@@ -16,6 +16,8 @@ const iconMap = {
   ClipboardList,
   Users,
   BarChart3,
+  FileText,
+  CheckSquare,
 } as const
 
 interface SidebarProps {

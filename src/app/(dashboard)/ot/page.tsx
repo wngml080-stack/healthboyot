@@ -114,7 +114,7 @@ export default async function OtPage({ searchParams }: OtPageProps) {
         <TrainerSubNav trainerId={trainerId} />
         <div className="flex-1 min-w-0">
           {tab === 'members' && (
-            <TrainerCardList assignments={trainerAssignments} trainers={allTrainers} trainerId={trainerId} />
+            <TrainerCardList assignments={trainerAssignments} trainers={allTrainers} trainerId={trainerId} trainerName={trainerName} profile={profile ?? undefined} />
           )}
 
           {tab === 'schedule' && (

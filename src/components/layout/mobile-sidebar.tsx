@@ -3,7 +3,7 @@
 import { useState } from 'react'
 import Link from 'next/link'
 import { usePathname } from 'next/navigation'
-import { Menu, LayoutDashboard, ClipboardList, Users, BarChart3, LogOut } from 'lucide-react'
+import { Menu, LayoutDashboard, ClipboardList, Users, BarChart3, FileText, CheckSquare, LogOut } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { NAV_ITEMS } from '@/lib/constants'
 import { signOut } from '@/actions/auth'
@@ -13,12 +13,14 @@ import { Avatar, AvatarFallback } from '@/components/ui/avatar'
 import { Separator } from '@/components/ui/separator'
 import type { Profile } from '@/types'
 
-const iconMap = {
+const iconMap: Record<string, React.ComponentType<{ className?: string }>> = {
   LayoutDashboard,
   ClipboardList,
   Users,
   BarChart3,
-} as const
+  FileText,
+  CheckSquare,
+}
 
 interface Props {
   profile: Profile

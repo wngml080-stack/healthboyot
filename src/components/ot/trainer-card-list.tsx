@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useMemo, useTransition } from 'react'
+import { useState, useMemo, useTransition, useCallback, useEffect, useRef } from 'react'
 import { useRouter } from 'next/navigation'
 import { format } from 'date-fns'
 import { ko } from 'date-fns/locale'
@@ -16,15 +16,21 @@ import {
   DialogTitle,
   DialogDescription,
 } from '@/components/ui/dialog'
-import { CheckCircle, User, AlertTriangle, BarChart3, CalendarDays, Pencil, Plus, Undo2, UserPlus } from 'lucide-react'
+import { CheckCircle, User, AlertTriangle, BarChart3, CalendarDays, ClipboardList, Pencil, Plus, Undo2, UserPlus, Send } from 'lucide-react'
 import { upsertOtSession, updateOtAssignment } from '@/actions/ot'
+import { getOtProgram, upsertOtProgram, submitOtProgram } from '@/actions/ot-program'
 import { quickRegisterMember } from '@/actions/members'
-import type { OtAssignmentWithDetails, SalesStatus, Profile } from '@/types'
+import { createClient } from '@/lib/supabase/client'
+import { OtProgramForm } from './ot-program-form'
+import type { OtProgramFormRef } from './ot-program-form'
+import type { OtAssignmentWithDetails, SalesStatus, Profile, OtProgram } from '@/types'
 
 interface Props {
   assignments: OtAssignmentWithDetails[]
   trainers?: Pick<Profile, 'id' | 'name'>[]
   trainerId?: string
+  trainerName?: string
+  profile?: Profile
 }
 
 const SALES_STATUSES: { value: SalesStatus; label: string; color: string }[] = [
@@ -45,10 +51,36 @@ const CARDIO_OPTIONS = ['러닝머신', '싸이클', '스텝퍼']
 const CARDIO_DURATIONS = [10, 15, 20, 30]
 
 // eslint-disable-next-line @typescript-eslint/no-unused-vars
-export function TrainerCardList({ assignments, trainers = [], trainerId }: Props) {
+export function TrainerCardList({ assignments, trainers = [], trainerId, trainerName = '', profile }: Props) {
   const router = useRouter()
   const [, startTransition] = useTransition()
   const today = new Date().toISOString().split('T')[0]
+
+  // trainer_schedules에서 해당 트레이너의 전체 스케줄 로드
+  const [trainerSchedules, setTrainerSchedules] = useState<{ member_name: string; schedule_type: string; scheduled_date: string; start_time: string }[]>([])
+  const [scheduleRefresh, setScheduleRefresh] = useState(0)
+  const refreshSchedules = useCallback(() => setScheduleRefresh((n) => n + 1), [])
+  useEffect(() => {
+    if (!trainerId) return
+    const supabase = createClient()
+    supabase.from('trainer_schedules')
+      .select('member_name, schedule_type, scheduled_date, start_time')
+      .eq('trainer_id', trainerId)
+      .then(({ data }: { data: { member_name: string; schedule_type: string; scheduled_date: string; start_time: string }[] | null }) => setTrainerSchedules(data ?? []))
+  }, [trainerId, scheduleRefresh])
+
+  // 날짜별 예약된 시간 슬롯 조회
+  const getBookedSlots = useCallback((date: string, excludeMemberName?: string) => {
+    const booked = new Map<string, string>()
+    if (!date) return booked
+    for (const s of trainerSchedules) {
+      if (s.scheduled_date !== date) continue
+      if (s.member_name === excludeMemberName && s.schedule_type === 'OT') continue
+      const label = s.schedule_type === 'OT' ? `${s.member_name} OT` : `${s.member_name} ${s.schedule_type}`
+      booked.set(s.start_time, label)
+    }
+    return booked
+  }, [trainerSchedules])
 
   // 필터
   const [filter, setFilter] = useState<string>('전체')
@@ -71,6 +103,9 @@ export function TrainerCardList({ assignments, trainers = [], trainerId }: Props
   const [completeLoading, setCompleteLoading] = useState(false)
   const [completeResult, setCompleteResult] = useState<string>('')
   const [completeFailReason, setCompleteFailReason] = useState('')
+  const [completeProgramData, setCompleteProgramData] = useState<OtProgram | null>(null)
+  const [completeProgramLoading, setCompleteProgramLoading] = useState(false)
+  const programFormRef = useRef<OtProgramFormRef>(null)
 
   // 인라인 스케줄 편집
   const [scheduleEdit, setScheduleEdit] = useState<{ assignmentId: string; sessionNumber: number; date: string; time: string; feedback?: string; duration: number } | null>(null)
@@ -217,7 +252,7 @@ export function TrainerCardList({ assignments, trainers = [], trainerId }: Props
     return completed + 1
   }
 
-  const handleCompleteOpen = (a: OtAssignmentWithDetails, sessionNumber: number) => {
+  const handleCompleteOpen = async (a: OtAssignmentWithDetails, sessionNumber: number) => {
     setCompleteTarget({ assignment: a, sessionNumber })
     setExercises([{ name: '', sets: 3, reps: 12 }])
     setTrainerTip('')
@@ -227,6 +262,11 @@ export function TrainerCardList({ assignments, trainers = [], trainerId }: Props
     setNextTime('')
     setCompleteResult('')
     setCompleteFailReason('')
+    // OT 프로그램 데이터 불러오기
+    setCompleteProgramLoading(true)
+    const prog = await getOtProgram(a.id)
+    setCompleteProgramData(prog)
+    setCompleteProgramLoading(false)
   }
 
   const handleCompleteSubmit = async () => {
@@ -234,6 +274,18 @@ export function TrainerCardList({ assignments, trainers = [], trainerId }: Props
     setCompleteLoading(true)
 
     const { assignment, sessionNumber } = completeTarget
+
+    // 1. OT 프로그램 폼 데이터 저장
+    if (programFormRef.current) {
+      programFormRef.current.markSessionCompleted(sessionNumber - 1)
+      await new Promise((r) => setTimeout(r, 100))
+      const saveResult = await programFormRef.current.saveData()
+      if (saveResult.error) {
+        setCompleteLoading(false)
+        alert('프로그램 저장 실패: ' + saveResult.error)
+        return
+      }
+    }
 
     // exercises를 텍스트로 변환
     const exerciseText = exercises
@@ -284,6 +336,7 @@ export function TrainerCardList({ assignments, trainers = [], trainerId }: Props
 
     setCompleteTarget(null)
     setCompleteLoading(false)
+    refreshSchedules()
     startTransition(() => router.refresh())
   }
 
@@ -662,6 +715,9 @@ export function TrainerCardList({ assignments, trainers = [], trainerId }: Props
                             <Button size="sm" className="bg-blue-600 hover:bg-blue-700 text-white" onClick={(e) => { e.stopPropagation(); openSalesEdit(a) }}>
                               <BarChart3 className="h-4 w-4 mr-1" />세일즈 관리
                             </Button>
+                            <Button size="sm" className="bg-emerald-600 hover:bg-emerald-700 text-white" onClick={(e) => { e.stopPropagation(); handleCompleteOpen(a, getNextSessionNumber(a)) }}>
+                              <ClipboardList className="h-4 w-4 mr-1" />프로그램
+                            </Button>
                             <Button size="sm" variant="outline" className="text-white bg-gray-800 border-gray-700" onClick={(e) => { e.stopPropagation(); router.push(`/ot/${a.id}`) }}>
                               상세 페이지
                             </Button>
@@ -677,18 +733,41 @@ export function TrainerCardList({ assignments, trainers = [], trainerId }: Props
         </Card>
       </div>
 
-      {/* 완료 처리 바텀시트 */}
-      <Dialog open={!!completeTarget} onOpenChange={() => setCompleteTarget(null)}>
-        <DialogContent className="max-w-md max-h-[90vh] overflow-y-auto">
+      {/* 완료 처리 — OT 프로그램 팝업 */}
+      <Dialog open={!!completeTarget} onOpenChange={(open) => {
+        if (!open) {
+          if (window.confirm('작성 중인 내용이 있습니다. 닫으시겠습니까?')) {
+            setCompleteTarget(null)
+          }
+        }
+      }}>
+        <DialogContent className="max-w-4xl max-h-[95vh] overflow-y-auto" onPointerDownOutside={(e) => e.preventDefault()} onEscapeKeyDown={(e) => e.preventDefault()}>
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2">
-              <CheckCircle className="h-5 w-5 text-green-600" />
+              <ClipboardList className="h-5 w-5 text-blue-600" />
               {completeTarget?.assignment.member.name} {completeTarget?.sessionNumber}차 OT 완료
             </DialogTitle>
-            <DialogDescription>OT 기록을 입력해주세요</DialogDescription>
+            <DialogDescription>OT 프로그램을 작성하고 완료 처리해주세요</DialogDescription>
           </DialogHeader>
-          <div className="space-y-4">
-            {/* 운동 내용 */}
+          {completeProgramLoading ? (
+            <div className="flex items-center justify-center py-12 text-gray-400">불러오는 중...</div>
+          ) : completeTarget && profile ? (
+            <div className="space-y-4">
+              <OtProgramForm
+                ref={programFormRef}
+                assignment={completeTarget.assignment}
+                program={completeProgramData}
+                profile={profile}
+                hideButtons
+                onSaved={async () => {
+                  const updated = await getOtProgram(completeTarget.assignment.id)
+                  setCompleteProgramData(updated)
+                }}
+              />
+            </div>
+          ) : null}
+          {!profile && <div className="space-y-4">
+            {/* 운동 내용 (프로그램 폼이 없을 때 fallback) */}
             <div className="space-y-2">
               <Label>운동 내용</Label>
               <div className="space-y-2">
@@ -867,7 +946,86 @@ export function TrainerCardList({ assignments, trainers = [], trainerId }: Props
             >
               {completeLoading ? '저장 중...' : '완료 저장'}
             </Button>
-          </div>
+          </div>}
+
+          {/* 다음 OT 일정 + 결과 분류 + 완료 버튼 (프로그램 폼이 있을 때) */}
+          {profile && completeTarget && (
+            <div className="space-y-4">
+              {completeTarget.sessionNumber < 3 && (
+                <div className="border-t pt-4 space-y-2">
+                  <Label className="font-bold">다음 OT 일정 ({completeTarget.sessionNumber + 1}차)</Label>
+                  <div className="flex gap-2">
+                    <Input type="date" value={nextDate} onChange={(e) => setNextDate(e.target.value)} min={today} className="flex-1" />
+                    <select className="flex-1 rounded-md border border-gray-300 bg-white px-3 py-2 text-sm" value={nextTime} onChange={(e) => setNextTime(e.target.value)}>
+                      <option value="">시간 선택</option>
+                      {(() => {
+                        const booked = getBookedSlots(nextDate)
+                        return TIME_SLOTS.map((t) => {
+                          const bookedBy = booked.get(t)
+                          return <option key={t} value={t} disabled={!!bookedBy}>{bookedBy ? `${t} (${bookedBy})` : t}</option>
+                        })
+                      })()}
+                    </select>
+                  </div>
+                </div>
+              )}
+
+              <div className="border-t pt-4 space-y-2">
+                <Label className="font-bold">결과 분류 <span className="text-xs text-gray-400 font-normal">(선택)</span></Label>
+                <div className="grid grid-cols-2 gap-2">
+                  {[
+                    { value: '매출대상', label: '매출대상', color: 'bg-yellow-400 text-black border-yellow-400' },
+                    { value: '등록완료', label: '등록완료', color: 'bg-blue-500 text-white border-blue-500' },
+                    { value: '클로징실패', label: '클로징실패', color: 'bg-red-500 text-white border-red-500' },
+                    { value: '거부자', label: '거부자', color: 'bg-orange-500 text-white border-orange-500' },
+                  ].map((opt) => (
+                    <button key={opt.value} type="button" className={`rounded-md border px-3 py-2 text-sm font-medium transition-colors ${completeResult === opt.value ? opt.color : 'bg-white text-gray-700 border-gray-300 hover:bg-gray-50'}`} onClick={() => setCompleteResult(completeResult === opt.value ? '' : opt.value)}>
+                      {opt.label}
+                    </button>
+                  ))}
+                </div>
+                {completeResult === '클로징실패' && (
+                  <Input placeholder="실패 사유 (선택)" value={completeFailReason} onChange={(e) => setCompleteFailReason(e.target.value)} />
+                )}
+              </div>
+
+              <div className="flex gap-2">
+                <Button className="flex-1 bg-green-600 hover:bg-green-700 text-white h-12 text-base" onClick={handleCompleteSubmit} disabled={completeLoading}>
+                  <CheckCircle className="h-5 w-5 mr-2" />
+                  {completeLoading ? '저장 중...' : `${completeTarget.sessionNumber}차 OT 완료 저장`}
+                </Button>
+                <Button className="flex-1 bg-blue-600 hover:bg-blue-700 text-white h-12 text-base" disabled={completeLoading} onClick={async () => {
+                  // 먼저 완료 저장
+                  await handleCompleteSubmit()
+                  // 프로그램 제출
+                  if (completeProgramData?.id) {
+                    const result = await submitOtProgram(completeProgramData.id)
+                    if (result.error) {
+                      alert('전송 실패: ' + result.error)
+                    } else {
+                      alert('관리자에게 프로그램이 전송되었습니다.')
+                    }
+                  } else {
+                    // 프로그램이 아직 저장 안 된 경우 — 먼저 저장 후 제출
+                    if (programFormRef.current) {
+                      const saveResult = await programFormRef.current.saveData()
+                      if (!saveResult.error) {
+                        const prog = await getOtProgram(completeTarget.assignment.id)
+                        if (prog?.id) {
+                          const result = await submitOtProgram(prog.id)
+                          if (result.error) alert('전송 실패: ' + result.error)
+                          else alert('관리자에게 프로그램이 전송되었습니다.')
+                        }
+                      }
+                    }
+                  }
+                }}>
+                  <Send className="h-5 w-5 mr-2" />
+                  {completeLoading ? '전송 중...' : '완료 + 관리자 전송'}
+                </Button>
+              </div>
+            </div>
+          )}
         </DialogContent>
       </Dialog>
 
