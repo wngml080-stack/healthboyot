@@ -31,6 +31,7 @@ interface Props {
   trainerId?: string
   trainerName?: string
   profile?: Profile
+  initialSchedules?: { member_name: string; schedule_type: string; scheduled_date: string; start_time: string }[]
 }
 
 const SALES_STATUSES: { value: SalesStatus; label: string; color: string }[] = [
@@ -46,22 +47,34 @@ const PROBABILITY_OPTIONS = [20, 40, 60, 80, 100]
 const getSalesColor = (status: string) =>
   SALES_STATUSES.find((s) => s.value === status)?.color ?? 'bg-gray-100 text-gray-700'
 
-const TIME_SLOTS = ['06:00','07:00','08:00','09:00','10:00','11:00','12:00','13:00','14:00','15:00','16:00','17:00','18:00','19:00','20:00','21:00','22:00']
+const TIME_SLOTS = [
+  '06:00','06:30','07:00','07:30','08:00','08:30','09:00','09:30',
+  '10:00','10:30','11:00','11:30','12:00','12:30','13:00','13:30',
+  '14:00','14:30','15:00','15:30','16:00','16:30','17:00','17:30',
+  '18:00','18:30','19:00','19:30','20:00','20:30','21:00','21:30','22:00',
+]
 const CARDIO_OPTIONS = ['러닝머신', '싸이클', '스텝퍼']
 const CARDIO_DURATIONS = [10, 15, 20, 30]
 
 // eslint-disable-next-line @typescript-eslint/no-unused-vars
-export function TrainerCardList({ assignments, trainers = [], trainerId, trainerName = '', profile }: Props) {
+export function TrainerCardList({ assignments, trainers = [], trainerId, trainerName = '', profile, initialSchedules }: Props) {
   const router = useRouter()
   const [, startTransition] = useTransition()
   const today = new Date().toISOString().split('T')[0]
 
   // trainer_schedules에서 해당 트레이너의 전체 스케줄 로드
-  const [trainerSchedules, setTrainerSchedules] = useState<{ member_name: string; schedule_type: string; scheduled_date: string; start_time: string }[]>([])
+  // 첫 마운트 시점에는 서버에서 받은 initialSchedules를 사용 → client-side waterfall 제거
+  const [trainerSchedules, setTrainerSchedules] = useState<{ member_name: string; schedule_type: string; scheduled_date: string; start_time: string }[]>(initialSchedules ?? [])
   const [scheduleRefresh, setScheduleRefresh] = useState(0)
   const refreshSchedules = useCallback(() => setScheduleRefresh((n) => n + 1), [])
+  // initialSchedules가 있으면 첫 fetch 스킵 (refresh 트리거 시에만 다시 로드)
+  const initialFetchSkippedRef = useRef(!!initialSchedules)
   useEffect(() => {
     if (!trainerId) return
+    if (initialFetchSkippedRef.current) {
+      initialFetchSkippedRef.current = false
+      return
+    }
     const supabase = createClient()
     supabase.from('trainer_schedules')
       .select('member_name, schedule_type, scheduled_date, start_time')
@@ -204,9 +217,11 @@ export function TrainerCardList({ assignments, trainers = [], trainerId, trainer
   }
 
   // 필터 카운트를 한 번에 계산 (useMemo로 캐시)
+  // PT 수기 회원은 OT 시스템 외부이므로 카운트에서도 제외
   const filterCounts = useMemo(() => {
-    const counts: Record<string, number> = { '전체': assignments.length }
-    for (const a of assignments) {
+    const otOnly = assignments.filter((a) => a.member.registration_source !== '수기')
+    const counts: Record<string, number> = { '전체': otOnly.length }
+    for (const a of otOnly) {
       const done = a.sessions?.filter((s) => s.completed_at).length ?? 0
       if (trainerId && trainerId !== 'unassigned') {
         if (a.pt_trainer_id === trainerId) counts['PT'] = (counts['PT'] ?? 0) + 1
@@ -226,10 +241,17 @@ export function TrainerCardList({ assignments, trainers = [], trainerId, trainer
     return counts
   }, [assignments])
 
+  // 회원관리 탭은 OT 회원만 — PT 수기 등록 회원(registration_source === '수기')은 제외.
+  // PT 회원은 OT 일정이 필요 없으므로 캘린더에서만 시간 기록하고, 회원관리 리스트에서는 안 보임.
+  const otOnlyAssignments = useMemo(
+    () => assignments.filter((a) => a.member.registration_source !== '수기'),
+    [assignments],
+  )
+
   // 필터링된 회원
   const filteredMembers = useMemo(() => {
-    if (filter === '전체') return assignments
-    return assignments.filter((a) => {
+    if (filter === '전체') return otOnlyAssignments
+    return otOnlyAssignments.filter((a) => {
       const done = a.sessions?.filter((s) => s.completed_at).length ?? 0
       if (filter === 'PT') return a.pt_trainer_id === trainerId
       if (filter === 'PPT') return a.ppt_trainer_id === trainerId
@@ -245,7 +267,7 @@ export function TrainerCardList({ assignments, trainers = [], trainerId, trainer
       if (filter === 'PT전환') return a.is_pt_conversion
       return true
     })
-  }, [assignments, filter])
+  }, [otOnlyAssignments, filter, trainerId])
 
   const getNextSessionNumber = (a: OtAssignmentWithDetails): number => {
     const completed = a.sessions?.filter((s) => s.completed_at).length ?? 0
@@ -423,13 +445,24 @@ export function TrainerCardList({ assignments, trainers = [], trainerId, trainer
                           {a.member.registration_source === '수기' && (
                             <span className="inline-flex items-center rounded px-1 py-0.5 text-[9px] font-bold bg-amber-100 text-amber-700 border border-amber-300">수기</span>
                           )}
-                          {trainerId && trainerId !== 'unassigned' && (
-                            <Badge variant="outline" className={`text-[10px] px-1.5 font-bold ${
-                              a.pt_trainer_id === trainerId ? 'bg-blue-50 text-blue-700 border-blue-300' : 'bg-violet-50 text-violet-700 border-violet-300'
-                            }`}>
-                              {a.pt_trainer_id === trainerId ? 'PT' : 'PPT'}
-                            </Badge>
-                          )}
+                          {trainerId && trainerId !== 'unassigned' && (() => {
+                            const isPt = a.pt_trainer_id === trainerId
+                            const role = isPt ? 'PT' : 'PPT'
+                            // 수기 등록 회원 (OT 시스템 외부에서 트레이너가 직접 추가한 PT 회원)은
+                            // 일반 PT/PPT와 시각적으로 구분 — 노란색 배경 + 검정 글자 + "PT 회원" 라벨
+                            const isManual = a.member.registration_source === '수기'
+                            return (
+                              <Badge variant="outline" className={`text-[10px] px-1.5 font-bold ${
+                                isManual
+                                  ? 'bg-yellow-300 text-black border-yellow-500'
+                                  : isPt
+                                    ? 'bg-blue-50 text-blue-700 border-blue-300'
+                                    : 'bg-violet-50 text-violet-700 border-violet-300'
+                              }`}>
+                                {isManual ? `${role} 회원` : role}
+                              </Badge>
+                            )
+                          })()}
                           <Badge variant="outline" className={`text-[10px] px-1.5 ${progress.color}`}>
                             {progress.label}
                           </Badge>
@@ -465,7 +498,7 @@ export function TrainerCardList({ assignments, trainers = [], trainerId, trainer
                         <div className="border-t border-gray-200 bg-gray-50 p-4 space-y-4">
                           {/* 상세 정보 */}
                           <div className="grid grid-cols-2 md:grid-cols-4 gap-3 text-sm">
-                            <div><p className="text-xs text-gray-500">연락처</p><p className="font-medium">{a.member.phone.replace(/(\d{3})(\d{4})(\d{4})/, '$1-$2-$3')}</p></div>
+                            <div><p className="text-xs text-gray-500">연락처</p><p className="font-medium">{a.member.phone ? a.member.phone.replace(/(\d{3})(\d{4})(\d{4})/, '$1-$2-$3') : '-'}</p></div>
                             <div><p className="text-xs text-gray-500">성별</p><p className="font-medium">{a.member.gender ?? '-'}</p></div>
                             <div><p className="text-xs text-gray-500">운동기간</p><p className="font-medium">{a.member.duration_months ?? '-'}</p></div>
                             <div><p className="text-xs text-gray-500">PT담당</p><p className="font-medium">{a.pt_trainer?.name ?? '미배정'}</p></div>
@@ -581,6 +614,17 @@ export function TrainerCardList({ assignments, trainers = [], trainerId, trainer
                                               </button>
                                             ))}
                                           </div>
+                                          {/* 10분 단위 수동 입력 (10분 단위로 step) */}
+                                          <div className="flex items-center gap-2 mt-2">
+                                            <span className="text-[11px] text-gray-500 shrink-0">직접 입력</span>
+                                            <Input
+                                              type="time"
+                                              step={600}
+                                              value={localTime}
+                                              onChange={(e) => ensureEdit({ time: e.target.value })}
+                                              className="h-8 text-xs bg-white border-gray-300 w-32"
+                                            />
+                                          </div>
                                           {a.member.exercise_time && (
                                             <p className="text-[11px] text-blue-600 mt-1">회원 희망: {a.member.exercise_time}</p>
                                           )}
@@ -630,7 +674,8 @@ export function TrainerCardList({ assignments, trainers = [], trainerId, trainer
                                               const sessionData: Parameters<typeof upsertOtSession>[0] = {
                                                 ot_assignment_id: a.id,
                                                 session_number: num,
-                                                scheduled_at: new Date(`${localDate}T${localTime}:00`).toISOString(),
+                                                // KST(+09:00) 명시로 사용자 로컬 타임존 영향 제거
+                                                scheduled_at: new Date(`${localDate}T${localTime}:00+09:00`).toISOString(),
                                                 feedback: localFeedback || null,
                                                 duration: scheduleEdit?.duration ?? 30,
                                               }

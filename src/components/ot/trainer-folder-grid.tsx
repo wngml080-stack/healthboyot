@@ -35,11 +35,12 @@ interface Props {
   folders: TrainerFolder[]
   allStaff: Pick<Profile, 'id' | 'name' | 'role' | 'is_approved'>[]
   currentUserRole: string
+  currentUserId?: string
 }
 
-const FULL_ACCESS_ROLES = ['admin', '관리자', 'fc']
+const FULL_ACCESS_ROLES = ['admin', '관리자', 'fc', 'trainer', '트레이너', '팀장']
 
-export function TrainerFolderGrid({ folders, allStaff, currentUserRole }: Props) {
+export function TrainerFolderGrid({ folders, allStaff, currentUserRole, currentUserId }: Props) {
   const router = useRouter()
   const isAdmin = currentUserRole === 'admin' || currentUserRole === '관리자'
   const canOpenFolder = FULL_ACCESS_ROLES.includes(currentUserRole)
@@ -77,8 +78,9 @@ export function TrainerFolderGrid({ folders, allStaff, currentUserRole }: Props)
       return
     }
 
-    // 관리자/FC는 비밀번호 없이 바로 접근
-    if (isAdmin) {
+    // 관리자는 비밀번호 없이 바로 접근
+    // 본인 폴더(folder.id === currentUserId)도 비밀번호 없이 바로 접근
+    if (isAdmin || (currentUserId && folder.id === currentUserId)) {
       router.push(`/ot?trainer=${folder.id}`)
       return
     }
@@ -205,7 +207,7 @@ export function TrainerFolderGrid({ folders, allStaff, currentUserRole }: Props)
 
                   <div className="grid grid-cols-4 gap-2 mt-4">
                     <StatItem value={folder.stats.inProgress} label="금일 OT" color="text-green-600" />
-                    <StatItem value={folder.stats.pending} label="매출대상자" color="text-red-500" />
+                    <StatItem value={folder.stats.pending} label="금일 매출대상자" color="text-red-500" />
                     <StatItem value={folder.stats.completed} label="PT전환" color="text-blue-600" />
                     <StatItem value={folder.stats.total} label="전체회원" color="text-gray-900" />
                   </div>

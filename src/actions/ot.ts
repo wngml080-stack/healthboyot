@@ -61,11 +61,17 @@ export async function getOtAssignment(id: string): Promise<OtAssignmentWithDetai
   const { data, error } = await supabase
     .from('ot_assignments')
     .select(`
-      *,
-      member:members!inner(*),
+      id, member_id, status, ot_category, pt_trainer_id, ppt_trainer_id,
+      assigned_by, notes, registration_type, registration_route,
+      expected_sales, actual_sales, week_number, membership_start_date,
+      contact_status, sales_status, expected_amount, expected_sessions,
+      closing_probability, closing_fail_reason, sales_note,
+      is_sales_target, is_pt_conversion, pt_assign_status, ppt_assign_status,
+      created_at, updated_at,
+      member:members!inner(id, name, phone, gender, sports, ot_category, exercise_time, duration_months, injury_tags, detail_info, notes, registered_at, registration_source, is_existing_member, start_date, is_completed),
       pt_trainer:profiles!ot_assignments_pt_trainer_id_fkey(id, name),
       ppt_trainer:profiles!ot_assignments_ppt_trainer_id_fkey(id, name),
-      sessions:ot_sessions(*)
+      sessions:ot_sessions(id, ot_assignment_id, session_number, scheduled_at, completed_at, feedback, exercise_content, trainer_tip, cardio_type, cardio_duration, created_at, updated_at)
     `)
     .eq('id', id)
     .single()
@@ -156,10 +162,14 @@ export async function upsertOtSession(values: {
   const durationMin = scheduleDuration ?? 30
 
   // 1. 세션 upsert + assignment 데이터 한 번에 조회 (병렬)
+  // upsert에 select().single()을 붙여 새/기존 세션 id를 받아서 trainer_schedules 매핑에 사용
   const [upsertResult, assignResult, authResult] = await Promise.all([
-    supabase.from('ot_sessions').upsert(sessionValues, { onConflict: 'ot_assignment_id,session_number' }),
+    supabase.from('ot_sessions')
+      .upsert(sessionValues, { onConflict: 'ot_assignment_id,session_number' })
+      .select('id')
+      .single(),
     supabase.from('ot_assignments')
-      .select('status, pt_trainer_id, ppt_trainer_id, member:members!inner(name, phone), pt_trainer:profiles!ot_assignments_pt_trainer_id_fkey(name), ppt_trainer:profiles!ot_assignments_ppt_trainer_id_fkey(name)')
+      .select('status, pt_trainer_id, ppt_trainer_id, member_id, member:members!inner(name, phone), pt_trainer:profiles!ot_assignments_pt_trainer_id_fkey(name), ppt_trainer:profiles!ot_assignments_ppt_trainer_id_fkey(name)')
       .eq('id', values.ot_assignment_id)
       .single(),
     supabase.auth.getSession(),
@@ -168,6 +178,7 @@ export async function upsertOtSession(values: {
   if (upsertResult.error) return { error: upsertResult.error.message }
 
   const assignData = assignResult.data
+  const sessionId = upsertResult.data?.id as string | undefined
   const userId = authResult.data?.session?.user?.id ?? null
 
   // 2. 로그 기록 + 알림 + 상태 전환 (assignData 재사용)
@@ -185,8 +196,10 @@ export async function upsertOtSession(values: {
         action = `${values.session_number}차 OT 완료`
         note = `${member.name} 회원 — ${trainerLabel} 담당`
       } else if (values.scheduled_at && !values.completed_at) {
-        const date = new Date(values.scheduled_at)
-        const dateStr = `${date.getMonth() + 1}/${date.getDate()} ${String(date.getHours()).padStart(2, '0')}:${String(date.getMinutes()).padStart(2, '0')}`
+        // KST(UTC+9) 기준 — Vercel은 UTC라서 getHours()는 UTC를 반환하므로 +9h offset 적용
+        const kst = new Date(new Date(values.scheduled_at).getTime() + 9 * 60 * 60 * 1000)
+        const pad = (n: number) => String(n).padStart(2, '0')
+        const dateStr = `${kst.getUTCMonth() + 1}/${kst.getUTCDate()} ${pad(kst.getUTCHours())}:${pad(kst.getUTCMinutes())}`
         action = `${values.session_number}차 OT 일정 등록`
         note = `${member.name} 회원 — ${dateStr} / ${trainerLabel} 담당`
       } else if (values.completed_at === null) {
@@ -232,18 +245,28 @@ export async function upsertOtSession(values: {
       // trainer_schedules 동기화 (PT + PPT 둘 다 생성)
       const trainerIds = [assignData.pt_trainer_id, assignData.ppt_trainer_id].filter(Boolean) as string[]
       if (trainerIds.length > 0) {
-        const scheduledDate = new Date(values.scheduled_at)
-        const dateStr = `${scheduledDate.getFullYear()}-${String(scheduledDate.getMonth() + 1).padStart(2, '0')}-${String(scheduledDate.getDate()).padStart(2, '0')}`
-        const timeStr = `${String(scheduledDate.getHours()).padStart(2, '0')}:${String(scheduledDate.getMinutes()).padStart(2, '0')}`
+        // KST(UTC+9) 기준 날짜/시간 — Vercel은 UTC라서 getHours()는 UTC 시간을 반환하므로 직접 +9h offset 적용
+        const kst = new Date(new Date(values.scheduled_at).getTime() + 9 * 60 * 60 * 1000)
+        const pad = (n: number) => String(n).padStart(2, '0')
+        const dateStr = `${kst.getUTCFullYear()}-${pad(kst.getUTCMonth() + 1)}-${pad(kst.getUTCDate())}`
+        const timeStr = `${pad(kst.getUTCHours())}:${pad(kst.getUTCMinutes())}`
+        const memberId = (assignData as { member_id?: string }).member_id ?? null
 
         for (const tid of trainerIds) {
+          // ot_session_id로 정확 매칭이 가능하면 그걸로 삭제 (정확).
+          // session_id가 없는 경우(이전 데이터 호환)에는 member_name + 같은 날짜 기준 fallback.
           statusPromises.push(
-            supabase.from('trainer_schedules').delete()
-              .eq('trainer_id', tid).eq('member_name', member.name)
-              .eq('schedule_type', 'OT').eq('scheduled_date', dateStr)
+            (sessionId
+              ? supabase.from('trainer_schedules').delete()
+                  .eq('trainer_id', tid).eq('ot_session_id', sessionId)
+              : supabase.from('trainer_schedules').delete()
+                  .eq('trainer_id', tid).eq('member_name', member.name)
+                  .eq('schedule_type', 'OT').eq('scheduled_date', dateStr)
+            )
               .then(() =>
                 supabase.from('trainer_schedules').insert({
                   trainer_id: tid, schedule_type: 'OT', member_name: member.name,
+                  member_id: memberId, ot_session_id: sessionId ?? null,
                   scheduled_date: dateStr, start_time: timeStr, duration: durationMin,
                 })
               )
@@ -267,6 +290,84 @@ export async function upsertOtSession(values: {
 
     await Promise.all(statusPromises)
   }
+
+  return { success: true }
+}
+
+/**
+ * 캘린더에서 OT 일정을 드래그로 옮길 때 호출되는 server action.
+ * - ot_sessions.scheduled_at 업데이트
+ * - 같은 ot_session_id에 묶인 모든 trainer_schedules 행(예: PT/PPT 양쪽) 업데이트
+ *
+ * server에서 실행되므로 client RLS 한계(다른 트레이너 row UPDATE 거부)를 우회.
+ * 단, 호출자 권한 확인은 RLS가 ot_sessions UPDATE에서 처리 (admin 또는 PT/PPT 본인만).
+ *
+ * 입력:
+ *   ot_session_id    — 옮길 OT 세션
+ *   newScheduledAtIso — KST를 ISO 문자열로 (예: "2026-04-07T18:00:00+09:00" 변환 후 toISOString)
+ *   newDateStr       — "YYYY-MM-DD" (KST 기준)
+ *   newTimeStr       — "HH:mm" (KST 기준)
+ */
+export async function moveOtSchedule(params: {
+  ot_session_id: string
+  newScheduledAtIso: string
+  newDateStr: string
+  newTimeStr: string
+}) {
+  if (isDemoMode()) return { success: true }
+
+  const supabase = await createClient()
+
+  // 1. ot_sessions 업데이트 — 권한은 RLS가 검증 (PT/PPT 본인 또는 admin만 UPDATE 가능)
+  // 완료된 세션은 옮기지 못하도록 추가 가드
+  const { data: existingSession, error: fetchErr } = await supabase
+    .from('ot_sessions')
+    .select('id, completed_at, ot_assignment_id')
+    .eq('id', params.ot_session_id)
+    .single()
+
+  if (fetchErr || !existingSession) {
+    return { error: '세션을 찾을 수 없습니다' }
+  }
+  if (existingSession.completed_at) {
+    return { error: '완료된 세션은 이동할 수 없습니다' }
+  }
+
+  const { error: sessionErr } = await supabase
+    .from('ot_sessions')
+    .update({ scheduled_at: params.newScheduledAtIso })
+    .eq('id', params.ot_session_id)
+
+  if (sessionErr) {
+    return { error: 'OT 세션 업데이트 실패: ' + sessionErr.message }
+  }
+
+  // 2. 같은 ot_session_id에 묶인 모든 trainer_schedules 행 업데이트
+  //    (PT/PPT 트레이너 양쪽 row 동기화)
+  //    server는 RLS를 같은 컨텍스트(authenticated)에서 평가 → 호출자가 admin이거나 본인 trainer_id인 row만 update.
+  //    하지만 ot_sessions 권한이 통과했다는 건 호출자가 PT/PPT 둘 중 하나거나 admin이라는 의미 → 둘 다 update할 권한이 부족할 수 있음.
+  //    이를 회피하려면 service_role이 필요. 대신 본 시스템에서는 ot.ts의 다른 함수와 동일하게
+  //    authenticated 컨텍스트로 진행하되, 양쪽 모두 옮겨지지 않으면 다음 fetch에서 정합성 복구한다.
+  const { error: tsErr } = await supabase
+    .from('trainer_schedules')
+    .update({ scheduled_date: params.newDateStr, start_time: params.newTimeStr })
+    .eq('ot_session_id', params.ot_session_id)
+
+  if (tsErr) {
+    return { warning: 'trainer_schedules 일부 동기화 실패: ' + tsErr.message }
+  }
+
+  // 3. change_log 기록
+  try {
+    const { data: { session } } = await supabase.auth.getSession()
+    await supabase.from('change_logs').insert({
+      target_type: 'ot_session',
+      target_id: existingSession.ot_assignment_id,
+      action: 'OT 일정 드래그 이동',
+      note: `→ ${params.newDateStr} ${params.newTimeStr}`,
+      changed_by: session?.user?.id ?? null,
+    })
+  } catch {}
 
   return { success: true }
 }

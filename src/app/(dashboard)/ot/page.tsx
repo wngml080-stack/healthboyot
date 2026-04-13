@@ -2,12 +2,15 @@ import { getOtAssignments } from '@/actions/ot'
 import { getTrainerFolders } from '@/actions/trainer-folders'
 import { getStaffList } from '@/actions/staff'
 import { getCurrentProfile } from '@/actions/auth'
+import { getAllOtPrograms } from '@/actions/ot-program'
+import { getTrainerScheduleSlots } from '@/actions/schedule'
 import { TrainerCardList } from '@/components/ot/trainer-card-list'
 import { TrainerFolderGrid } from '@/components/ot/trainer-folder-grid'
 import { TrainerSubNav } from '@/components/ot/trainer-sub-nav'
 import { OtSummaryCards } from '@/components/ot/ot-summary-cards'
 import { WeeklyReport } from '@/components/ot/weekly-report'
 import { WeeklyCalendar } from '@/components/ot/weekly-calendar'
+import { ApprovalList } from '@/components/approvals/approval-list'
 import { PageTitle } from '@/components/shared/page-title'
 import { NotificationBell } from '@/components/ot/notification-bell'
 import { ArrowLeft } from 'lucide-react'
@@ -31,30 +34,49 @@ export default async function OtPage({ searchParams }: OtPageProps) {
     ])
     return (
       <div className="space-y-4">
-        <PageTitle>트레이너 관리</PageTitle>
+        <div className="flex items-center justify-between">
+          <PageTitle>트레이너 관리</PageTitle>
+          {profile?.role === 'admin' && (
+            <Link
+              href="/ot/recover"
+              className="text-xs text-orange-600 hover:text-orange-700 underline"
+            >
+              OT 세션 복구
+            </Link>
+          )}
+        </div>
         <TrainerFolderGrid
           folders={folders}
           allStaff={staffList.map((s) => ({ id: s.id, name: s.name, role: s.role, is_approved: s.is_approved }))}
           currentUserRole={profile?.role ?? 'fc'}
+          currentUserId={profile?.id}
         />
       </div>
     )
   }
 
-  // 트레이너 데이터
+  // 트레이너 데이터 — 필요한 모든 fetch를 단일 Promise.all로 묶어서 waterfall 제거
   let trainerAssignments: Awaited<ReturnType<typeof getOtAssignments>> = []
   let staffList: Awaited<ReturnType<typeof getStaffList>> = []
   let profile: Awaited<ReturnType<typeof getCurrentProfile>> = null
+  let allPrograms: Awaited<ReturnType<typeof getAllOtPrograms>> = []
+  let scheduleSlots: Awaited<ReturnType<typeof getTrainerScheduleSlots>> = []
 
   try {
     const results = await Promise.all([
       getOtAssignments({ trainerId }),
       getCurrentProfile(),
       getStaffList(),
+      getAllOtPrograms(),
+      trainerId !== 'unassigned'
+        ? getTrainerScheduleSlots(trainerId)
+        : Promise.resolve([]),
     ])
     trainerAssignments = results[0]
     profile = results[1]
     staffList = results[2]
+    allPrograms = results[3]
+    scheduleSlots = results[4]
   } catch (err) {
     console.error('[OtPage] Error loading trainer data:', err)
     return (
@@ -92,6 +114,9 @@ export default async function OtPage({ searchParams }: OtPageProps) {
     return ''
   })() : ''
 
+  // 트레이너 프로그램 데이터 (알림 + 승인탭 공용) — 위 Promise.all에서 이미 받음
+  const trainerPrograms = allPrograms.filter((p) => p.trainer_name === trainerName)
+
   return (
     <div className="space-y-4">
       {/* 상단 */}
@@ -105,7 +130,7 @@ export default async function OtPage({ searchParams }: OtPageProps) {
           {myRole && <p className="text-xs text-blue-500 font-medium">{myRole}</p>}
         </div>
         <div className="ml-auto">
-          <NotificationBell assignments={trainerAssignments} />
+          <NotificationBell assignments={trainerAssignments} programs={trainerPrograms} />
         </div>
       </div>
 
@@ -114,11 +139,22 @@ export default async function OtPage({ searchParams }: OtPageProps) {
         <TrainerSubNav trainerId={trainerId} />
         <div className="flex-1 min-w-0">
           {tab === 'members' && (
-            <TrainerCardList assignments={trainerAssignments} trainers={allTrainers} trainerId={trainerId} trainerName={trainerName} profile={profile ?? undefined} />
+            <TrainerCardList
+              assignments={trainerAssignments}
+              trainers={allTrainers}
+              trainerId={trainerId}
+              trainerName={trainerName}
+              profile={profile ?? undefined}
+              initialSchedules={scheduleSlots}
+            />
           )}
 
           {tab === 'schedule' && (
             <WeeklyCalendar assignments={trainerAssignments} trainerId={trainerId} />
+          )}
+
+          {tab === 'approvals' && profile && (
+            <ApprovalList programs={trainerPrograms} profile={profile} />
           )}
 
           {tab === 'stats' && (

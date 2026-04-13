@@ -1,54 +1,41 @@
 'use client'
 
 import { useEffect, useRef } from 'react'
-import { useQueryClient } from '@tanstack/react-query'
+import { useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
 
+/**
+ * Supabase Realtime 변경 이벤트를 구독하고
+ * router.refresh()로 서버 컴포넌트를 다시 렌더링한다.
+ *
+ * burst 이벤트 (예: 일괄 INSERT) 대응을 위해 500ms 디바운스로 묶어서 한 번만 refresh 한다.
+ */
 export function useRealtimeOT() {
-  const queryClient = useQueryClient()
+  const router = useRouter()
   const supabaseRef = useRef(createClient())
 
   useEffect(() => {
     const supabase = supabaseRef.current
+    let refreshTimer: ReturnType<typeof setTimeout> | null = null
+
+    const scheduleRefresh = () => {
+      if (refreshTimer) clearTimeout(refreshTimer)
+      refreshTimer = setTimeout(() => {
+        router.refresh()
+        refreshTimer = null
+      }, 500)
+    }
+
     const channel = supabase
       .channel('ot-realtime')
-      // OT 배정 변경 → 목록만 갱신 (INSERT/UPDATE만)
-      .on(
-        'postgres_changes',
-        { event: 'INSERT', schema: 'public', table: 'ot_assignments' },
-        () => {
-          queryClient.invalidateQueries({ queryKey: ['ot_assignments'] })
-        }
-      )
-      .on(
-        'postgres_changes',
-        { event: 'UPDATE', schema: 'public', table: 'ot_assignments' },
-        () => {
-          queryClient.invalidateQueries({ queryKey: ['ot_assignments'] })
-          queryClient.invalidateQueries({ queryKey: ['ot_detail'] })
-          queryClient.invalidateQueries({ queryKey: ['stats'] })
-        }
-      )
-      // 회원 변경 → 회원 목록만 갱신
-      .on(
-        'postgres_changes',
-        { event: 'INSERT', schema: 'public', table: 'members' },
-        () => {
-          queryClient.invalidateQueries({ queryKey: ['members'] })
-        }
-      )
-      // OT 세션 변경 → 상세만 갱신
-      .on(
-        'postgres_changes',
-        { event: 'UPDATE', schema: 'public', table: 'ot_sessions' },
-        () => {
-          queryClient.invalidateQueries({ queryKey: ['ot_detail'] })
-        }
-      )
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'ot_assignments' }, scheduleRefresh)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'ot_sessions' }, scheduleRefresh)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'members' }, scheduleRefresh)
       .subscribe()
 
     return () => {
+      if (refreshTimer) clearTimeout(refreshTimer)
       supabase.removeChannel(channel)
     }
-  }, [queryClient])
+  }, [router])
 }

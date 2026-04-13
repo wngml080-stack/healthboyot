@@ -75,7 +75,7 @@ export function OtDetailView({ assignment, profile }: Props) {
             <div>
               <span className="text-muted-foreground">연락처</span>
               <p className="font-medium">
-                {a.member.phone.replace(/(\d{3})(\d{4})(\d{4})/, '$1-$2-$3')}
+                {a.member.phone ? a.member.phone.replace(/(\d{3})(\d{4})(\d{4})/, '$1-$2-$3') : '-'}
               </p>
             </div>
             <div>

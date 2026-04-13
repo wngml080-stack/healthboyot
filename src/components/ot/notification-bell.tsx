@@ -1,6 +1,7 @@
 'use client'
 
 import { useState } from 'react'
+import { useRouter } from 'next/navigation'
 import { Bell } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import {
@@ -10,21 +11,24 @@ import {
   DialogTitle,
   DialogDescription,
 } from '@/components/ui/dialog'
-import type { OtAssignmentWithDetails } from '@/types'
+import type { OtAssignmentWithDetails, OtProgram } from '@/types'
 
 interface Notification {
   id: string
-  type: 'warning' | 'info' | 'schedule'
+  type: 'warning' | 'info' | 'schedule' | 'feedback'
   title: string
   message: string
   color: string
+  href?: string
 }
 
 interface Props {
   assignments: OtAssignmentWithDetails[]
+  programs?: (OtProgram & { member_name?: string })[]
 }
 
-export function NotificationBell({ assignments }: Props) {
+export function NotificationBell({ assignments, programs = [] }: Props) {
+  const router = useRouter()
   const [open, setOpen] = useState(false)
   const notifications: Notification[] = []
   const today = new Date()
@@ -92,6 +96,30 @@ export function NotificationBell({ assignments }: Props) {
     })
   }
 
+  // 4. OT 승인/반려 피드백 알림
+  for (const prog of programs) {
+    if (prog.approval_status === '승인') {
+      const feedbackCount = prog.sessions?.filter((s) => s.tip).length ?? 0
+      notifications.push({
+        id: `approve-${prog.id}`,
+        type: 'feedback',
+        title: `${prog.member_name ?? '회원'} OT 승인완료`,
+        message: feedbackCount > 0 ? `피드백 ${feedbackCount}건이 있습니다` : '승인되었습니다',
+        color: 'bg-green-500',
+        href: `/ot/${prog.ot_assignment_id}`,
+      })
+    } else if (prog.approval_status === '반려') {
+      notifications.push({
+        id: `reject-${prog.id}`,
+        type: 'feedback',
+        title: `${prog.member_name ?? '회원'} OT 반려`,
+        message: prog.rejection_reason ?? '반려되었습니다',
+        color: 'bg-red-500',
+        href: `/ot/${prog.ot_assignment_id}`,
+      })
+    }
+  }
+
   const count = notifications.length
 
   return (
@@ -121,12 +149,22 @@ export function NotificationBell({ assignments }: Props) {
           ) : (
             <div className="space-y-2">
               {notifications.map((n) => (
-                <div key={n.id} className="flex gap-3 rounded-lg border border-gray-200 p-3">
+                <div
+                  key={n.id}
+                  className={`flex gap-3 rounded-lg border border-gray-200 p-3 ${n.href ? 'cursor-pointer hover:bg-gray-50 transition-colors' : ''}`}
+                  onClick={() => {
+                    if (n.href) {
+                      setOpen(false)
+                      router.push(n.href)
+                    }
+                  }}
+                >
                   <div className={`w-2 rounded-full shrink-0 ${n.color}`} />
-                  <div>
+                  <div className="flex-1">
                     <p className="text-sm font-medium text-gray-900">{n.title}</p>
                     <p className="text-xs text-gray-500">{n.message}</p>
                   </div>
+                  {n.href && <span className="text-xs text-blue-500 self-center">바로가기 →</span>}
                 </div>
               ))}
             </div>

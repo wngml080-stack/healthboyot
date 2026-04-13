@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useCallback, useImperativeHandle, forwardRef, useEffect } from 'react'
+import { useState, useCallback, useImperativeHandle, forwardRef, useEffect, useRef } from 'react'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Button } from '@/components/ui/button'
@@ -8,7 +8,8 @@ import { Textarea } from '@/components/ui/textarea'
 import { Checkbox } from '@/components/ui/checkbox'
 import { Badge } from '@/components/ui/badge'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
-import { Save, Loader2, Send, CheckCircle, XCircle, Plus, ImagePlus, X, ChevronDown, ChevronUp } from 'lucide-react'
+import { Save, Loader2, Send, CheckCircle, XCircle, Plus, ImagePlus, X, ChevronDown, ChevronUp, Download, Share2 } from 'lucide-react'
+import { toPng } from 'html-to-image'
 import { upsertOtProgram, submitOtProgram, approveOtProgram, rejectOtProgram } from '@/actions/ot-program'
 import { getConsultationCard } from '@/actions/consultation'
 import { createClient } from '@/lib/supabase/client'
@@ -176,6 +177,49 @@ export const OtProgramForm = forwardRef<OtProgramFormRef, Props>(function OtProg
   const [showRejectInput, setShowRejectInput] = useState(false)
   const [uploading, setUploading] = useState(false)
 
+  const captureRef = useRef<HTMLDivElement>(null)
+
+  const handleCapture = async () => {
+    if (!captureRef.current) return
+    try {
+      const dataUrl = await toPng(captureRef.current, {
+        backgroundColor: '#ffffff',
+        pixelRatio: 2,
+      })
+      const link = document.createElement('a')
+      link.download = `OT_프로그램_${a.member.name}_${new Date().toISOString().split('T')[0]}.png`
+      link.href = dataUrl
+      link.click()
+    } catch (err) {
+      alert('이미지 저장에 실패했습니다.')
+    }
+  }
+
+  const handleShare = async () => {
+    if (!captureRef.current) return
+    try {
+      const dataUrl = await toPng(captureRef.current, {
+        backgroundColor: '#ffffff',
+        pixelRatio: 2,
+      })
+      const blob = await (await fetch(dataUrl)).blob()
+      const file = new File([blob], `OT_${a.member.name}.png`, { type: 'image/png' })
+
+      if (navigator.share && navigator.canShare({ files: [file] })) {
+        await navigator.share({
+          title: `${a.member.name} OT 프로그램`,
+          files: [file],
+        })
+      } else {
+        handleCapture()
+      }
+    } catch (err) {
+      if ((err as Error).name !== 'AbortError') {
+        handleCapture()
+      }
+    }
+  }
+
   const updateSession = useCallback((idx: number, field: keyof OtProgramSession, value: unknown) => {
     setSessions((prev) => prev.map((s, i) => i === idx ? { ...s, [field]: value } : s))
   }, [])
@@ -299,7 +343,7 @@ export const OtProgramForm = forwardRef<OtProgramFormRef, Props>(function OtProg
   const activeSessionIdx = sessions.findIndex((s) => !s.completed)
 
   return (
-    <div className="space-y-4">
+    <div ref={captureRef} className="space-y-4">
       {/* 헤더 */}
       <div className="border-2 border-blue-400 rounded-lg overflow-hidden">
         <div className="bg-blue-50 border-b-2 border-blue-400 px-4 py-3 text-center">
@@ -482,6 +526,14 @@ export const OtProgramForm = forwardRef<OtProgramFormRef, Props>(function OtProg
                     <Textarea value={session.tip} onChange={(e) => updateSession(idx, 'tip', e.target.value)} className="text-sm min-h-[50px] mt-1" placeholder="트레이너 팁" disabled={!canEdit} />
                   </div>
 
+                  {/* 관리자 피드백 표시 (승인/반려 상태일 때 tip이 있으면) */}
+                  {(approvalStatus === '승인' || approvalStatus === '반려') && session.tip && !canEdit && (
+                    <div className="bg-blue-50 border border-blue-200 rounded-lg p-3">
+                      <p className="text-xs font-bold text-blue-700 mb-1">📋 관리자 피드백</p>
+                      <p className="text-sm text-gray-800">{session.tip}</p>
+                    </div>
+                  )}
+
                   {/* 유산소 */}
                   <div className="flex items-center gap-3 flex-wrap">
                     <Label className="text-xs font-bold">유산소:</Label>
@@ -556,6 +608,12 @@ export const OtProgramForm = forwardRef<OtProgramFormRef, Props>(function OtProg
       {/* 하단 버튼 */}
       {!hideButtons && (
         <div className="flex flex-wrap items-center justify-end gap-2 pb-4">
+          <Button type="button" variant="outline" onClick={handleCapture}>
+            <Download className="h-4 w-4 mr-2" />이미지 저장
+          </Button>
+          <Button type="button" variant="outline" onClick={handleShare}>
+            <Share2 className="h-4 w-4 mr-2" />공유하기
+          </Button>
           {canEdit && (
             <>
               <Button onClick={handleSave} disabled={saving} variant="outline">

@@ -3,7 +3,7 @@
 import Link from 'next/link'
 import { useSearchParams } from 'next/navigation'
 import { cn } from '@/lib/utils'
-import { Users, CalendarDays, BarChart3 } from 'lucide-react'
+import { Users, CalendarDays, CheckSquare, BarChart3 } from 'lucide-react'
 
 interface Props {
   trainerId: string
@@ -12,6 +12,7 @@ interface Props {
 const TABS = [
   { key: 'members', label: '회원관리', icon: Users },
   { key: 'schedule', label: '스케줄', icon: CalendarDays },
+  { key: 'approvals', label: 'OT 승인', icon: CheckSquare },
   { key: 'stats', label: '통계표', icon: BarChart3 },
 ]
 

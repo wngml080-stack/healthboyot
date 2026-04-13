@@ -29,7 +29,7 @@ export interface Profile {
 export interface Member {
   id: string
   name: string
-  phone: string
+  phone: string | null
   gender: Gender | null
   sports: string[]
   duration_months: string | number | null
@@ -140,6 +140,7 @@ export interface ConsultationCard {
   exercise_goal_detail: string | null
   body_correction_area: string | null
   exercise_experience_history: string | null
+  exercise_start_date: string | null
   created_by: string | null
   created_at: string
   updated_at: string

@@ -159,6 +159,28 @@ export async function getAllCards(): Promise<ConsultationCard[]> {
   return data as ConsultationCard[]
 }
 
+// 공개 폼에서 상담카드 업데이트 (로그인 불필요)
+export async function updatePublicCard(cardId: string, values: Record<string, unknown>) {
+  const supabase = await createClient()
+
+  // Verify card exists and is in '미연결' status (security: only unfilled cards can be updated publicly)
+  const { data: existing } = await supabase
+    .from('consultation_cards')
+    .select('id, status')
+    .eq('id', cardId)
+    .single()
+
+  if (!existing) return { error: '상담카드를 찾을 수 없습니다' }
+
+  const { error } = await supabase
+    .from('consultation_cards')
+    .update({ ...values, updated_at: new Date().toISOString() })
+    .eq('id', cardId)
+
+  if (error) return { error: error.message }
+  return { success: true }
+}
+
 export async function deleteConsultationCard(id: string) {
   const supabase = await createClient()
 

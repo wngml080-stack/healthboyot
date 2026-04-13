@@ -11,8 +11,9 @@ import {
 import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
 } from '@/components/ui/select'
-import { Plus, Link2, Search, ClipboardList, Trash2 } from 'lucide-react'
+import { Plus, Link2, Search, ClipboardList, Trash2, MessageSquare, Copy } from 'lucide-react'
 import { createStandaloneCard, linkCardToMember, getConsultationCardById, deleteConsultationCard } from '@/actions/consultation'
+import { sendConsultationLinkSms } from '@/actions/sms'
 import { checkPhoneDuplicate } from '@/actions/members'
 import { ConsultationCardForm } from '@/components/members/consultation-card-form'
 import type { ConsultationCard, Member, Profile } from '@/types'
@@ -117,7 +118,7 @@ export function ConsultationList({ cards: initialCards, members, profile, staffL
   const filteredMembers = members.filter((m) => {
     if (!memberSearch) return true
     const q = memberSearch.toLowerCase()
-    return m.name.toLowerCase().includes(q) || m.phone.includes(q)
+    return m.name.toLowerCase().includes(q) || (m.phone ?? '').includes(q)
   }).slice(0, 20)
 
   return (
@@ -169,13 +170,14 @@ export function ConsultationList({ cards: initialCards, members, profile, staffL
               <th className="text-left px-4 py-2 font-medium text-gray-700">연락처</th>
               <th className="text-left px-4 py-2 font-medium text-gray-700">성별</th>
               <th className="text-left px-4 py-2 font-medium text-gray-700">FC</th>
+              <th className="text-left px-4 py-2 font-medium text-gray-700">운동시작일</th>
               <th className="text-left px-4 py-2 font-medium text-gray-700">작성일</th>
               <th className="text-center px-4 py-2 font-medium text-gray-700">액션</th>
             </tr>
           </thead>
           <tbody>
             {filtered.length === 0 ? (
-              <tr><td colSpan={7} className="text-center py-8 text-gray-400">상담카드가 없습니다</td></tr>
+              <tr><td colSpan={8} className="text-center py-8 text-gray-400">상담카드가 없습니다</td></tr>
             ) : filtered.map((card) => (
               <tr key={card.id} className="border-b hover:bg-gray-50">
                 <td className="px-4 py-2">
@@ -187,6 +189,7 @@ export function ConsultationList({ cards: initialCards, members, profile, staffL
                 <td className="px-4 py-2 text-gray-600">{card.member_phone?.replace(/(\d{3})(\d{4})(\d{4})/, '$1-$2-$3') ?? '-'}</td>
                 <td className="px-4 py-2 text-gray-600">{card.member_gender ?? '-'}</td>
                 <td className="px-4 py-2 text-gray-600">{card.fc_name ?? '-'}</td>
+                <td className="px-4 py-2 text-gray-600 text-xs">{card.exercise_start_date ? new Date(card.exercise_start_date + 'T00:00:00').toLocaleDateString('ko') : '-'}</td>
                 <td className="px-4 py-2 text-gray-500 text-xs">{card.created_at ? new Date(card.created_at).toLocaleDateString('ko') : '-'}</td>
                 <td className="px-4 py-2 text-center">
                   <div className="flex items-center justify-center gap-1.5">
@@ -195,6 +198,27 @@ export function ConsultationList({ cards: initialCards, members, profile, staffL
                     </Button>
                     <Button size="sm" className={`h-7 text-xs ${card.status === '연결완료' ? 'bg-emerald-600 hover:bg-emerald-700' : 'bg-blue-600 hover:bg-blue-700'} text-white`} onClick={() => { setLinkTarget(card); setLinkMemberId(''); setMemberSearch('') }}>
                       <Link2 className="h-3 w-3 mr-1" />{card.status === '연결완료' ? '연결 변경' : '회원 연결'}
+                    </Button>
+                    <Button size="sm" className="h-7 text-xs bg-green-600 hover:bg-green-700 text-white" onClick={async () => {
+                      if (!card.member_phone) { alert('연락처가 없습니다'); return }
+                      const result = await sendConsultationLinkSms(card.member_phone, card.id, card.member_name ?? '회원')
+                      if (result.success) {
+                        alert('✅ 문자가 발송되었습니다!')
+                      } else {
+                        alert('문자 발송 실패: ' + (result.error ?? '알 수 없는 오류') + '\n\n문자앱으로 이동합니다.')
+                        const url = `${window.location.origin}/form/${card.id}`
+                        const message = `[HEALTHBOYGYM] 안녕하세요! 상담카드 작성을 부탁드립니다.\n\n아래 링크를 눌러 작성해주세요:\n${url}`
+                        window.open(`sms:${card.member_phone}?body=${encodeURIComponent(message)}`)
+                      }
+                    }}>
+                      <MessageSquare className="h-3 w-3 mr-1" />문자
+                    </Button>
+                    <Button size="sm" className="h-7 text-xs bg-violet-600 hover:bg-violet-700 text-white" onClick={() => {
+                      const url = `${window.location.origin}/form/${card.id}`
+                      navigator.clipboard.writeText(url)
+                      alert('링크가 복사되었습니다!')
+                    }}>
+                      <Copy className="h-3 w-3 mr-1" />링크
                     </Button>
                     <Button size="sm" variant="ghost" className="h-7 text-xs text-red-500 hover:text-red-700 hover:bg-red-50" onClick={async () => {
                       if (!confirm(`${card.member_name ?? '이름없음'} 상담카드를 삭제하시겠습니까?`)) return
@@ -321,7 +345,7 @@ export function ConsultationList({ cards: initialCards, members, profile, staffL
                   onClick={() => setLinkMemberId(m.id)}
                 >
                   <span className="font-medium">{m.name}</span>
-                  <span className="text-gray-400">{m.phone.replace(/(\d{3})(\d{4})(\d{4})/, '$1-$2-$3')}</span>
+                  <span className="text-gray-400">{m.phone ? m.phone.replace(/(\d{3})(\d{4})(\d{4})/, '$1-$2-$3') : '-'}</span>
                 </button>
               ))}
               {filteredMembers.length === 0 && (

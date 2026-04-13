@@ -203,7 +203,7 @@ export function ApprovalList({ programs: initialPrograms, profile }: Props) {
       <Dialog open={!!viewTarget} onOpenChange={() => setViewTarget(null)}>
         <DialogContent className="max-w-5xl max-h-[95vh] overflow-y-auto">
           <DialogHeader>
-            <DialogTitle className="text-lg">{viewTarget?.assignment.member.name} OT 프로그램</DialogTitle>
+            <DialogTitle className="text-lg">{viewTarget?.assignment.member.name} OT 승인</DialogTitle>
             <DialogDescription>각 세션 내용을 확인하고 피드백/승인 처리하세요</DialogDescription>
           </DialogHeader>
           {viewTarget && (

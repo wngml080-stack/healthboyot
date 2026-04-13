@@ -56,6 +56,7 @@ export function ConsultationCardForm({ member, card, onSaved, isStandalone, card
   const [fcName, setFcName] = useState(card?.fc_name ?? '')
   const [consultDate, setConsultDate] = useState(card?.consultation_date ?? '')
   const [regProduct, setRegProduct] = useState(card?.registration_product ?? '')
+  const [exerciseStartDate, setExerciseStartDate] = useState(card?.exercise_start_date ?? '')
   const [expiryDate, setExpiryDate] = useState(card?.expiry_date ?? '')
   const [age, setAge] = useState(card?.age ?? '')
   const [occupation, setOccupation] = useState(card?.occupation ?? '')
@@ -93,6 +94,7 @@ export function ConsultationCardForm({ member, card, onSaved, isStandalone, card
       fc_name: fcName || null,
       consultation_date: consultDate || null,
       registration_product: regProduct || null,
+      exercise_start_date: exerciseStartDate || null,
       expiry_date: expiryDate || null,
       age: age || null,
       occupation: occupation || null,
@@ -169,6 +171,8 @@ export function ConsultationCardForm({ member, card, onSaved, isStandalone, card
             <Input type="date" value={consultDate} onChange={(e) => setConsultDate(e.target.value)} className="w-40 h-7 text-sm" />
             <span className="text-sm ml-2">등록상품:</span>
             <Input value={regProduct} onChange={(e) => setRegProduct(e.target.value)} className="w-32 h-7 text-sm" />
+            <span className="text-sm ml-2">운동시작일:</span>
+            <Input type="date" value={exerciseStartDate} onChange={(e) => setExerciseStartDate(e.target.value)} className="w-40 h-7 text-sm" />
             <span className="text-sm ml-2">만료날짜:</span>
             <Input type="date" value={expiryDate} onChange={(e) => setExpiryDate(e.target.value)} className="w-40 h-7 text-sm" />
           </div>

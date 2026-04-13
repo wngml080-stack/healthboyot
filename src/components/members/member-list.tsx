@@ -104,6 +104,10 @@ export function MemberList({ initialMembers, trainers = [] }: Props) {
   const [deleteConfirm, setDeleteConfirm] = useState<MemberWithOt | null>(null)
   const [deleting, setDeleting] = useState(false)
 
+  // 낙관적 UI 업데이트를 위한 로컬 오버라이드
+  const [trainerOverrides, setTrainerOverrides] = useState<Record<string, { pt?: { id: string | null; name: string; status: string }; ppt?: { id: string | null; name: string; status: string } }>>({})
+
+
   // 회원 추가
   const [showAddDialog, setShowAddDialog] = useState(false)
   const [addName, setAddName] = useState('')
@@ -175,23 +179,41 @@ export function MemberList({ initialMembers, trainers = [] }: Props) {
   }
 
   const sortedMembers = useMemo(() => {
-    const list = [...initialMembers]
-    list.sort((a, b) => {
-      let va = '', vb = ''
+    // 0) PT 수기 등록 회원은 OT 회원관리 대상이 아니므로 제외
+    //    (캘린더에서 PT 스케줄로만 시간 기록하는 회원 — 회원 마스터 리스트에서 빼서 OT 운영에 집중)
+    const otOnly = initialMembers.filter((m) => m.registration_source !== '수기')
+
+    // 1) 검색어로 즉시 필터링 (서버 round-trip 기다리지 않고 0ms 응답)
+    const q = search.trim().toLowerCase()
+    const filtered = q
+      ? otOnly.filter(
+          (m) => m.name.toLowerCase().includes(q) || (m.phone ?? '').includes(q),
+        )
+      : otOnly
+
+    // 2) 정렬
+    const collator = new Intl.Collator('ko')
+    const progressCache = sortKey === 'progress'
+      ? new Map(filtered.map((m) => [m.id, getProgressLabel(m.assignment)]))
+      : null
+    const getKey = (m: MemberWithOt): string => {
       switch (sortKey) {
-        case 'registered_at': va = a.registered_at ?? ''; vb = b.registered_at ?? ''; break
-        case 'name': va = a.name; vb = b.name; break
-        case 'ot_category': va = a.ot_category ?? ''; vb = b.ot_category ?? ''; break
-        case 'exercise_time': va = a.exercise_time ?? ''; vb = b.exercise_time ?? ''; break
-        case 'pt_trainer': va = a.assignment?.pt_trainer?.name ?? ''; vb = b.assignment?.pt_trainer?.name ?? ''; break
-        case 'ppt_trainer': va = a.assignment?.ppt_trainer?.name ?? ''; vb = b.assignment?.ppt_trainer?.name ?? ''; break
-        case 'progress': va = getProgressLabel(a.assignment); vb = getProgressLabel(b.assignment); break
+        case 'registered_at': return m.registered_at ?? ''
+        case 'name': return m.name
+        case 'ot_category': return m.ot_category ?? ''
+        case 'exercise_time': return m.exercise_time ?? ''
+        case 'pt_trainer': return m.assignment?.pt_trainer?.name ?? ''
+        case 'ppt_trainer': return m.assignment?.ppt_trainer?.name ?? ''
+        case 'progress': return progressCache!.get(m.id) ?? ''
       }
-      const cmp = va.localeCompare(vb, 'ko')
+    }
+    const list = [...filtered]
+    list.sort((a, b) => {
+      const cmp = collator.compare(getKey(a), getKey(b))
       return sortAsc ? cmp : -cmp
     })
     return list
-  }, [initialMembers, sortKey, sortAsc])
+  }, [initialMembers, search, sortKey, sortAsc])
 
   // 선생님 변경 팝업
   const [trainerChangeTarget, setTrainerChangeTarget] = useState<MemberWithOt | null>(null)
@@ -203,25 +225,36 @@ export function MemberList({ initialMembers, trainers = [] }: Props) {
 
   const openTrainerChange = (m: MemberWithOt) => {
     setTrainerChangeTarget(m)
-    setNewPtTrainer(m.assignment?.pt_trainer_id ?? 'none')
-    setNewPptTrainer(m.assignment?.ppt_trainer_id ?? 'none')
+    const ptStatus = m.assignment?.pt_assign_status
+    const pptStatus = m.assignment?.ppt_assign_status
+    setNewPtTrainer(m.assignment?.pt_trainer_id ?? (ptStatus === 'later' ? 'later' : ptStatus === 'not_requested' ? 'not_requested' : 'none'))
+    setNewPptTrainer(m.assignment?.ppt_trainer_id ?? (pptStatus === 'later' ? 'later' : pptStatus === 'not_requested' ? 'not_requested' : 'none'))
     setPtChangeReason('')
     setPptChangeReason('')
   }
+
+  const isSpecialVal = (v: string) => v === 'none' || v === 'later' || v === 'not_requested'
+  const statusLabel = (v: string) => v === 'later' ? '추후배정' : v === 'not_requested' ? '미신청' : '미배정'
 
   const handleTrainerChange = async () => {
     if (!trainerChangeTarget?.assignment) return
     setTrainerChanging(true)
     const a = trainerChangeTarget.assignment
+    const oldPtVal = a.pt_trainer_id ?? (a.pt_assign_status === 'later' ? 'later' : a.pt_assign_status === 'not_requested' ? 'not_requested' : 'none')
+    const oldPptVal = a.ppt_trainer_id ?? (a.ppt_assign_status === 'later' ? 'later' : a.ppt_assign_status === 'not_requested' ? 'not_requested' : 'none')
 
-    if (newPtTrainer !== (a.pt_trainer_id ?? 'none')) {
-      const oldName = a.pt_trainer?.name ?? '미배정'
-      const newName = newPtTrainer === 'none' ? '미배정' : trainers.find((t) => t.id === newPtTrainer)?.name ?? newPtTrainer
+    if (newPtTrainer !== oldPtVal) {
+      const oldName = a.pt_trainer?.name ?? statusLabel(oldPtVal)
+      const newName = isSpecialVal(newPtTrainer) ? statusLabel(newPtTrainer) : trainers.find((t) => t.id === newPtTrainer)?.name ?? newPtTrainer
       await changeTrainer(
         a.id, 'pt_trainer_id',
-        newPtTrainer === 'none' ? null : newPtTrainer,
+        isSpecialVal(newPtTrainer) ? null : newPtTrainer,
         oldName, newName, trainerChangeTarget.name,
       )
+      // assign_status도 업데이트
+      await updateOtAssignment(a.id, {
+        pt_assign_status: isSpecialVal(newPtTrainer) ? newPtTrainer : 'assigned',
+      })
       if (ptChangeReason) {
         await addChangeLog({
           target_type: 'ot_assignment', target_id: a.id,
@@ -231,14 +264,17 @@ export function MemberList({ initialMembers, trainers = [] }: Props) {
         })
       }
     }
-    if (newPptTrainer !== (a.ppt_trainer_id ?? 'none')) {
-      const oldName = a.ppt_trainer?.name ?? '미배정'
-      const newName = newPptTrainer === 'none' ? '미배정' : trainers.find((t) => t.id === newPptTrainer)?.name ?? newPptTrainer
+    if (newPptTrainer !== oldPptVal) {
+      const oldName = a.ppt_trainer?.name ?? statusLabel(oldPptVal)
+      const newName = isSpecialVal(newPptTrainer) ? statusLabel(newPptTrainer) : trainers.find((t) => t.id === newPptTrainer)?.name ?? newPptTrainer
       await changeTrainer(
         a.id, 'ppt_trainer_id',
-        newPptTrainer === 'none' ? null : newPptTrainer,
+        isSpecialVal(newPptTrainer) ? null : newPptTrainer,
         oldName, newName, trainerChangeTarget.name,
       )
+      await updateOtAssignment(a.id, {
+        ppt_assign_status: isSpecialVal(newPptTrainer) ? newPptTrainer : 'assigned',
+      })
       if (pptChangeReason) {
         await addChangeLog({
           target_type: 'ot_assignment', target_id: a.id,
@@ -254,10 +290,11 @@ export function MemberList({ initialMembers, trainers = [] }: Props) {
     router.refresh()
   }
 
-  // 중복 체크: 이름 + 번호 뒷자리 4개 기준
+  // 중복 체크: 이름 + 번호 뒷자리 4개 기준 (전화번호 없는 회원은 중복 검사 제외)
   const duplicateIds = useMemo(() => {
     const map = new Map<string, string[]>()
     for (const m of initialMembers) {
+      if (!m.phone) continue
       const last4 = m.phone.slice(-4)
       const key = `${m.name}_${last4}`
       const arr = map.get(key) ?? []
@@ -295,7 +332,7 @@ export function MemberList({ initialMembers, trainers = [] }: Props) {
   const openEdit = (m: MemberWithOt) => {
     setEditTarget(m)
     setEditName(m.name)
-    setEditPhone(m.phone)
+    setEditPhone(m.phone ?? '')
     setEditGender(m.gender ?? '')
     setEditExerciseTime(m.exercise_time ?? '')
     setEditDuration(m.duration_months ? String(m.duration_months) : '')
@@ -484,31 +521,47 @@ export function MemberList({ initialMembers, trainers = [] }: Props) {
                       <TableCell className="text-center text-xs text-gray-900">{m.exercise_time ?? '-'}</TableCell>
                       <TableCell className="text-center text-xs" onClick={(e) => e.stopPropagation()}>
                         {m.assignment ? (() => {
-                          const ptStatus = m.assignment.pt_assign_status ?? (m.assignment.pt_trainer_id ? 'assigned' : 'none')
-                          const selectVal = m.assignment.pt_trainer_id ?? (ptStatus === 'later' ? 'later' : 'none')
+                          const override = trainerOverrides[m.assignment!.id]?.pt
+                          const ptStatus = override?.status ?? m.assignment.pt_assign_status ?? (m.assignment.pt_trainer_id ? 'assigned' : 'none')
+                          const selectVal = override ? (override.id ?? (override.status === 'later' ? 'later' : override.status === 'not_requested' ? 'not_requested' : 'none')) : (m.assignment.pt_trainer_id ?? (ptStatus === 'later' ? 'later' : ptStatus === 'not_requested' ? 'not_requested' : 'none'))
                           return (
                           <Select
                             value={selectVal}
                             onValueChange={async (v) => {
-                              const oldName = m.assignment!.pt_trainer?.name ?? (ptStatus === 'later' ? '추후배정' : '미배정')
-                              const newName = v === 'none' ? '미배정' : v === 'later' ? '추후배정' : trainers.find((t) => t.id === v)?.name ?? v
-                              await updateOtAssignment(m.assignment!.id, {
-                                pt_trainer_id: (v === 'none' || v === 'later') ? null : v,
-                                pt_assign_status: v === 'later' ? 'later' : v === 'none' ? 'none' : 'assigned',
-                              })
-                              await addChangeLog({ target_type: 'ot_assignment', target_id: m.assignment!.id, action: 'PT 담당 변경', old_value: oldName, new_value: newName, note: `${m.name} 회원` })
+                              const oldName = m.assignment!.pt_trainer?.name ?? (ptStatus === 'later' ? '추후배정' : ptStatus === 'not_requested' ? '미신청' : '미배정')
+                              const newTrainer = trainers.find((t) => t.id === v)
+                              const newName = v === 'none' ? '미배정' : v === 'later' ? '추후배정' : v === 'not_requested' ? '미신청' : newTrainer?.name ?? v
+                              const newStatus = v === 'later' ? 'later' : v === 'none' ? 'none' : v === 'not_requested' ? 'not_requested' : 'assigned'
+                              // 낙관적 업데이트: 즉시 UI 반영
+                              setTrainerOverrides(prev => ({
+                                ...prev,
+                                [m.assignment!.id]: {
+                                  ...prev[m.assignment!.id],
+                                  pt: { id: (v === 'none' || v === 'later' || v === 'not_requested') ? null : v, name: newName, status: newStatus },
+                                },
+                              }))
+                              // 서버 호출 병렬 실행
+                              await Promise.all([
+                                updateOtAssignment(m.assignment!.id, {
+                                  pt_trainer_id: (v === 'none' || v === 'later' || v === 'not_requested') ? null : v,
+                                  pt_assign_status: newStatus,
+                                }),
+                                addChangeLog({ target_type: 'ot_assignment', target_id: m.assignment!.id, action: 'PT 담당 변경', old_value: oldName, new_value: newName, note: `${m.name} 회원` }),
+                              ])
                               router.refresh()
                             }}
                           >
                             <SelectTrigger className={`h-7 text-xs border justify-center gap-1 px-1 rounded ${
                               ptStatus === 'later' ? 'bg-orange-50 border-orange-200 text-orange-600'
-                              : m.assignment.pt_trainer_id ? 'bg-blue-50 border-blue-200 text-blue-700'
+                              : ptStatus === 'not_requested' ? 'bg-gray-100 border-gray-300 text-gray-500'
+                              : (override?.id ?? m.assignment.pt_trainer_id) ? 'bg-blue-50 border-blue-200 text-blue-700'
                               : 'bg-white border-gray-200 text-gray-900'
                             }`}>
                               <SelectValue />
                             </SelectTrigger>
                             <SelectContent>
                               <SelectItem value="none">미배정</SelectItem>
+                              <SelectItem value="not_requested">미신청</SelectItem>
                               <SelectItem value="later">추후배정</SelectItem>
                               {trainers.map((t) => (
                                 <SelectItem key={t.id} value={t.id}>{t.name}</SelectItem>
@@ -520,31 +573,47 @@ export function MemberList({ initialMembers, trainers = [] }: Props) {
                       </TableCell>
                       <TableCell className="text-center text-xs" onClick={(e) => e.stopPropagation()}>
                         {m.assignment ? (() => {
-                          const pptStatus = m.assignment.ppt_assign_status ?? (m.assignment.ppt_trainer_id ? 'assigned' : 'none')
-                          const selectVal = m.assignment.ppt_trainer_id ?? (pptStatus === 'later' ? 'later' : 'none')
+                          const override = trainerOverrides[m.assignment!.id]?.ppt
+                          const pptStatus = override?.status ?? m.assignment.ppt_assign_status ?? (m.assignment.ppt_trainer_id ? 'assigned' : 'none')
+                          const selectVal = override ? (override.id ?? (override.status === 'later' ? 'later' : override.status === 'not_requested' ? 'not_requested' : 'none')) : (m.assignment.ppt_trainer_id ?? (pptStatus === 'later' ? 'later' : pptStatus === 'not_requested' ? 'not_requested' : 'none'))
                           return (
                             <Select
                               value={selectVal}
                               onValueChange={async (v) => {
-                                const oldName = m.assignment!.ppt_trainer?.name ?? (pptStatus === 'later' ? '추후배정' : '미배정')
-                                const newName = v === 'none' ? '미배정' : v === 'later' ? '추후배정' : trainers.find((t) => t.id === v)?.name ?? v
-                                await updateOtAssignment(m.assignment!.id, {
-                                  ppt_trainer_id: (v === 'none' || v === 'later') ? null : v,
-                                  ppt_assign_status: v === 'later' ? 'later' : v === 'none' ? 'none' : 'assigned',
-                                })
-                                await addChangeLog({ target_type: 'ot_assignment', target_id: m.assignment!.id, action: 'PPT 담당 변경', old_value: oldName, new_value: newName, note: `${m.name} 회원` })
+                                const oldName = m.assignment!.ppt_trainer?.name ?? (pptStatus === 'later' ? '추후배정' : pptStatus === 'not_requested' ? '미신청' : '미배정')
+                                const newTrainer = trainers.find((t) => t.id === v)
+                                const newName = v === 'none' ? '미배정' : v === 'later' ? '추후배정' : v === 'not_requested' ? '미신청' : newTrainer?.name ?? v
+                                const newStatus = v === 'later' ? 'later' : v === 'none' ? 'none' : v === 'not_requested' ? 'not_requested' : 'assigned'
+                                // 낙관적 업데이트: 즉시 UI 반영
+                                setTrainerOverrides(prev => ({
+                                  ...prev,
+                                  [m.assignment!.id]: {
+                                    ...prev[m.assignment!.id],
+                                    ppt: { id: (v === 'none' || v === 'later' || v === 'not_requested') ? null : v, name: newName, status: newStatus },
+                                  },
+                                }))
+                                // 서버 호출 병렬 실행
+                                await Promise.all([
+                                  updateOtAssignment(m.assignment!.id, {
+                                    ppt_trainer_id: (v === 'none' || v === 'later' || v === 'not_requested') ? null : v,
+                                    ppt_assign_status: newStatus,
+                                  }),
+                                  addChangeLog({ target_type: 'ot_assignment', target_id: m.assignment!.id, action: 'PPT 담당 변경', old_value: oldName, new_value: newName, note: `${m.name} 회원` }),
+                                ])
                                 router.refresh()
                               }}
                             >
                               <SelectTrigger className={`h-7 text-xs border justify-center gap-1 px-1 rounded ${
                                 pptStatus === 'later' ? 'bg-orange-50 border-orange-200 text-orange-600'
-                                : m.assignment.ppt_trainer_id ? 'bg-purple-50 border-purple-200 text-purple-700'
+                                : pptStatus === 'not_requested' ? 'bg-gray-100 border-gray-300 text-gray-500'
+                                : (override?.id ?? m.assignment.ppt_trainer_id) ? 'bg-purple-50 border-purple-200 text-purple-700'
                                 : 'bg-white border-gray-200 text-gray-900'
                               }`}>
                                 <SelectValue />
                               </SelectTrigger>
                               <SelectContent>
                                 <SelectItem value="none">미배정</SelectItem>
+                                <SelectItem value="not_requested">미신청</SelectItem>
                                 <SelectItem value="later">추후배정</SelectItem>
                                 {trainers.map((t) => (
                                   <SelectItem key={t.id} value={t.id}>{t.name}</SelectItem>
@@ -570,7 +639,7 @@ export function MemberList({ initialMembers, trainers = [] }: Props) {
                           <div className="grid grid-cols-2 md:grid-cols-4 gap-3 text-sm">
                             <div>
                               <p className="text-xs text-gray-500">연락처</p>
-                              <p className="font-medium text-gray-900">{m.phone.replace(/(\d{3})(\d{4})(\d{4})/, '$1-$2-$3')}</p>
+                              <p className="font-medium text-gray-900">{m.phone ? m.phone.replace(/(\d{3})(\d{4})(\d{4})/, '$1-$2-$3') : '-'}</p>
                             </div>
                             <div>
                               <p className="text-xs text-gray-500">성별</p>
@@ -682,6 +751,8 @@ export function MemberList({ initialMembers, trainers = [] }: Props) {
                     <SelectTrigger><SelectValue /></SelectTrigger>
                     <SelectContent>
                       <SelectItem value="none">미배정</SelectItem>
+                      <SelectItem value="not_requested">미신청</SelectItem>
+                      <SelectItem value="later">추후배정</SelectItem>
                       {trainers.map((t) => (
                         <SelectItem key={t.id} value={t.id}>{t.name}</SelectItem>
                       ))}
@@ -694,6 +765,8 @@ export function MemberList({ initialMembers, trainers = [] }: Props) {
                     <SelectTrigger><SelectValue /></SelectTrigger>
                     <SelectContent>
                       <SelectItem value="none">미배정</SelectItem>
+                      <SelectItem value="not_requested">미신청</SelectItem>
+                      <SelectItem value="later">추후배정</SelectItem>
                       {trainers.map((t) => (
                         <SelectItem key={t.id} value={t.id}>{t.name}</SelectItem>
                       ))}
@@ -762,6 +835,8 @@ export function MemberList({ initialMembers, trainers = [] }: Props) {
                   </SelectTrigger>
                   <SelectContent>
                     <SelectItem value="none">미배정</SelectItem>
+                    <SelectItem value="not_requested">미신청</SelectItem>
+                    <SelectItem value="later">추후배정</SelectItem>
                     {trainers.map((t) => (
                       <SelectItem key={t.id} value={t.id}>{t.name}</SelectItem>
                     ))}
@@ -789,6 +864,8 @@ export function MemberList({ initialMembers, trainers = [] }: Props) {
                   </SelectTrigger>
                   <SelectContent>
                     <SelectItem value="none">미배정</SelectItem>
+                    <SelectItem value="not_requested">미신청</SelectItem>
+                    <SelectItem value="later">추후배정</SelectItem>
                     {trainers.map((t) => (
                       <SelectItem key={t.id} value={t.id}>{t.name}</SelectItem>
                     ))}

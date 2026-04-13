@@ -46,16 +46,45 @@ export async function getTrainerFolders(): Promise<TrainerFolder[]> {
   if (!trainers || trainers.length === 0) return []
 
   // 해당 트레이너들의 배정만 조회 (PT 또는 PPT 담당)
+  // member 조인 — registration_source로 PT 수기 회원을 카운트에서 제외
   const trainerIds = trainers.map((t) => t.id)
   const { data: assignments } = await supabase
     .from('ot_assignments')
-    .select('status, pt_trainer_id, ppt_trainer_id, is_sales_target, is_pt_conversion')
+    .select('status, pt_trainer_id, ppt_trainer_id, is_sales_target, is_pt_conversion, member:members!inner(id, name, registration_source)')
     .or(`pt_trainer_id.in.(${trainerIds.join(',')}),ppt_trainer_id.in.(${trainerIds.join(',')})`)
 
+  // 오늘의 OT 수업 (trainer_schedules에서 오늘 schedule_type='OT' 행)
+  // KST 기준 오늘 — 서버가 UTC라서 KST offset 적용
+  const nowKst = new Date(Date.now() + 9 * 60 * 60 * 1000)
+  const todayStr = `${nowKst.getUTCFullYear()}-${String(nowKst.getUTCMonth() + 1).padStart(2, '0')}-${String(nowKst.getUTCDate()).padStart(2, '0')}`
+  const { data: todaySchedules } = await supabase
+    .from('trainer_schedules')
+    .select('trainer_id, member_name')
+    .eq('scheduled_date', todayStr)
+    .eq('schedule_type', 'OT')
+    .in('trainer_id', trainerIds)
+
   const folders: TrainerFolder[] = trainers.map((t) => {
-    const myAssignments = (assignments ?? []).filter(
-      (a) => a.pt_trainer_id === t.id || a.ppt_trainer_id === t.id
-    )
+    // OT 회원만 (PT 수기 회원 제외) — 트레이너 본인 담당 회원
+    const myAssignments = (assignments ?? []).filter((a) => {
+      if (a.pt_trainer_id !== t.id && a.ppt_trainer_id !== t.id) return false
+      const member = a.member as unknown as { registration_source?: string } | null
+      return member?.registration_source !== '수기'
+    })
+
+    // 오늘 이 트레이너의 OT 수업
+    const myTodayOts = (todaySchedules ?? []).filter((s) => s.trainer_id === t.id)
+    // 오늘 OT 수업이 잡힌 회원 이름 set
+    const todayMemberNames = new Set(myTodayOts.map((s) => s.member_name))
+    // 오늘 OT 수업 회원 중 매출대상자 카운트 (회원 단위 unique)
+    const todaySalesTargetMemberIds = new Set<string>()
+    for (const a of myAssignments) {
+      const member = a.member as unknown as { id: string; name: string } | null
+      if (!member) continue
+      if (todayMemberNames.has(member.name) && a.is_sales_target) {
+        todaySalesTargetMemberIds.add(member.id)
+      }
+    }
 
     return {
       id: t.id,
@@ -65,10 +94,10 @@ export async function getTrainerFolders(): Promise<TrainerFolder[]> {
       has_password: !!t.folder_password,
       folder_order: t.folder_order ?? 0,
       stats: {
-        inProgress: myAssignments.filter((a) => ['진행중', '배정완료'].includes(a.status)).length,
-        pending: myAssignments.filter((a) => a.is_sales_target).length,
-        completed: myAssignments.filter((a) => a.is_pt_conversion).length,
-        total: myAssignments.length,
+        inProgress: myTodayOts.length, // 금일 OT 수업 개수
+        pending: todaySalesTargetMemberIds.size, // 금일 매출대상자
+        completed: myAssignments.filter((a) => a.is_pt_conversion).length, // PT전환
+        total: myAssignments.length, // 전체 OT 회원 (PT 수기 제외)
       },
     }
   })

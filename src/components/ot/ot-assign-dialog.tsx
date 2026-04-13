@@ -15,8 +15,10 @@ import {
   SelectValue,
 } from '@/components/ui/select'
 import { Button } from '@/components/ui/button'
+import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { updateOtAssignment, getTrainers } from '@/actions/ot'
+import { getConsultationCard } from '@/actions/consultation'
 import { OT_STATUS_OPTIONS } from '@/lib/constants'
 import type { OtAssignmentWithDetails, OtStatus } from '@/types'
 
@@ -37,6 +39,7 @@ export function OtAssignDialog({
   const [status, setStatus] = useState<OtStatus>('신청대기')
   const [ptTrainerId, setPtTrainerId] = useState<string>('')
   const [pptTrainerId, setPptTrainerId] = useState<string>('')
+  const [exerciseStartDate, setExerciseStartDate] = useState<string>('')
   const [loading, setLoading] = useState(false)
 
   useEffect(() => {
@@ -46,6 +49,10 @@ export function OtAssignDialog({
         setStatus(assignment.status)
         setPtTrainerId(assignment.pt_trainer_id ?? '')
         setPptTrainerId(assignment.ppt_trainer_id ?? '')
+        // 상담카드에서 운동 시작일 가져오기
+        getConsultationCard(assignment.member_id).then((card) => {
+          setExerciseStartDate(card?.exercise_start_date ?? '')
+        })
       }
     }
   }, [open, assignment])
@@ -78,6 +85,21 @@ export function OtAssignDialog({
         </DialogHeader>
 
         <div className="space-y-4 py-2">
+          {/* 운동 시작일 */}
+          <div className="space-y-2">
+            <Label>운동 시작일</Label>
+            <Input
+              type="date"
+              value={exerciseStartDate}
+              className="bg-muted"
+              disabled
+              placeholder="상담카드에서 설정"
+            />
+            {!exerciseStartDate && (
+              <p className="text-xs text-muted-foreground">상담카드에서 운동 시작일을 설정해주세요</p>
+            )}
+          </div>
+
           <div className="space-y-2">
             <Label>상태</Label>
             <Select value={status} onValueChange={(v) => setStatus(v as OtStatus)}>

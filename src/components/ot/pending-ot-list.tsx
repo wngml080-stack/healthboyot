@@ -1,14 +1,15 @@
 'use client'
 
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { useRouter } from 'next/navigation'
 import { OtCategoryBadge } from './ot-category-badge'
-import { ChevronDown, ChevronUp, UserPlus } from 'lucide-react'
+import { ChevronDown, ChevronUp, UserPlus, CalendarDays } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
 } from '@/components/ui/select'
 import { updateOtAssignment } from '@/actions/ot'
+import { getConsultationCard } from '@/actions/consultation'
 import type { OtAssignmentWithDetails, Profile } from '@/types'
 
 interface Props {
@@ -23,11 +24,23 @@ export function PendingOtList({ assignments, trainers = [] }: Props) {
   const [selectedPtTrainer, setSelectedPtTrainer] = useState('')
   const [selectedPptTrainer, setSelectedPptTrainer] = useState('')
   const [loading, setLoading] = useState(false)
+  const [startDates, setStartDates] = useState<Record<string, string | null>>({})
+
+  // 각 회원의 상담카드에서 운동 시작일 가져오기
+  useEffect(() => {
+    assignments.forEach((a) => {
+      if (startDates[a.member_id] === undefined) {
+        getConsultationCard(a.member_id).then((card) => {
+          setStartDates((prev) => ({ ...prev, [a.member_id]: card?.exercise_start_date ?? null }))
+        })
+      }
+    })
+  }, [assignments]) // eslint-disable-line react-hooks/exhaustive-deps
 
   const handleAssign = async (assignmentId: string) => {
     if (!selectedPtTrainer && !selectedPptTrainer) return
     setLoading(true)
-    const isSpecial = (v: string) => v === 'later' || v === 'urgent'
+    const isSpecial = (v: string) => v === 'later' || v === 'urgent' || v === 'not_requested'
     const updates: Record<string, string | null> = {
       status: '배정완료',
     }
@@ -69,7 +82,7 @@ export function PendingOtList({ assignments, trainers = [] }: Props) {
                   <OtCategoryBadge category={a.member.ot_category ?? a.ot_category} />
                 </div>
                 <p className="text-xs text-gray-500 mt-0.5 tabular-nums">
-                  {a.member.phone.replace(/(\d{3})(\d{4})(\d{4})/, '$1-$2-$3')}
+                  {a.member.phone ? a.member.phone.replace(/(\d{3})(\d{4})(\d{4})/, '$1-$2-$3') : '-'}
                 </p>
               </div>
               <div className="flex items-center gap-2">
@@ -82,6 +95,15 @@ export function PendingOtList({ assignments, trainers = [] }: Props) {
               <div className="border-t border-gray-100 bg-gray-50 px-3 py-3 space-y-3">
                 <div className="space-y-1.5 text-sm">
                   <DetailRow label="등록일" value={a.member.registered_at} />
+                  {startDates[a.member_id] && (
+                    <div className="flex">
+                      <span className="text-gray-500 w-20 shrink-0">운동시작일</span>
+                      <span className="text-yellow-600 font-semibold flex items-center gap-1">
+                        <CalendarDays className="h-3.5 w-3.5" />
+                        {new Date(startDates[a.member_id]! + 'T00:00:00').toLocaleDateString('ko')}
+                      </span>
+                    </div>
+                  )}
                   <DetailRow label="운동시간" value={a.member.exercise_time} />
                   <DetailRow label="운동기간" value={a.member.duration_months ? String(a.member.duration_months) : null} />
                   <DetailRow label="종목" value={a.member.ot_category} />
@@ -109,6 +131,7 @@ export function PendingOtList({ assignments, trainers = [] }: Props) {
                         </SelectTrigger>
                         <SelectContent>
                           <SelectItem value="later">추후배정</SelectItem>
+                          <SelectItem value="not_requested">미신청</SelectItem>
                           <SelectItem value="urgent">긴급요청</SelectItem>
                           {trainers.map((t) => (
                             <SelectItem key={t.id} value={t.id}>{t.name}</SelectItem>
@@ -124,6 +147,7 @@ export function PendingOtList({ assignments, trainers = [] }: Props) {
                         </SelectTrigger>
                         <SelectContent>
                           <SelectItem value="later">추후배정</SelectItem>
+                          <SelectItem value="not_requested">미신청</SelectItem>
                           <SelectItem value="urgent">긴급요청</SelectItem>
                           {trainers.map((t) => (
                             <SelectItem key={t.id} value={t.id}>{t.name}</SelectItem>

@@ -3,10 +3,16 @@ import { z } from 'zod'
 // ── 회원 ──
 export const memberSchema = z.object({
   name: z.string().min(1, '이름을 입력해주세요'),
+  // 연락처는 선택 — PT 회원 등은 회원명만으로도 등록 가능
+  // 입력한 경우에만 형식 검증
   phone: z
     .string()
-    .min(1, '연락처를 입력해주세요')
-    .regex(/^\d{10,11}$/, '올바른 연락처 형식이 아닙니다'),
+    .nullable()
+    .optional()
+    .refine(
+      (v) => !v || /^\d{10,11}$/.test(v),
+      { message: '올바른 연락처 형식이 아닙니다 (10~11자리)' },
+    ),
   gender: z.enum(['남', '여']).nullable().optional(),
   sports: z.array(z.string()).default([]),
   duration_months: z.string().nullable().optional(),

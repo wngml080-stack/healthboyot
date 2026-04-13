@@ -19,7 +19,7 @@ export async function getMembers(filters?: {
     if (!filters?.search) return demoWithOt
     const q = filters.search.toLowerCase()
     return demoWithOt.filter(
-      (m) => m.name.toLowerCase().includes(q) || m.phone.includes(q)
+      (m) => m.name.toLowerCase().includes(q) || (m.phone ?? '').includes(q)
     )
   }
 
@@ -31,8 +31,10 @@ export async function getMembers(filters?: {
       .from('ot_assignments')
       .select(`
         id, status, ot_category, pt_trainer_id, ppt_trainer_id, sales_status, contact_status,
-        is_sales_target, is_pt_conversion, created_at,
-        member:members!inner(id, name, phone, gender, ot_category, exercise_time, duration_months, detail_info, notes, registered_at, registration_source, is_existing_member, is_completed),
+        is_sales_target, is_pt_conversion, notes, pt_assign_status, ppt_assign_status, created_at,
+        member:members!inner(id, name, phone, gender, ot_category, exercise_time, duration_months, detail_info, notes, registered_at, registration_source, is_existing_member, is_renewal, is_completed, start_date),
+        pt_trainer:profiles!ot_assignments_pt_trainer_id_fkey(id, name),
+        ppt_trainer:profiles!ot_assignments_ppt_trainer_id_fkey(id, name),
         sessions:ot_sessions(id, session_number, scheduled_at, completed_at)
       `)
       .order('created_at', { ascending: false })
@@ -83,11 +85,12 @@ export async function getMembers(filters?: {
     .select(`
       id, name, phone, gender, ot_category, exercise_time, duration_months,
       detail_info, notes, registered_at, registration_source, is_existing_member,
-      is_completed, start_date, created_at, created_by,
+      is_renewal, is_completed, start_date, created_at, created_by,
       creator:profiles!members_created_by_fkey(name, role),
       assignment:ot_assignments(
         id, status, ot_category, pt_trainer_id, ppt_trainer_id,
-        sales_status, contact_status, is_sales_target, is_pt_conversion, created_at,
+        sales_status, contact_status, is_sales_target, is_pt_conversion,
+        notes, pt_assign_status, ppt_assign_status, created_at,
         pt_trainer:profiles!ot_assignments_pt_trainer_id_fkey(id, name),
         ppt_trainer:profiles!ot_assignments_ppt_trainer_id_fkey(id, name),
         sessions:ot_sessions(id, session_number, scheduled_at, completed_at)
@@ -201,19 +204,8 @@ export async function deleteMember(id: string) {
 
   const supabase = await createClient()
 
-  // ot_sessions → ot_assignments → member 순서로 삭제 (FK)
-  const { data: assignments } = await supabase
-    .from('ot_assignments')
-    .select('id')
-    .eq('member_id', id)
-
-  if (assignments) {
-    for (const a of assignments) {
-      await supabase.from('ot_sessions').delete().eq('ot_assignment_id', a.id)
-    }
-    await supabase.from('ot_assignments').delete().eq('member_id', id)
-  }
-
+  // ot_assignments(member_id), ot_sessions(ot_assignment_id) 모두 ON DELETE CASCADE 이므로
+  // members 한 번만 삭제하면 연관 데이터까지 자동 삭제됨
   const { error } = await supabase
     .from('members')
     .delete()
@@ -230,7 +222,7 @@ export async function searchMembers(query: string): Promise<Member[]> {
   if (isDemoMode()) {
     const q = query.toLowerCase()
     return DEMO_MEMBERS.filter(
-      (m) => m.name.toLowerCase().includes(q) || m.phone.includes(q)
+      (m) => m.name.toLowerCase().includes(q) || (m.phone ?? '').includes(q)
     ).slice(0, 10)
   }
 
@@ -265,9 +257,10 @@ export async function checkPhoneDuplicate(phone: string): Promise<Member | null>
 }
 
 // ── 간편 회원 등록 + OT 배정 ──
+// phone은 옵셔널 (PT는 회원명만으로도 등록 가능)
 export async function quickRegisterMember(values: {
   name: string
-  phone: string
+  phone?: string  // 옵셔널
   trainerId: string
   trainerRole?: 'pt' | 'ppt'
   isExistingMember?: boolean
@@ -278,6 +271,9 @@ export async function quickRegisterMember(values: {
   exercise_time?: string | null
   exercise_goal?: string
   notes?: string | null
+  // PT 가입 정보 (옵셔널) — 총 등록 횟수, 현재까지 진행한 횟수
+  expected_sessions?: number
+  actual_sessions?: number
 }) {
   if (isDemoMode()) {
     return { data: { memberId: 'demo-new', assignmentId: 'demo-assign' } }
@@ -296,8 +292,17 @@ export async function quickRegisterMember(values: {
   const isPpt = values.trainerRole === 'ppt'
   const assignStatus = trainerId ? '배정완료' : '신청대기'
 
-  // 1. 전화번호 중복 체크
-  const existing = await checkPhoneDuplicate(values.phone)
+  // 1. 전화번호가 있으면 중복 체크 (없으면 항상 신규)
+  const phone = values.phone?.trim() || null
+  const existing = phone ? await checkPhoneDuplicate(phone) : null
+  // PT 가입 정보 (옵셔널) — 0이거나 undefined면 default 사용
+  const expectedSessions = values.expected_sessions && values.expected_sessions > 0
+    ? values.expected_sessions
+    : undefined
+  const actualSessions = values.actual_sessions && values.actual_sessions > 0
+    ? values.actual_sessions
+    : undefined
+
   if (existing) {
     // 기존 회원이 있으면 OT 배정만 추가
     const { data: assignment, error: assignErr } = await supabase
@@ -309,6 +314,8 @@ export async function quickRegisterMember(values: {
         ppt_trainer_id: isPpt ? trainerId : null,
         pt_assign_status: isPpt ? 'none' : (trainerId ? 'assigned' : 'none'),
         ppt_assign_status: isPpt ? (trainerId ? 'assigned' : 'none') : 'none',
+        ...(expectedSessions ? { expected_sessions: expectedSessions } : {}),
+        ...(actualSessions ? { actual_sessions: actualSessions } : {}),
       })
       .select()
       .single()
@@ -322,7 +329,7 @@ export async function quickRegisterMember(values: {
 
   const memberData: Record<string, unknown> = {
     name: values.name,
-    phone: values.phone,
+    phone: phone, // null 가능 (mig 028)
     sports: values.ot_category ? [values.ot_category] : [],
     ot_category: values.ot_category || null,
     duration_months: values.duration_months || null,
@@ -356,6 +363,8 @@ export async function quickRegisterMember(values: {
       ppt_trainer_id: isPpt ? trainerId : null,
       pt_assign_status: isPpt ? 'none' : (trainerId ? 'assigned' : 'none'),
       ppt_assign_status: isPpt ? (trainerId ? 'assigned' : 'none') : 'none',
+      ...(expectedSessions ? { expected_sessions: expectedSessions } : {}),
+      ...(actualSessions ? { actual_sessions: actualSessions } : {}),
     })
     .select()
     .single()

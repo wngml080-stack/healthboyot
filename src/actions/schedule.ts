@@ -15,6 +15,25 @@ export interface TrainerSchedule {
   created_at: string
 }
 
+// 충돌 검사용 슬롯만 (가벼운 SELECT). 카드 리스트 client-side waterfall 제거용.
+export interface TrainerScheduleSlot {
+  member_name: string
+  schedule_type: string
+  scheduled_date: string
+  start_time: string
+}
+
+export async function getTrainerScheduleSlots(trainerId: string): Promise<TrainerScheduleSlot[]> {
+  const supabase = await createClient()
+  const { data, error } = await supabase
+    .from('trainer_schedules')
+    .select('member_name, schedule_type, scheduled_date, start_time')
+    .eq('trainer_id', trainerId)
+
+  if (error) return []
+  return (data ?? []) as TrainerScheduleSlot[]
+}
+
 export async function getTrainerSchedules(trainerId: string, weekStart: string, weekEnd: string): Promise<TrainerSchedule[]> {
   const supabase = await createClient()
 

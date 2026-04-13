@@ -87,20 +87,20 @@ async function getDashboardData() {
 }
 
 // 회원 목록 — 별도 서버 컴포넌트 (Suspense로 분리)
-async function MemberListSection({ params }: { params: { search?: string; trainer?: string; status?: string; from?: string; to?: string } }) {
-  const [members, staffList] = await Promise.all([
-    getMembers({
-      search: params.search,
-      trainer: params.trainer,
-      status: params.status,
-      from: params.from,
-      to: params.to,
-    }),
-    getStaffList(),
-  ])
-  const trainers = staffList
-    .filter((s) => !['admin'].includes(s.role))
-    .map((s) => ({ id: s.id, name: s.name }))
+async function MemberListSection({
+  params,
+  trainers,
+}: {
+  params: { search?: string; trainer?: string; status?: string; from?: string; to?: string }
+  trainers: { id: string; name: string }[]
+}) {
+  const members = await getMembers({
+    search: params.search,
+    trainer: params.trainer,
+    status: params.status,
+    from: params.from,
+    to: params.to,
+  })
 
   return <MemberList initialMembers={members} trainers={trainers} />
 }
@@ -184,7 +184,7 @@ export default async function DashboardPage({ searchParams }: Props) {
       <div>
         <div className="mb-3"><PageTitle>회원 목록</PageTitle></div>
         <Suspense fallback={<TableSkeleton />}>
-          <MemberListSection params={params} />
+          <MemberListSection params={params} trainers={trainers} />
         </Suspense>
       </div>
     </div>

@@ -66,7 +66,7 @@ export function OtTable({ assignments, onRowAction, onToggleComplete }: OtTableP
                 {a.member.gender ?? '-'}
               </TableCell>
               <TableCell className="text-sm tabular-nums">
-                {a.member.phone.replace(/(\d{3})(\d{4})(\d{4})/, '$1-$2-$3')}
+                {a.member.phone ? a.member.phone.replace(/(\d{3})(\d{4})(\d{4})/, '$1-$2-$3') : '-'}
               </TableCell>
               <TableCell className="text-sm">
                 {a.member.exercise_time ?? '-'}
