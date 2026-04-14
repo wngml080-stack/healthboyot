@@ -17,6 +17,16 @@ const geistMono = localFont({
 export const metadata: Metadata = {
   title: "헬스보이짐 당산역점 OT시스템",
   description: "헬스보이짐 당산역점 OT 배정 및 관리 시스템",
+  manifest: "/manifest.json",
+  themeColor: "#1a1a1a",
+  appleWebApp: {
+    capable: true,
+    statusBarStyle: "black-translucent",
+    title: "헬스보이짐",
+  },
+  other: {
+    "mobile-web-app-capable": "yes",
+  },
 };
 
 export default function RootLayout({
@@ -26,6 +36,11 @@ export default function RootLayout({
 }>) {
   return (
     <html lang="ko">
+      <head>
+        <link rel="apple-touch-icon" href="/api/icon?size=180" />
+        <meta name="apple-mobile-web-app-capable" content="yes" />
+        <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+      </head>
       <body
         className={`${geistSans.variable} ${geistMono.variable} antialiased`}
       >
