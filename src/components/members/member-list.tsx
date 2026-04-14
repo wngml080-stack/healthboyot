@@ -397,8 +397,8 @@ export function MemberList({ initialMembers, trainers = [] }: Props) {
   return (
     <>
       {/* 필터 바 */}
-      <div className="flex flex-wrap items-center gap-3 mb-4">
-        <div className="relative w-64">
+      <div className="flex flex-wrap items-center gap-2 sm:gap-3 mb-4">
+        <div className="relative w-full sm:w-64">
           <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-400" />
           <Input
             placeholder="이름 또는 연락처 검색..."
@@ -415,7 +415,7 @@ export function MemberList({ initialMembers, trainers = [] }: Props) {
           defaultValue={searchParams.get('trainer') ?? 'all'}
           onValueChange={(v) => pushFilters({ trainer: v })}
         >
-          <SelectTrigger className="w-36 h-9 bg-white text-gray-700 border-gray-300 text-sm">
+          <SelectTrigger className="w-[calc(50%-0.25rem)] sm:w-36 h-9 bg-white text-gray-700 border-gray-300 text-sm">
             <SelectValue placeholder="트레이너" />
           </SelectTrigger>
           <SelectContent>
@@ -431,7 +431,7 @@ export function MemberList({ initialMembers, trainers = [] }: Props) {
           defaultValue={searchParams.get('status') ?? 'all'}
           onValueChange={(v) => pushFilters({ status: v })}
         >
-          <SelectTrigger className="w-32 h-9 bg-white text-gray-700 border-gray-300 text-sm">
+          <SelectTrigger className="w-[calc(50%-0.25rem)] sm:w-32 h-9 bg-white text-gray-700 border-gray-300 text-sm">
             <SelectValue placeholder="상태" />
           </SelectTrigger>
           <SelectContent>
@@ -447,19 +447,19 @@ export function MemberList({ initialMembers, trainers = [] }: Props) {
           type="date"
           defaultValue={searchParams.get('from') ?? ''}
           onChange={(e) => pushFilters({ from: e.target.value })}
-          className="w-36 h-9 bg-white text-gray-700 border-gray-300 text-sm"
+          className="w-[calc(50%-1rem)] sm:w-36 h-9 bg-white text-gray-700 border-gray-300 text-sm"
         />
         <span className="text-gray-400 text-sm">~</span>
         <Input
           type="date"
           defaultValue={searchParams.get('to') ?? ''}
           onChange={(e) => pushFilters({ to: e.target.value })}
-          className="w-36 h-9 bg-white text-gray-700 border-gray-300 text-sm"
+          className="w-[calc(50%-1rem)] sm:w-36 h-9 bg-white text-gray-700 border-gray-300 text-sm"
         />
 
         <Button
           size="sm"
-          className="h-9 bg-blue-600 hover:bg-blue-700 text-white ml-auto"
+          className="h-9 bg-blue-600 hover:bg-blue-700 text-white w-full sm:w-auto sm:ml-auto"
           onClick={() => { resetAddForm(); setShowAddDialog(true) }}
         >
           <UserPlus className="h-4 w-4 mr-1" />회원 추가
@@ -467,8 +467,8 @@ export function MemberList({ initialMembers, trainers = [] }: Props) {
       </div>
 
       {/* 테이블 */}
-      <div className="rounded-md border border-gray-200 bg-white overflow-x-auto">
-        <Table>
+      <div className="rounded-md border border-gray-200 bg-white overflow-x-auto -mx-4 sm:mx-0">
+        <Table className="min-w-[700px]">
           <TableHeader>
             <TableRow className="bg-gray-50">
               <SortableHead label="등록일" sortKey="registered_at" currentKey={sortKey} asc={sortAsc} onSort={handleSort} width="w-[80px]" />
@@ -635,8 +635,8 @@ export function MemberList({ initialMembers, trainers = [] }: Props) {
                     {/* 펼침 영역 */}
                     {isExpanded && (
                       <TableRow>
-                        <TableCell colSpan={8} className="bg-gray-50 px-6 py-4">
-                          <div className="grid grid-cols-2 md:grid-cols-4 gap-3 text-sm">
+                        <TableCell colSpan={8} className="bg-gray-50 px-3 sm:px-6 py-4">
+                          <div className="grid grid-cols-2 gap-3 text-sm">
                             <div>
                               <p className="text-xs text-gray-500">연락처</p>
                               <p className="font-medium text-gray-900">{m.phone ? m.phone.replace(/(\d{3})(\d{4})(\d{4})/, '$1-$2-$3') : '-'}</p>
@@ -666,7 +666,7 @@ export function MemberList({ initialMembers, trainers = [] }: Props) {
                               <p className="text-sm text-gray-900 mt-0.5">{m.notes}</p>
                             </div>
                           )}
-                          <div className="mt-3 flex justify-end gap-2">
+                          <div className="mt-3 flex flex-wrap justify-end gap-2">
                             <Button size="sm" className="bg-red-500 hover:bg-red-600 text-white" onClick={(e) => { e.stopPropagation(); setDeleteConfirm(m) }}>
                               <Trash2 className="h-3.5 w-3.5 mr-1" />
                               삭제

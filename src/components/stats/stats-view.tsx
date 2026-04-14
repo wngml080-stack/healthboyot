@@ -84,7 +84,7 @@ export function StatsView({ stats, target }: Props) {
 
   return (
     <div className="space-y-6">
-      <div className="flex items-center justify-between">
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
         <PageTitle>통계 · 보고서</PageTitle>
         <div className="flex gap-2">
           <Button variant="outline" size="sm" onClick={() => setShowTarget(true)} className="bg-white text-gray-700 border-gray-300">

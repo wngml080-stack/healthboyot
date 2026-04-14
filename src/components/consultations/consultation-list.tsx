@@ -125,7 +125,7 @@ export function ConsultationList({ cards: initialCards, members, profile, staffL
     <div className="space-y-4">
       {/* 상단 필터 + 버튼 */}
       <div className="flex flex-wrap items-center gap-3">
-        <div className="relative w-64">
+        <div className="relative w-full sm:w-64">
           <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-400" />
           <Input
             placeholder="이름 또는 연락처 검색..."
@@ -153,7 +153,7 @@ export function ConsultationList({ cards: initialCards, members, profile, staffL
         </div>
 
         <Button
-          className="ml-auto bg-emerald-600 hover:bg-emerald-700 text-white"
+          className="w-full sm:w-auto sm:ml-auto bg-emerald-600 hover:bg-emerald-700 text-white"
           onClick={() => { setShowNewCard(true); setNewName(''); setNewPhone(''); setNewGender(''); setNewCardId(null); setNewCardData(null) }}
         >
           <Plus className="h-4 w-4 mr-1" />새 상담카드 작성
@@ -161,8 +161,8 @@ export function ConsultationList({ cards: initialCards, members, profile, staffL
       </div>
 
       {/* 카드 목록 */}
-      <div className="rounded-md border border-gray-200 bg-white overflow-hidden">
-        <table className="w-full text-sm">
+      <div className="rounded-md border border-gray-200 bg-white overflow-x-auto -mx-4 sm:mx-0">
+        <table className="w-full text-sm min-w-[600px]">
           <thead>
             <tr className="bg-gray-50 border-b">
               <th className="text-left px-4 py-2 font-medium text-gray-700">상태</th>
@@ -247,7 +247,7 @@ export function ConsultationList({ cards: initialCards, members, profile, staffL
 
           {!newCardId ? (
             <div className="space-y-4">
-              <div className="grid grid-cols-3 gap-3">
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
                 <div className="space-y-1">
                   <label className="text-sm font-medium">이름 *</label>
                   <Input value={newName} onChange={(e) => setNewName(e.target.value)} placeholder="회원 이름" />

@@ -218,7 +218,7 @@ export function WeeklyReport({ assignments, trainerName }: Props) {
         <CardContent className="space-y-4">
 
           {/* 매출 요약 바 */}
-          <div className="grid grid-cols-4 gap-3 rounded-lg bg-gray-50 p-3">
+          <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 rounded-lg bg-gray-50 p-3">
             <div className="text-center">
               <p className="text-[10px] text-gray-500">현재 매출</p>
               <p className="text-sm font-bold text-gray-900">{fmtMan(totalSales)}</p>

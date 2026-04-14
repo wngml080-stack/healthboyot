@@ -438,8 +438,8 @@ export function TrainerCardList({ assignments, trainers = [], trainerId, trainer
                       key={a.id}
                       className="rounded-lg border border-gray-200 overflow-hidden"
                     >
-                      <div className="p-4 hover:bg-gray-50 cursor-pointer" onClick={() => setExpandedId(isExpanded ? null : a.id)}>
-                      <div className="flex items-center justify-between">
+                      <div className="p-3 sm:p-4 hover:bg-gray-50 cursor-pointer" onClick={() => setExpandedId(isExpanded ? null : a.id)}>
+                      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-1">
                         <div className="flex items-center gap-2 flex-wrap">
                           <span className="font-bold text-gray-900">{a.member.name}</span>
                           {a.member.registration_source === '수기' && (
@@ -516,7 +516,7 @@ export function TrainerCardList({ assignments, trainers = [], trainerId, trainer
                               <CalendarDays className="h-5 w-5" />
                               OT 일정
                             </p>
-                            <div className="grid gap-4 md:grid-cols-3">
+                            <div className="grid gap-4 grid-cols-1 sm:grid-cols-2 md:grid-cols-3">
                               {Array.from({ length: Math.max(3, ...(a.sessions?.map(ss => ss.session_number) ?? [0]), scheduleEdit?.assignmentId === a.id ? scheduleEdit.sessionNumber : 0) }, (_, i) => i + 1).map((num) => {
                                 const s = a.sessions?.find((ss) => ss.session_number === num)
                                 const isDone = !!s?.completed_at
@@ -598,7 +598,7 @@ export function TrainerCardList({ assignments, trainers = [], trainerId, trainer
                                             <svg className="h-3 w-3" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
                                             시간
                                           </p>
-                                          <div className="grid grid-cols-4 gap-1.5">
+                                          <div className="grid grid-cols-3 sm:grid-cols-4 gap-1.5">
                                             {TIME_SLOTS.map((slot) => (
                                               <button
                                                 key={slot}
@@ -756,7 +756,7 @@ export function TrainerCardList({ assignments, trainers = [], trainerId, trainer
                           </div>
 
                           {/* 퀵 액션 */}
-                          <div className="flex gap-2">
+                          <div className="flex flex-wrap gap-2">
                             <Button size="sm" className="bg-blue-600 hover:bg-blue-700 text-white" onClick={(e) => { e.stopPropagation(); openSalesEdit(a) }}>
                               <BarChart3 className="h-4 w-4 mr-1" />세일즈 관리
                             </Button>
@@ -1034,12 +1034,12 @@ export function TrainerCardList({ assignments, trainers = [], trainerId, trainer
                 )}
               </div>
 
-              <div className="flex gap-2">
-                <Button className="flex-1 bg-green-600 hover:bg-green-700 text-white h-12 text-base" onClick={handleCompleteSubmit} disabled={completeLoading}>
+              <div className="flex flex-col sm:flex-row gap-2">
+                <Button className="flex-1 bg-green-600 hover:bg-green-700 text-white h-12 text-sm sm:text-base" onClick={handleCompleteSubmit} disabled={completeLoading}>
                   <CheckCircle className="h-5 w-5 mr-2" />
                   {completeLoading ? '저장 중...' : `${completeTarget.sessionNumber}차 OT 완료 저장`}
                 </Button>
-                <Button className="flex-1 bg-blue-600 hover:bg-blue-700 text-white h-12 text-base" disabled={completeLoading} onClick={async () => {
+                <Button className="flex-1 bg-blue-600 hover:bg-blue-700 text-white h-12 text-sm sm:text-base" disabled={completeLoading} onClick={async () => {
                   // 먼저 완료 저장
                   await handleCompleteSubmit()
                   // 프로그램 제출
@@ -1260,7 +1260,7 @@ export function TrainerCardList({ assignments, trainers = [], trainerId, trainer
             {/* 상태 선택 */}
             <div className="space-y-2">
               <Label>상태</Label>
-              <div className="grid grid-cols-3 gap-2">
+              <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
                 {SALES_STATUSES.map((s) => (
                   <button
                     key={s.value}

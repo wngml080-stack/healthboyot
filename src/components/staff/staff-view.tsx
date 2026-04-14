@@ -117,9 +117,9 @@ export function StaffView({ staffList }: Props) {
       </div>
 
       {/* 직원 목록 */}
-      <Card>
-        <CardContent className="p-0">
-          <Table>
+      <Card className="-mx-4 sm:mx-0">
+        <CardContent className="p-0 overflow-x-auto">
+          <Table className="min-w-[500px]">
             <TableHeader>
               <TableRow>
                 <TableHead className="text-center">이름</TableHead>

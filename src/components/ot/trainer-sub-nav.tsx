@@ -21,7 +21,7 @@ export function TrainerSubNav({ trainerId }: Props) {
   const currentTab = searchParams.get('tab') ?? 'members'
 
   return (
-    <nav className="w-44 shrink-0 space-y-1">
+    <nav className="w-full md:w-44 md:shrink-0 flex md:flex-col gap-1 overflow-x-auto pb-2 md:pb-0">
       {TABS.map((tab) => {
         const Icon = tab.icon
         const isActive = currentTab === tab.key
@@ -34,7 +34,7 @@ export function TrainerSubNav({ trainerId }: Props) {
             key={tab.key}
             href={`/ot?${params.toString()}`}
             className={cn(
-              'flex items-center gap-2.5 rounded-lg px-3 py-2.5 text-sm font-medium transition-all',
+              'flex items-center gap-2 rounded-lg px-3 py-2 md:py-2.5 text-sm font-medium transition-all whitespace-nowrap',
               isActive
                 ? 'bg-yellow-400 text-black shadow-sm'
                 : 'text-gray-400 hover:bg-white/10 hover:text-white'

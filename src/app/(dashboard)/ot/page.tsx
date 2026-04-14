@@ -135,7 +135,7 @@ export default async function OtPage({ searchParams }: OtPageProps) {
       </div>
 
       {/* 좌측 메뉴 + 콘텐츠 */}
-      <div className="flex gap-6">
+      <div className="flex flex-col md:flex-row gap-4 md:gap-6">
         <TrainerSubNav trainerId={trainerId} />
         <div className="flex-1 min-w-0">
           {tab === 'members' && (

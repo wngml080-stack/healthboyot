@@ -913,7 +913,7 @@ export function WeeklyCalendar({ assignments, trainerId }: Props) {
         </div>
 
         {/* 캘린더 */}
-        <div className="rounded-lg border border-gray-200 bg-white overflow-x-auto">
+        <div className="rounded-lg border border-gray-200 bg-white overflow-x-auto -mx-4 sm:mx-0">
           {/* 헤더 */}
           <div className="flex border-b border-gray-200 sticky top-0 bg-gray-900 z-10">
             <div className="w-14 shrink-0" />

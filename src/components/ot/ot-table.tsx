@@ -31,7 +31,7 @@ export function OtTable({ assignments, onRowAction, onToggleComplete }: OtTableP
 
   return (
     <div className="rounded-md border overflow-x-auto">
-      <Table className="min-w-[1000px]">
+      <Table className="min-w-[700px]">
         <TableHeader>
           <TableRow>
             <TableHead className="w-24">날짜</TableHead>
