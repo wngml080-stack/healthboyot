@@ -1,4 +1,4 @@
-import type { Metadata } from "next";
+import type { Metadata, Viewport } from "next";
 import localFont from "next/font/local";
 import "./globals.css";
 import { Providers } from "@/components/providers";
@@ -18,7 +18,6 @@ export const metadata: Metadata = {
   title: "헬스보이짐 당산역점 OT시스템",
   description: "헬스보이짐 당산역점 OT 배정 및 관리 시스템",
   manifest: "/manifest.json",
-  themeColor: "#1a1a1a",
   appleWebApp: {
     capable: true,
     statusBarStyle: "black-translucent",
@@ -27,6 +26,10 @@ export const metadata: Metadata = {
   other: {
     "mobile-web-app-capable": "yes",
   },
+};
+
+export const viewport: Viewport = {
+  themeColor: "#1a1a1a",
 };
 
 export default function RootLayout({
