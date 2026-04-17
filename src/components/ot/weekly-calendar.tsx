@@ -600,15 +600,11 @@ export function WeeklyCalendar({ assignments, trainerId, profile }: Props) {
       setEditPtMemo(parsed.memo)
       return
     }
-    // OT 스케줄은 회원 상세 다이얼로그 열기 (상태변경 + 프로그램 진입)
+    // OT 스케줄 클릭 → 바로 프로그램으로 이동
     const matched = assignments.find((a) => a.member.name === schedule.member_name)
     if (matched) {
-      setDetailAssignment(matched)
-      setDetailSalesStatus((matched.sales_status as SalesStatus) ?? 'OT진행중')
-      setDetailSalesNote(matched.sales_note ?? '')
-      setDetailIsSalesTarget(matched.is_sales_target)
-      setDetailExpectedSessions(matched.expected_sessions ?? 0)
       setOtClassSchedule(schedule)
+      openProgramDialog(matched)
       return
     }
     // 매칭 안 되는 스케줄은 시간 편집만

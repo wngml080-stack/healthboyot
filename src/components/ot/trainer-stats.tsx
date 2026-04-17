@@ -111,7 +111,7 @@ export function TrainerStats({ assignments, trainerName, programs }: Props) {
   }
 
   // 데이터 매핑
-  const { memberRows, dailyTotals, columns, summary, periodSummary, inbodyRows, nextWeekTargets } = useMemo(() => {
+  const { memberRows, dailyTotals, columns, summary, periodSummary, otOverview, inbodyRows, thisWeekTargets, nextWeekTargets } = useMemo(() => {
     const nowTime = Date.now()
     const programMap = new Map<string, OtProgram>()
     for (const p of programs) programMap.set(p.ot_assignment_id, p)
@@ -209,13 +209,117 @@ export function TrainerStats({ assignments, trainerName, programs }: Props) {
       })
     }
 
-    // 다음주 매출대상자 (스케줄 유무와 관계없이 모든 매출대상자 표시)
+    // 당월/금주/차주 통계 (뷰 모드와 무관하게 항상 계산)
+    const monthStart = new Date(now.getFullYear(), now.getMonth(), 1)
+    const monthEnd = new Date(now.getFullYear(), now.getMonth() + 1, 0, 23, 59, 59)
+    const cwStart = goalWeekStart
+    const cwEnd = addDays(cwStart, 6)
+    const nwStart = addDays(cwStart, 7)
+    const nwEnd = addDays(nwStart, 6)
+
+    const activeAssignments = assignments.filter((a) => !['거부'].includes(a.status))
+
+    // 당월 통계
+    let monthAssigned = 0, monthClassMembers = 0, monthOtCount = 0
+    const monthAssignedSet = new Set<string>()
+    const monthClassSet = new Set<string>()
+    for (const a of activeAssignments) {
+      for (const s of a.sessions ?? []) {
+        const d = new Date(s.scheduled_at ?? s.completed_at ?? '')
+        if (d >= monthStart && d <= monthEnd) {
+          monthAssignedSet.add(a.id)
+          monthOtCount++
+          if (s.completed_at) monthClassSet.add(a.id)
+        }
+      }
+    }
+    monthAssigned = monthAssignedSet.size
+    monthClassMembers = monthClassSet.size
+
+    // 금주 통계
+    let weekAssigned = 0, weekClassMembers = 0, weekOtCount = 0
+    const weekAssignedSet = new Set<string>()
+    const weekClassSet = new Set<string>()
+    for (const a of activeAssignments) {
+      for (const s of a.sessions ?? []) {
+        const d = new Date(s.scheduled_at ?? s.completed_at ?? '')
+        if (d >= cwStart && d <= cwEnd) {
+          weekAssignedSet.add(a.id)
+          weekOtCount++
+          if (s.completed_at) weekClassSet.add(a.id)
+        }
+      }
+    }
+    weekAssigned = weekAssignedSet.size
+    weekClassMembers = weekClassSet.size
+
+    // 차주 통계
+    let nextWeekScheduleConfirmed = 0, nextWeekOtCount = 0
+    const nextWeekScheduleSet = new Set<string>()
+    for (const a of activeAssignments) {
+      for (const s of a.sessions ?? []) {
+        const d = new Date(s.scheduled_at ?? '')
+        if (s.scheduled_at && d >= nwStart && d <= nwEnd) {
+          nextWeekScheduleSet.add(a.id)
+          nextWeekOtCount++
+        }
+      }
+    }
+    nextWeekScheduleConfirmed = nextWeekScheduleSet.size
+
+    // 이번주/다음주 매출대상자
+    const tws = goalWeekStart; const twe = addDays(tws, 6)
     const nws = addDays(goalWeekStart, 7); const nwe = addDays(nws, 6)
+
+    // 이번주 매출대상자
+    const thisTargets = assignments
+      .filter((a) => a.is_sales_target && a.status !== '거부')
+      .map((a) => {
+        const completedCount = a.sessions?.filter((s) => s.completed_at).length ?? 0
+        const ts = a.sessions?.find((s) => s.scheduled_at && !s.completed_at && new Date(s.scheduled_at) >= tws && new Date(s.scheduled_at) <= twe)
+        // 상태 결정
+        let statusLabel: string
+        let statusColor: string
+        if (a.sales_status === '클로징실패') {
+          statusLabel = '클로징실패'; statusColor = 'bg-red-500 text-white'
+        } else if (a.sales_status === '등록완료' || a.is_pt_conversion) {
+          statusLabel = 'PT전환'; statusColor = 'bg-purple-600 text-white'
+        } else if (completedCount >= 3) {
+          statusLabel = '3차완료'; statusColor = 'bg-emerald-600 text-white'
+        } else if (completedCount === 2) {
+          statusLabel = '2차완료'; statusColor = 'bg-emerald-500 text-white'
+        } else if (completedCount === 1) {
+          statusLabel = '1차완료'; statusColor = 'bg-emerald-400 text-white'
+        } else {
+          statusLabel = '진행중'; statusColor = 'bg-green-500 text-white'
+        }
+        // 다음주로 넘어가야 하는지: 클로징실패/PT전환이 아닌데, 아직 완료 상태가 아닌 경우
+        const isResolved = a.sales_status === '클로징실패' || a.sales_status === '등록완료' || a.is_pt_conversion || a.status === '완료'
+        return {
+          id: a.id, name: a.member.name,
+          expectedAmount: toManwon(a.expected_amount ?? a.expected_sales ?? 0),
+          session: ts, isCustom: false, statusLabel, statusColor, carryOver: !isResolved,
+        }
+      })
+
+    // 다음주 매출대상자: 기존 다음주 스케줄 대상 + 이번주에서 넘어오는 대상
+    const carryOverIds = new Set(thisTargets.filter((t) => t.carryOver).map((t) => t.id))
     const nextTargets = assignments
-      .filter((a) => a.is_sales_target && a.status !== '완료')
+      .filter((a) => {
+        if (a.status === '완료' || a.status === '거부') return false
+        if (a.sales_status === '클로징실패' || a.sales_status === '등록완료') return false
+        if (a.is_pt_conversion) return false
+        // 매출대상자이거나, 이번주에서 넘어오는 대상
+        return a.is_sales_target || carryOverIds.has(a.id)
+      })
       .map((a) => {
         const ns = a.sessions?.find((s) => s.scheduled_at && !s.completed_at && new Date(s.scheduled_at) >= nws && new Date(s.scheduled_at) <= nwe)
-        return { id: a.id, name: a.member.name, expectedAmount: toManwon(a.expected_amount ?? a.expected_sales ?? 0), session: ns, isCustom: false }
+        return {
+          id: a.id, name: a.member.name,
+          expectedAmount: toManwon(a.expected_amount ?? a.expected_sales ?? 0),
+          session: ns, isCustom: false,
+          isCarryOver: carryOverIds.has(a.id),
+        }
       })
 
     return {
@@ -233,7 +337,14 @@ export function TrainerStats({ assignments, trainerName, programs }: Props) {
         scheduleUndecided: assignments.filter((a) => a.sales_status === '스케줄미확정').length,
       },
       periodSummary: periodStats,
-      inbodyRows: inbody, nextWeekTargets: nextTargets,
+      otOverview: {
+        totalManaged: activeAssignments.length,
+        monthAssigned, monthClassMembers, monthOtCount,
+        weekAssigned, weekClassMembers, weekOtCount,
+        nextWeekTargetCount: nextTargets.length,
+        nextWeekScheduleConfirmed, nextWeekOtCount,
+      },
+      inbodyRows: inbody, thisWeekTargets: thisTargets, nextWeekTargets: nextTargets,
     }
   }, [assignments, programs, year, month, daysInMonth, isCurrentMonth, todayDate, viewMode, selectedWeekStart, selectedWeekEnd, weekDays, goalWeekStart, now])
 
@@ -242,13 +353,17 @@ export function TrainerStats({ assignments, trainerName, programs }: Props) {
     ? `${year}년 ${month}월`
     : `${format(selectedWeekStart, 'M/d')} ~ ${format(selectedWeekEnd, 'M/d')}`
 
-  // 차주 라벨
+  // 이번주/차주 라벨
+  const thisWeekLabel = `${format(goalWeekStart, 'M/d')} ~ ${format(addDays(goalWeekStart, 6), 'M/d')}`
   const nextWeekLabel = `${format(nextWeekStart, 'M/d')} ~ ${format(addDays(nextWeekStart, 6), 'M/d')}`
+
+  // 이번주 예상 총합
+  const totalThisExpected = thisWeekTargets.reduce((s, t) => s + t.expectedAmount, 0)
 
   // 전체 차주 대상자 (자동 + 수동)
   const allNextTargets = [
     ...nextWeekTargets,
-    ...customTargets.map((t) => ({ id: t.id, name: t.name, expectedAmount: t.expectedAmount, session: undefined as any, isCustom: true })),
+    ...customTargets.map((t) => ({ id: t.id, name: t.name, expectedAmount: t.expectedAmount, session: undefined as any, isCustom: true, isCarryOver: false })),
   ]
   const totalNextExpected = allNextTargets.reduce((s, t) => s + t.expectedAmount, 0)
 
@@ -273,14 +388,76 @@ export function TrainerStats({ assignments, trainerName, programs }: Props) {
         </div>
       </div>
 
-      {/* ① 요약 카드 */}
-      <div className="grid grid-cols-3 sm:grid-cols-5 gap-2">
-        <SummaryCard label="총 OT" value={summary.totalOt} sub={`${summary.totalMembers}명`} color="text-gray-900" />
-        <SummaryCard label="완료" value={summary.totalCompleted} color="text-emerald-600" />
-        <SummaryCard label="예정" value={summary.totalScheduled} color="text-blue-600" />
-        <SummaryCard label="PT전환" value={summary.ptConversions} color="text-purple-600" />
-        <SummaryCard label="등록매출" value={summary.totalActualSales ? `${summary.totalActualSales.toLocaleString()}만` : '-'} color="text-green-700" />
-      </div>
+      {/* ① OT 현황 요약 */}
+      <Card className="bg-white">
+        <CardContent className="pt-4 pb-3 px-4">
+          <table className="w-full text-xs">
+            <tbody>
+              <tr className="border-b border-gray-100">
+                <td className="py-2 font-bold text-gray-900 whitespace-nowrap">총 관리 OT회원</td>
+                <td className="py-2 text-right" colSpan={3}>
+                  <span className="text-lg font-black text-gray-900">{otOverview.totalManaged}</span>
+                  <span className="text-gray-500 ml-0.5">명</span>
+                </td>
+              </tr>
+              <tr className="border-b border-gray-100">
+                <td className="py-2 font-bold text-gray-700 whitespace-nowrap">당월</td>
+                <td className="py-2 text-center">
+                  <span className="text-gray-500">배정회원 </span>
+                  <span className="font-bold text-gray-900">{otOverview.monthAssigned}</span>
+                  <span className="text-gray-500">명</span>
+                </td>
+                <td className="py-2 text-center">
+                  <span className="text-gray-500">수업회원 </span>
+                  <span className="font-bold text-emerald-600">{otOverview.monthClassMembers}</span>
+                  <span className="text-gray-500">명</span>
+                </td>
+                <td className="py-2 text-center">
+                  <span className="text-gray-500">OT </span>
+                  <span className="font-bold text-blue-600">{otOverview.monthOtCount}</span>
+                  <span className="text-gray-500">개</span>
+                </td>
+              </tr>
+              <tr className="border-b border-gray-100">
+                <td className="py-2 font-bold text-gray-700 whitespace-nowrap">금주</td>
+                <td className="py-2 text-center">
+                  <span className="text-gray-500">배정회원 </span>
+                  <span className="font-bold text-gray-900">{otOverview.weekAssigned}</span>
+                  <span className="text-gray-500">명</span>
+                </td>
+                <td className="py-2 text-center">
+                  <span className="text-gray-500">수업회원 </span>
+                  <span className="font-bold text-emerald-600">{otOverview.weekClassMembers}</span>
+                  <span className="text-gray-500">명</span>
+                </td>
+                <td className="py-2 text-center">
+                  <span className="text-gray-500">OT </span>
+                  <span className="font-bold text-blue-600">{otOverview.weekOtCount}</span>
+                  <span className="text-gray-500">개</span>
+                </td>
+              </tr>
+              <tr>
+                <td className="py-2 font-bold text-gray-700 whitespace-nowrap">차주</td>
+                <td className="py-2 text-center">
+                  <span className="text-gray-500">대상자 </span>
+                  <span className="font-bold text-indigo-600">{otOverview.nextWeekTargetCount + customTargets.length}</span>
+                  <span className="text-gray-500">명</span>
+                </td>
+                <td className="py-2 text-center">
+                  <span className="text-gray-500">스케줄확정 </span>
+                  <span className="font-bold text-emerald-600">{otOverview.nextWeekScheduleConfirmed}</span>
+                  <span className="text-gray-500">명</span>
+                </td>
+                <td className="py-2 text-center">
+                  <span className="text-gray-500">OT </span>
+                  <span className="font-bold text-blue-600">{otOverview.nextWeekOtCount}</span>
+                  <span className="text-gray-500">개</span>
+                </td>
+              </tr>
+            </tbody>
+          </table>
+        </CardContent>
+      </Card>
 
       {/* ② 일자별 OT 그리드 */}
       <Card className="overflow-hidden">
@@ -301,39 +478,36 @@ export function TrainerStats({ assignments, trainerName, programs }: Props) {
               <tbody>
                 {memberRows.length === 0 ? (
                   <tr><td colSpan={columns.length + 2} className="py-6 text-center text-xs text-gray-400">해당 기간에 OT 데이터가 없습니다</td></tr>
-                ) : memberRows.map((row) => {
-                  const hasSession = row.totalSessions > 0
-                  return (
-                    <tr key={row.id} className={`border-b border-gray-100 hover:bg-gray-50/50 ${!hasSession ? 'opacity-60' : ''}`}>
-                      <td className={`sticky left-0 z-10 bg-white border-r border-gray-200 px-1 text-center font-medium text-gray-900 whitespace-nowrap text-[10px] ${hasSession ? 'py-1' : 'py-[1px]'}`}>
-                        <div className="flex items-center justify-center gap-0.5">
-                          <span className="truncate max-w-[50px]">{row.name}</span>
-                          {row.isPtConversion && <Badge className="bg-purple-500 text-white text-[7px] px-0.5 py-0 leading-tight rounded-sm">PT전환</Badge>}
-                          {row.isSalesTarget && !row.isPtConversion && <Badge className="bg-blue-500 text-white text-[7px] px-0.5 py-0 leading-tight rounded-sm">매출대상</Badge>}
-                        </div>
-                      </td>
-                      {columns.map((col, ci) => {
-                        const key = format(col.date, 'yyyy-MM-dd')
-                        const cell = row.cells[key]
-                        if (!cell) return <td key={ci} className={`px-0 ${hasSession ? 'py-1' : 'py-[1px]'} text-center ${col.isToday ? 'bg-yellow-50' : col.isWknd ? 'bg-gray-50/70' : ''}`} />
-                        const bg = cell.completed && cell.approved ? 'bg-amber-500 text-white' : cell.completed ? 'bg-emerald-500 text-white' : cell.pastDue ? 'bg-rose-500 text-white' : 'bg-blue-500 text-white'
-                        return (
-                          <td key={ci} className={`px-0 py-1 text-center ${col.isToday ? 'bg-yellow-50' : ''}`}>
-                            {viewMode === 'weekly' ? (
-                              <div className={`inline-flex flex-col items-center justify-center rounded-sm px-1 py-0.5 ${bg}`}>
-                                <span className="text-[9px] font-bold leading-none">{cell.time ?? ''}</span>
-                                <span className="text-[8px] leading-none opacity-80">{cell.sessionNumber}차</span>
-                              </div>
-                            ) : (
-                              <span className={`inline-flex items-center justify-center w-[16px] h-[16px] rounded-sm text-[8px] font-bold ${bg}`} title={`${cell.sessionNumber}차`}>{cell.sessionNumber}</span>
-                            )}
-                          </td>
-                        )
-                      })}
-                      <td className={`px-1 ${hasSession ? 'py-1' : 'py-[1px]'} text-center font-bold text-gray-900 bg-gray-50 border-l border-gray-200 text-[10px]`}>{row.totalSessions}</td>
-                    </tr>
-                  )
-                })}
+                ) : memberRows.map((row) => (
+                  <tr key={row.id} className="border-b border-gray-100 hover:bg-gray-50/50">
+                    <td className="sticky left-0 z-10 bg-white border-r border-gray-200 px-1 py-1.5 text-center font-medium text-gray-900 whitespace-nowrap text-[10px]">
+                      <div className="flex items-center justify-center gap-0.5">
+                        <span className="truncate max-w-[50px]">{row.name}</span>
+                        {row.isPtConversion && <Badge className="bg-purple-500 text-white text-[7px] px-0.5 py-0 leading-tight rounded-sm">PT전환</Badge>}
+                        {row.isSalesTarget && !row.isPtConversion && <Badge className="bg-blue-500 text-white text-[7px] px-0.5 py-0 leading-tight rounded-sm">매출대상</Badge>}
+                      </div>
+                    </td>
+                    {columns.map((col, ci) => {
+                      const key = format(col.date, 'yyyy-MM-dd')
+                      const cell = row.cells[key]
+                      if (!cell) return <td key={ci} className={`px-0 py-1.5 text-center ${col.isToday ? 'bg-yellow-50' : col.isWknd ? 'bg-gray-50/70' : ''}`} />
+                      const bg = cell.completed && cell.approved ? 'bg-amber-500 text-white' : cell.completed ? 'bg-emerald-500 text-white' : cell.pastDue ? 'bg-rose-500 text-white' : 'bg-blue-500 text-white'
+                      return (
+                        <td key={ci} className={`px-0 py-1.5 text-center ${col.isToday ? 'bg-yellow-50' : ''}`}>
+                          {viewMode === 'weekly' ? (
+                            <div className={`inline-flex flex-col items-center justify-center rounded-sm px-1 py-0.5 ${bg}`}>
+                              <span className="text-[9px] font-bold leading-none">{cell.time ?? ''}</span>
+                              <span className="text-[8px] leading-none opacity-80">{cell.sessionNumber}차</span>
+                            </div>
+                          ) : (
+                            <span className={`inline-flex items-center justify-center w-[16px] h-[16px] rounded-sm text-[8px] font-bold ${bg}`} title={`${cell.sessionNumber}차`}>{cell.sessionNumber}</span>
+                          )}
+                        </td>
+                      )
+                    })}
+                    <td className="px-1 py-1.5 text-center font-bold text-gray-900 bg-gray-50 border-l border-gray-200 text-[10px]">{row.totalSessions}</td>
+                  </tr>
+                ))}
                 <tr className="bg-gray-100 border-t-2 border-gray-300 font-bold">
                   <td className="sticky left-0 z-10 bg-gray-100 border-r border-gray-200 px-1 py-1 text-center text-gray-900 text-[10px]">합계</td>
                   {columns.map((col, ci) => {
@@ -390,75 +564,113 @@ export function TrainerStats({ assignments, trainerName, programs }: Props) {
         </CardContent>
       </Card>
 
-      {/* ④ 다음주 매출대상자 */}
-      <Card>
-        <CardHeader className="py-2 px-4">
-          <div className="flex items-center justify-between">
-            <CardTitle className="text-sm text-gray-900">🎯 다음주 매출대상자 ({nextWeekLabel})</CardTitle>
-            {totalNextExpected > 0 && <Badge className="bg-pink-100 text-pink-700 text-[10px]">예상 총 {totalNextExpected.toLocaleString()}만</Badge>}
-          </div>
-        </CardHeader>
-        <CardContent className="px-4 pb-3 space-y-3">
-          {allNextTargets.length === 0 ? (
-            <p className="text-xs text-gray-400 text-center py-3">다음주 매출대상자가 없습니다</p>
-          ) : (
-            <div className="space-y-2">
-              {allNextTargets.map((t, i) => (
-                <div key={t.id || i} className="flex items-center justify-between bg-blue-50 rounded-lg px-3 py-2">
-                  <div className="flex items-center gap-2">
-                    <span className="text-sm font-bold text-gray-900">{t.name}</span>
-                    {t.session ? (
-                      <span className="text-[10px] text-blue-600">{t.session.session_number}차 · {format(new Date(t.session.scheduled_at!), 'M/d (EEE) HH:mm', { locale: ko })}</span>
-                    ) : !t.isCustom ? (
-                      <span className="text-[10px] text-gray-400">스케줄 미정</span>
-                    ) : (
-                      <Badge className="bg-gray-200 text-gray-600 text-[8px]">수동 입력</Badge>
-                    )}
-                  </div>
-                  <div className="flex items-center gap-1.5">
-                    {t.expectedAmount > 0 && <Badge className="bg-blue-600 text-white text-[10px]">예상 {t.expectedAmount.toLocaleString()}만</Badge>}
-                    {t.isCustom && (
-                      <button onClick={() => removeCustomTarget(t.id)} className="text-gray-400 hover:text-red-500 transition-colors">
-                        <X className="h-3.5 w-3.5" />
-                      </button>
-                    )}
-                  </div>
-                </div>
-              ))}
+      {/* ④ 매출대상자 — 이번주 / 다음주 */}
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+        {/* 이번주 대상자 현황 */}
+        <Card>
+          <CardHeader className="py-2 px-4">
+            <div className="flex items-center justify-between">
+              <CardTitle className="text-sm text-gray-900">🔥 이번주 대상자 ({thisWeekLabel})</CardTitle>
+              {totalThisExpected > 0 && <Badge className="bg-orange-100 text-orange-700 text-[10px]">예상 총 {totalThisExpected.toLocaleString()}만</Badge>}
             </div>
-          )}
-          {/* 수동 추가 */}
-          <div className="flex gap-2 items-center pt-1 border-t border-gray-100">
-            <Input
-              value={newTargetName}
-              onChange={(e) => setNewTargetName(e.target.value)}
-              placeholder="이름"
-              className="text-xs h-8 bg-white flex-1"
-            />
-            <Input
-              type="number"
-              inputMode="numeric"
-              value={newTargetAmount}
-              onChange={(e) => setNewTargetAmount(e.target.value)}
-              placeholder="예상 (만원)"
-              className="text-xs h-8 bg-white w-24"
-            />
-            <Button
-              variant="outline"
-              size="sm"
-              className="shrink-0 h-8 bg-blue-50 hover:bg-blue-100 text-blue-700 border-blue-200"
-              disabled={!newTargetName.trim()}
-              onClick={() => {
-                addCustomTarget(newTargetName.trim(), Number(newTargetAmount) || 0)
-                setNewTargetName('')
-                setNewTargetAmount('')
-              }}
-            >
-              <Plus className="h-3.5 w-3.5 mr-1" />추가
-            </Button>
-          </div>
-        </CardContent>
-      </Card>
+          </CardHeader>
+          <CardContent className="px-4 pb-3">
+            {thisWeekTargets.length === 0 ? (
+              <p className="text-xs text-gray-400 text-center py-3">이번주 매출대상자가 없습니다</p>
+            ) : (
+              <div className="space-y-2">
+                {thisWeekTargets.map((t) => (
+                  <div key={t.id} className="flex items-center justify-between bg-gray-50 rounded-lg px-3 py-2.5">
+                    <div className="flex items-center gap-2">
+                      <span className="text-sm font-bold text-gray-900">{t.name}</span>
+                      {t.session ? (
+                        <span className="text-[10px] text-blue-600">{t.session.session_number}차 · {format(new Date(t.session.scheduled_at!), 'M/d (EEE) HH:mm', { locale: ko })}</span>
+                      ) : (
+                        <span className="text-[10px] text-gray-400">스케줄 미정</span>
+                      )}
+                    </div>
+                    <div className="flex items-center gap-1.5">
+                      <Badge className={`text-[10px] ${t.statusColor}`}>{t.statusLabel}</Badge>
+                      {t.expectedAmount > 0 && <Badge className="bg-blue-600 text-white text-[10px]">예상 {t.expectedAmount.toLocaleString()}만</Badge>}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </CardContent>
+        </Card>
+
+        {/* 다음주 대상자 현황 */}
+        <Card>
+          <CardHeader className="py-2 px-4">
+            <div className="flex items-center justify-between">
+              <CardTitle className="text-sm text-gray-900">🎯 다음주 매출대상자 ({nextWeekLabel})</CardTitle>
+              {totalNextExpected > 0 && <Badge className="bg-pink-100 text-pink-700 text-[10px]">예상 총 {totalNextExpected.toLocaleString()}만</Badge>}
+            </div>
+          </CardHeader>
+          <CardContent className="px-4 pb-3 space-y-3">
+            {allNextTargets.length === 0 ? (
+              <p className="text-xs text-gray-400 text-center py-3">다음주 매출대상자가 없습니다</p>
+            ) : (
+              <div className="space-y-2">
+                {allNextTargets.map((t, i) => (
+                  <div key={t.id || i} className={`flex items-center justify-between rounded-lg px-3 py-2.5 ${t.isCarryOver ? 'bg-amber-50 border border-amber-200' : 'bg-blue-50'}`}>
+                    <div className="flex items-center gap-2">
+                      <span className="text-sm font-bold text-gray-900">{t.name}</span>
+                      {t.isCarryOver && <Badge className="bg-amber-200 text-amber-800 text-[8px]">이월</Badge>}
+                      {t.session ? (
+                        <span className="text-[10px] text-blue-600">{t.session.session_number}차 · {format(new Date(t.session.scheduled_at!), 'M/d (EEE) HH:mm', { locale: ko })}</span>
+                      ) : !t.isCustom ? (
+                        <span className="text-[10px] text-gray-400">스케줄 미정</span>
+                      ) : (
+                        <Badge className="bg-gray-200 text-gray-600 text-[8px]">수동 입력</Badge>
+                      )}
+                    </div>
+                    <div className="flex items-center gap-1.5">
+                      {t.expectedAmount > 0 && <Badge className="bg-blue-600 text-white text-[10px]">예상 {t.expectedAmount.toLocaleString()}만</Badge>}
+                      {t.isCustom && (
+                        <button onClick={() => removeCustomTarget(t.id)} className="text-gray-400 hover:text-red-500 transition-colors">
+                          <X className="h-3.5 w-3.5" />
+                        </button>
+                      )}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+            {/* 수동 추가 */}
+            <div className="flex gap-2 items-center pt-1 border-t border-gray-100">
+              <Input
+                value={newTargetName}
+                onChange={(e) => setNewTargetName(e.target.value)}
+                placeholder="이름"
+                className="text-xs h-8 bg-white flex-1"
+              />
+              <Input
+                type="number"
+                inputMode="numeric"
+                value={newTargetAmount}
+                onChange={(e) => setNewTargetAmount(e.target.value)}
+                placeholder="예상 (만원)"
+                className="text-xs h-8 bg-white w-24"
+              />
+              <Button
+                variant="outline"
+                size="sm"
+                className="shrink-0 h-8 bg-blue-50 hover:bg-blue-100 text-blue-700 border-blue-200"
+                disabled={!newTargetName.trim()}
+                onClick={() => {
+                  addCustomTarget(newTargetName.trim(), Number(newTargetAmount) || 0)
+                  setNewTargetName('')
+                  setNewTargetAmount('')
+                }}
+              >
+                <Plus className="h-3.5 w-3.5 mr-1" />추가
+              </Button>
+            </div>
+          </CardContent>
+        </Card>
+      </div>
 
       {/* ⑤ OT 현황 + 매출 (선택 기간 기준) */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
