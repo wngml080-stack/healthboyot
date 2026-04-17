@@ -16,9 +16,9 @@ import {
   DialogTitle,
   DialogDescription,
 } from '@/components/ui/dialog'
-import { CheckCircle, User, AlertTriangle, BarChart3, CalendarDays, ClipboardList, Pencil, Plus, Undo2, UserPlus, Send, Target, HeartPulse, Dumbbell, Phone } from 'lucide-react'
+import { CheckCircle, User, AlertTriangle, BarChart3, CalendarDays, ClipboardList, Pencil, Plus, Undo2, UserPlus, Target, HeartPulse, Dumbbell, Phone } from 'lucide-react'
 import { upsertOtSession, updateOtAssignment, deleteOtSession } from '@/actions/ot'
-import { getOtProgram, submitOtProgram } from '@/actions/ot-program'
+import { getOtProgram } from '@/actions/ot-program'
 import { quickRegisterMember } from '@/actions/members'
 import { createClient } from '@/lib/supabase/client'
 import dynamic from 'next/dynamic'
@@ -344,10 +344,10 @@ export function TrainerCardList({ assignments, trainers = [], trainerId, trainer
       if (a.is_pt_conversion) counts['PT전환'] = (counts['PT전환'] ?? 0) + 1
     }
     return counts
-  }, [assignments])
+  }, [assignments, trainerId])
 
   // 회원관리 탭은 배정된 모든 회원 표시 (수기 등록 포함)
-  const otOnlyAssignments = useMemo(() => assignments, [assignments])
+  const otOnlyAssignments = assignments
 
   // 필터링된 회원
   const [search, setSearch] = useState('')

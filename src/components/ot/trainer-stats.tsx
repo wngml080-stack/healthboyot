@@ -374,7 +374,7 @@ export function TrainerStats({ assignments, trainerName, programs }: Props) {
   // 전체 차주 대상자 (자동 + 수동)
   const allNextTargets = [
     ...nextWeekTargets,
-    ...customTargets.map((t) => ({ id: t.id, name: t.name, expectedAmount: t.expectedAmount, session: undefined as any, isCustom: true, isCarryOver: false })),
+    ...customTargets.map((t) => ({ id: t.id, name: t.name, expectedAmount: t.expectedAmount, session: undefined as typeof nextWeekTargets[number]['session'], isCustom: true, isCarryOver: false })),
   ]
   const totalNextExpected = allNextTargets.reduce((s, t) => s + t.expectedAmount, 0)
 

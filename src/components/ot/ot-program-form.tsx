@@ -18,17 +18,10 @@ import { createClient } from '@/lib/supabase/client'
 import type {
   OtProgram, OtProgramSession, OtProgramExercise,
   OtProgramConsultationData, OtProgramInbodyData,
-  OtAssignmentWithDetails, Profile, OtSessionResultCategory,
+  OtAssignmentWithDetails, Profile,
   OtSessionPlanDetail, OtSessionPlanRoadmapItem,
   ConsultationCard,
 } from '@/types'
-
-const RESULT_CATEGORIES: { key: OtSessionResultCategory; color: string; hoverColor: string; placeholder: string }[] = [
-  { key: '매출대상',   color: 'bg-blue-600 text-white border-blue-600',     hoverColor: 'hover:bg-blue-50 hover:border-blue-400',     placeholder: '매출대상자인데 등록이 밀리는 이유, 다음 액션, 팔로업 일정 등을 적어주세요' },
-  { key: '등록완료',   color: 'bg-green-600 text-white border-green-600',   hoverColor: 'hover:bg-green-50 hover:border-green-400',   placeholder: '등록 상품, 결제 방식, 특이사항 등을 적어주세요' },
-  { key: '클로징실패', color: 'bg-orange-500 text-white border-orange-500', hoverColor: 'hover:bg-orange-50 hover:border-orange-400', placeholder: '실패 원인, 회원 피드백, 재접근 가능 여부 등을 적어주세요' },
-  { key: '거부자',     color: 'bg-red-600 text-white border-red-600',       hoverColor: 'hover:bg-red-50 hover:border-red-400',       placeholder: '거부 사유, 재접촉 불가 여부 등을 적어주세요' },
-]
 
 const CARDIO_OPTIONS = ['러닝머신', '싸이클', '스텝퍼']
 
@@ -66,6 +59,7 @@ const emptySession = (): OtProgramSession => ({
   inbody: false, images: [], completed: false,
   approval_status: '작성중', submitted_at: null, approved_at: null, approved_by: null, rejection_reason: null, admin_feedback: null,
   plan: '',
+  plan_detail: null,
   result_category: null, result_note: '',
 })
 
@@ -84,13 +78,6 @@ interface Props {
   completingSessionIdx?: number | null
   onCompleteSession?: (idx: number) => Promise<void> | void
   completeLoading?: boolean
-}
-
-const APPROVAL_BADGE: Record<string, string> = {
-  '작성중': 'bg-gray-200 text-gray-700',
-  '제출완료': 'bg-yellow-200 text-yellow-800',
-  '승인': 'bg-green-200 text-green-800',
-  '반려': 'bg-red-200 text-red-800',
 }
 
 export const OtProgramForm = forwardRef<OtProgramFormRef, Props>(function OtProgramForm({ assignment, program, profile, onSaved, hideButtons, hideSessionList, completingSessionIdx, onCompleteSession, completeLoading }, ref) {
@@ -169,7 +156,8 @@ export const OtProgramForm = forwardRef<OtProgramFormRef, Props>(function OtProg
   }, [durationValue, durationUnit, startDate, fullCard?.exercise_start_date])
 
   // 인바디
-  const [inbody, setInbody] = useState<OtProgramInbodyData>(program?.inbody_data ?? {
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
+  const [inbody, _setInbody] = useState<OtProgramInbodyData>(program?.inbody_data ?? {
     current_weight: '', target_weight: '', current_body_fat: '', target_body_fat: '',
     current_muscle_mass: '', target_muscle_mass: '', current_bmr: '', target_bmr: '',
   })
@@ -231,22 +219,25 @@ export const OtProgramForm = forwardRef<OtProgramFormRef, Props>(function OtProg
     return () => window.removeEventListener('keydown', onKey)
   }, [lightboxUrl])
 
+  // 저장 payload를 한 곳에서 구성 (5곳에서 중복 제거)
+  const buildSavePayload = useCallback(() => ({
+    trainer_name: trainerName || null,
+    athletic_goal: athleticGoal || null,
+    total_sets_per_day: totalSets ? Number(totalSets) : null,
+    recommended_days_per_week: daysPerWeek ? Number(daysPerWeek) : null,
+    exercise_duration_min: durationMin ? Number(durationMin) : null,
+    target_heart_rate: targetHR ? Number(targetHR) : null,
+    member_start_date: startDate || null,
+    member_end_date: endDate || null,
+    sessions: sessions as unknown as OtProgramSession[],
+    inbody_data: inbody,
+    consultation_data: consultation,
+  }), [trainerName, athleticGoal, totalSets, daysPerWeek, durationMin, targetHR, startDate, endDate, sessions, inbody, consultation])
+
   // ref로 외부에서 저장/완료마킹 가능
   useImperativeHandle(ref, () => ({
     saveData: async () => {
-      const result = await upsertOtProgram(a.id, a.member_id, {
-        trainer_name: trainerName || null,
-        athletic_goal: athleticGoal || null,
-        total_sets_per_day: totalSets ? Number(totalSets) : null,
-        recommended_days_per_week: daysPerWeek ? Number(daysPerWeek) : null,
-        exercise_duration_min: durationMin ? Number(durationMin) : null,
-        target_heart_rate: targetHR ? Number(targetHR) : null,
-        member_start_date: startDate || null,
-        member_end_date: endDate || null,
-        sessions: sessions as unknown as OtProgramSession[],
-        inbody_data: inbody,
-        consultation_data: consultation,
-      })
+      const result = await upsertOtProgram(a.id, a.member_id, buildSavePayload())
       if (result.error) return { error: result.error }
       return {}
     },
@@ -269,25 +260,37 @@ export const OtProgramForm = forwardRef<OtProgramFormRef, Props>(function OtProg
   const [sharing, setSharing] = useState(false)
   const [signOpening, setSignOpening] = useState(false)
 
+  // 서명 완료 메시지 수신 → 자동 저장
+  useEffect(() => {
+    const handler = async (e: MessageEvent) => {
+      if (e.data?.type !== 'signature-complete') return
+      const { sessionIdx: sigIdx, signatureUrl, signerName: sName } = e.data
+      if (typeof sigIdx !== 'number' || !signatureUrl) return
+      // 세션에 서명 데이터 반영
+      setSessions((prev) => prev.map((s, i) =>
+        i === sigIdx ? { ...s, signature_url: signatureUrl, signer_name: sName, signed_at: new Date().toISOString() } : s,
+      ))
+      // 자동 저장
+      const payload = buildSavePayload()
+      // 서명 데이터를 payload에도 반영
+      const updatedSessions = [...(payload.sessions as OtProgramSession[])]
+      if (updatedSessions[sigIdx]) {
+        updatedSessions[sigIdx] = { ...updatedSessions[sigIdx], signature_url: signatureUrl, signer_name: sName, signed_at: new Date().toISOString() }
+      }
+      await upsertOtProgram(a.id, a.member_id, { ...payload, sessions: updatedSessions })
+      onSaved?.()
+    }
+    window.addEventListener('message', handler)
+    return () => window.removeEventListener('message', handler)
+  }, [a.id, a.member_id, buildSavePayload, onSaved])
+
   const openMemberSignPage = async (sessionIdx: number) => {
     setSignOpening(true)
     try {
       let programId = program?.id
       // 프로그램이 아직 없으면 자동 저장해서 생성
       if (!programId) {
-        const saveRes = await upsertOtProgram(a.id, a.member_id, {
-          trainer_name: trainerName || null,
-          athletic_goal: athleticGoal || null,
-          total_sets_per_day: totalSets ? Number(totalSets) : null,
-          recommended_days_per_week: daysPerWeek ? Number(daysPerWeek) : null,
-          exercise_duration_min: durationMin ? Number(durationMin) : null,
-          target_heart_rate: targetHR ? Number(targetHR) : null,
-          member_start_date: startDate || null,
-          member_end_date: endDate || null,
-          sessions: sessions as unknown as OtProgramSession[],
-          inbody_data: inbody,
-          consultation_data: consultation,
-        })
+        const saveRes = await upsertOtProgram(a.id, a.member_id, buildSavePayload())
         if (saveRes?.error || !saveRes?.data) {
           alert('프로그램 자동 저장에 실패했습니다: ' + (saveRes?.error ?? '알 수 없는 오류'))
           return
@@ -312,19 +315,7 @@ export const OtProgramForm = forwardRef<OtProgramFormRef, Props>(function OtProg
     try {
       let programId = program?.id
       if (!programId) {
-        const saveRes = await upsertOtProgram(a.id, a.member_id, {
-          trainer_name: trainerName || null,
-          athletic_goal: athleticGoal || null,
-          total_sets_per_day: totalSets ? Number(totalSets) : null,
-          recommended_days_per_week: daysPerWeek ? Number(daysPerWeek) : null,
-          exercise_duration_min: durationMin ? Number(durationMin) : null,
-          target_heart_rate: targetHR ? Number(targetHR) : null,
-          member_start_date: startDate || null,
-          member_end_date: endDate || null,
-          sessions: sessions as unknown as OtProgramSession[],
-          inbody_data: inbody,
-          consultation_data: consultation,
-        })
+        const saveRes = await upsertOtProgram(a.id, a.member_id, buildSavePayload())
         if (saveRes?.error || !saveRes?.data) {
           alert('프로그램 자동 저장에 실패했습니다: ' + (saveRes?.error ?? '알 수 없는 오류'))
           return
@@ -475,34 +466,15 @@ export const OtProgramForm = forwardRef<OtProgramFormRef, Props>(function OtProg
     if (errors.length) alert(`이미지 업로드 실패 (${errors.length}건): ${errors[0]}\n\n'ot-images' 스토리지 버킷과 Public 업로드 권한을 Supabase 대시보드에서 확인해주세요.`)
   }
 
-  const removeImage = (sessionIdx: number, imgIdx: number) => {
-    setSessions((prev) => prev.map((s, i) =>
-      i === sessionIdx ? { ...s, images: s.images.filter((_, j) => j !== imgIdx) } : s
-    ))
-  }
-
   const handleSave = async () => {
     setSaving(true)
     setError(null)
     setSuccess(false)
-    const result = await upsertOtProgram(a.id, a.member_id, {
-      trainer_name: trainerName || null,
-      athletic_goal: athleticGoal || null,
-      total_sets_per_day: totalSets ? Number(totalSets) : null,
-      recommended_days_per_week: daysPerWeek ? Number(daysPerWeek) : null,
-      exercise_duration_min: durationMin ? Number(durationMin) : null,
-      target_heart_rate: targetHR ? Number(targetHR) : null,
-      member_start_date: startDate || null,
-      member_end_date: endDate || null,
-      sessions: sessions as unknown as OtProgramSession[],
-      inbody_data: inbody,
-      consultation_data: consultation,
-    })
+    const result = await upsertOtProgram(a.id, a.member_id, buildSavePayload())
     setSaving(false)
     if (result.error) setError(result.error)
     else {
       setSuccess(true)
-      // 저장 후 상담카드 데이터가 채워졌을 수 있으므로 갱신
       setTimeout(() => setSuccess(false), 3000)
       onSaved?.()
     }
@@ -528,19 +500,7 @@ export const OtProgramForm = forwardRef<OtProgramFormRef, Props>(function OtProg
     }
     setSaving(true)
     setError(null)
-    const saveResult = await upsertOtProgram(a.id, a.member_id, {
-      trainer_name: trainerName || null,
-      athletic_goal: athleticGoal || null,
-      total_sets_per_day: totalSets ? Number(totalSets) : null,
-      recommended_days_per_week: daysPerWeek ? Number(daysPerWeek) : null,
-      exercise_duration_min: durationMin ? Number(durationMin) : null,
-      target_heart_rate: targetHR ? Number(targetHR) : null,
-      member_start_date: startDate || null,
-      member_end_date: endDate || null,
-      sessions: sessions as unknown as OtProgramSession[],
-      inbody_data: inbody,
-      consultation_data: consultation,
-    })
+    const saveResult = await upsertOtProgram(a.id, a.member_id, buildSavePayload())
     if (saveResult.error) {
       setSaving(false)
       setError(saveResult.error)
@@ -848,23 +808,30 @@ export const OtProgramForm = forwardRef<OtProgramFormRef, Props>(function OtProg
                   {!isCompleted && canEdit && (() => {
                     const otSession = a.sessions?.find((s) => s.session_number === idx + 1)
                     if (!otSession?.scheduled_at) return null
+                    const currentStatus = session.result_category
                     return (
                       <div className="flex flex-wrap items-center gap-1.5 bg-indigo-50 rounded-lg p-2">
                         <span className="text-[10px] font-bold text-indigo-700 mr-1">수업상태:</span>
                         {(['수업완료', '노쇼', '차감노쇼', '상담', '기타'] as const).map((opt) => {
-                          const colors: Record<string, string> = { '수업완료': 'bg-green-500 text-white', '노쇼': 'bg-red-500 text-white', '차감노쇼': 'bg-orange-500 text-white', '상담': 'bg-blue-500 text-white', '기타': 'bg-gray-500 text-white' }
+                          const isActive = currentStatus === opt
+                          const baseColors: Record<string, string> = { '수업완료': 'bg-green-500 text-white', '노쇼': 'bg-red-500 text-white', '차감노쇼': 'bg-orange-500 text-white', '상담': 'bg-blue-500 text-white', '기타': 'bg-gray-500 text-white' }
+                          const inactiveColors: Record<string, string> = { '수업완료': 'bg-white text-green-600 border-green-300', '노쇼': 'bg-white text-red-500 border-red-300', '차감노쇼': 'bg-white text-orange-500 border-orange-300', '상담': 'bg-white text-blue-500 border-blue-300', '기타': 'bg-white text-gray-500 border-gray-300' }
                           return (
                             <button
                               key={opt}
                               type="button"
-                              className={`rounded px-2 py-1 text-[10px] font-bold border transition-colors ${colors[opt]} hover:opacity-80`}
+                              className={`rounded px-2 py-1 text-[10px] font-bold border transition-colors ${isActive ? baseColors[opt] + ' ring-2 ring-offset-1 ring-gray-400' : inactiveColors[opt]} hover:opacity-80`}
                               onClick={async () => {
                                 if (opt === '기타') {
                                   const reason = prompt('기타 사유를 입력하세요')
                                   if (!reason) return
+                                  updateSession(idx, 'result_category', opt)
+                                  updateSession(idx, 'result_note', reason)
+                                  return
                                 }
-                                if (opt === '수업완료') {
-                                  if (!confirm(`${idx + 1}차 OT를 수업완료 처리할까요?`)) return
+                                // 즉시 세션 상태 반영
+                                updateSession(idx, 'result_category', isActive ? null : opt)
+                                if (opt === '수업완료' && !isActive) {
                                   await upsertOtSession({
                                     ot_assignment_id: a.id,
                                     session_number: idx + 1,
@@ -872,8 +839,6 @@ export const OtProgramForm = forwardRef<OtProgramFormRef, Props>(function OtProg
                                     completed_at: new Date().toISOString(),
                                   })
                                   onSaved?.()
-                                } else {
-                                  alert(`${idx + 1}차 OT: ${opt} 처리되었습니다.`)
                                 }
                               }}
                             >

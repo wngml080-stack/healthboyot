@@ -33,7 +33,17 @@ export function SignView({ token, sessionIdx, memberName, trainerName, session }
     const res = await saveSessionSignature(token, sessionIdx, signature, signerName.trim())
     setSaving(false)
     if (!res.ok) setError(res.error ?? '저장 실패')
-    else setDone(true)
+    else {
+      setDone(true)
+      // 부모 창(프로그램 폼)에 서명 완료 알림
+      try {
+        if (window.opener) {
+          window.opener.postMessage({ type: 'signature-complete', sessionIdx, signatureUrl: signature, signerName: signerName.trim() }, '*')
+          // 2초 후 자동 닫기
+          setTimeout(() => window.close(), 2000)
+        }
+      } catch {}
+    }
   }
 
   return (

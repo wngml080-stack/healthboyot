@@ -281,18 +281,9 @@ export function WeeklyCalendar({ assignments, trainerId, profile }: Props) {
   const [detailClosingProb, setDetailClosingProb] = useState(0)
   const [detailSaving, setDetailSaving] = useState(false)
 
-  // OT 수업 상태 (스케줄 클릭 시)
+  // OT 수업 상태 (스케줄 클릭 시) — TODO: 수업 상태 다이얼로그 UI 구현 예정
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
   const [otClassSchedule, setOtClassSchedule] = useState<ScheduleItem | null>(null)
-  const OT_CLASS_OPTIONS = ['수업완료', '노쇼', '차감노쇼', '상담', '기타'] as const
-  const OT_CLASS_COLORS: Record<string, string> = {
-    '수업완료': 'bg-green-500 border-green-500 text-white',
-    '노쇼': 'bg-red-500 border-red-500 text-white',
-    '차감노쇼': 'bg-orange-500 border-orange-500 text-white',
-    '상담': 'bg-blue-500 border-blue-500 text-white',
-    '기타': 'bg-gray-500 border-gray-500 text-white',
-  }
-  const [otClassResult, setOtClassResult] = useState<string | null>(null)
-  const [otClassMemo, setOtClassMemo] = useState('')
 
   // 스케줄 편집 다이얼로그 (OT/식사/회의 등 일반 스케줄용 — 시간/수업시간만)
   const [editSchedule, setEditSchedule] = useState<ScheduleItem | null>(null)

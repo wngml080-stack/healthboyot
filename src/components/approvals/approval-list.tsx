@@ -58,12 +58,13 @@ export function ApprovalList({ programs: initialPrograms, profile }: Props) {
 
   const handleView = async (prog: OtProgram) => {
     setLoading(true)
-    const [assignment, freshProg] = await Promise.all([
+    // member_id는 프로그램에 이미 있으므로 3개 요청을 모두 병렬로 실행
+    const [assignment, freshProg, card] = await Promise.all([
       getOtAssignment(prog.ot_assignment_id),
       getOtProgram(prog.ot_assignment_id),
+      getConsultationCard(prog.member_id),
     ])
     if (assignment) {
-      const card = await getConsultationCard(assignment.member_id)
       setViewTarget({ program: freshProg ?? prog, assignment, card })
       const feedbacks: Record<number, string> = {}
       ;(freshProg ?? prog).sessions?.forEach((s, i) => {
