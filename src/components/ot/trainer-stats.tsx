@@ -298,6 +298,7 @@ export function TrainerStats({ assignments, trainerName, programs }: Props) {
         return {
           id: a.id, name: a.member.name,
           expectedAmount: toManwon(a.expected_amount ?? a.expected_sales ?? 0),
+          actualSales: toManwon(a.actual_sales ?? 0),
           session: ts, isCustom: false, statusLabel, statusColor, carryOver: !isResolved,
         }
       })
@@ -591,7 +592,13 @@ export function TrainerStats({ assignments, trainerName, programs }: Props) {
                     </div>
                     <div className="flex items-center gap-1.5">
                       <Badge className={`text-[10px] ${t.statusColor}`}>{t.statusLabel}</Badge>
-                      {t.expectedAmount > 0 && <Badge className="bg-blue-600 text-white text-[10px]">예상 {t.expectedAmount.toLocaleString()}만</Badge>}
+                      {t.expectedAmount > 0 && (
+                        t.actualSales > 0 ? (
+                          <Badge className="bg-green-600 text-white text-[10px]">예상 {t.expectedAmount.toLocaleString()}만 → 등록 {t.actualSales.toLocaleString()}만</Badge>
+                        ) : (
+                          <Badge className="bg-blue-600 text-white text-[10px]">예상 {t.expectedAmount.toLocaleString()}만</Badge>
+                        )
+                      )}
                     </div>
                   </div>
                 ))}
@@ -798,17 +805,6 @@ export function TrainerStats({ assignments, trainerName, programs }: Props) {
   )
 }
 
-function SummaryCard({ label, value, sub, color }: { label: string; value: number | string; sub?: string; color: string }) {
-  return (
-    <Card className="bg-white">
-      <CardContent className="pt-3 pb-3 px-3 text-center">
-        <p className="text-[10px] text-gray-500 uppercase tracking-wide font-bold">{label}</p>
-        <p className={`text-xl font-black mt-0.5 ${color}`}>{value}</p>
-        {sub && <p className="text-[10px] text-gray-400 mt-0.5">{sub}</p>}
-      </CardContent>
-    </Card>
-  )
-}
 
 function StatPill({ label, value, color }: { label: string; value: number | string; color: string }) {
   return (
