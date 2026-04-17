@@ -205,7 +205,7 @@ export function TrainerFolderGrid({ folders, allStaff, currentUserRole, currentU
                     {folder.role === 'trainer' ? '트레이너' : folder.role === 'fc' ? 'FC' : folder.role}
                   </p>
 
-                  <div className="grid grid-cols-4 gap-2 mt-4">
+                  <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 mt-4">
                     <StatItem value={folder.stats.inProgress} label="금일 OT" color="text-green-600" />
                     <StatItem value={folder.stats.pending} label="금일 매출대상자" color="text-red-500" />
                     <StatItem value={folder.stats.completed} label="PT전환" color="text-blue-600" />

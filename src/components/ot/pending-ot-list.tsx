@@ -9,7 +9,7 @@ import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
 } from '@/components/ui/select'
 import { updateOtAssignment } from '@/actions/ot'
-import { getConsultationCard } from '@/actions/consultation'
+import { getExerciseStartDatesByMemberIds } from '@/actions/consultation'
 import type { OtAssignmentWithDetails, Profile } from '@/types'
 
 interface Props {
@@ -26,15 +26,24 @@ export function PendingOtList({ assignments, trainers = [] }: Props) {
   const [loading, setLoading] = useState(false)
   const [startDates, setStartDates] = useState<Record<string, string | null>>({})
 
-  // 각 회원의 상담카드에서 운동 시작일 가져오기
+  // 각 회원의 상담카드에서 운동 시작일 배치 조회 (N+1 제거)
   useEffect(() => {
-    assignments.forEach((a) => {
-      if (startDates[a.member_id] === undefined) {
-        getConsultationCard(a.member_id).then((card) => {
-          setStartDates((prev) => ({ ...prev, [a.member_id]: card?.exercise_start_date ?? null }))
-        })
-      }
+    const missing = Array.from(
+      new Set(assignments.map((a) => a.member_id).filter((id) => startDates[id] === undefined))
+    )
+    if (!missing.length) return
+    let cancelled = false
+    getExerciseStartDatesByMemberIds(missing).then((map) => {
+      if (cancelled) return
+      setStartDates((prev) => {
+        const next = { ...prev }
+        for (const id of missing) next[id] = map[id] ?? null
+        return next
+      })
     })
+    return () => {
+      cancelled = true
+    }
   }, [assignments]) // eslint-disable-line react-hooks/exhaustive-deps
 
   const handleAssign = async (assignmentId: string) => {
@@ -83,6 +92,9 @@ export function PendingOtList({ assignments, trainers = [] }: Props) {
                 </div>
                 <p className="text-xs text-gray-500 mt-0.5 tabular-nums">
                   {a.member.phone ? a.member.phone.replace(/(\d{3})(\d{4})(\d{4})/, '$1-$2-$3') : '-'}
+                  {a.member.registered_at && (
+                    <span className="ml-2 text-gray-400">· 등록 {new Date(a.member.registered_at).toLocaleDateString('ko', { year: '2-digit', month: '2-digit', day: '2-digit' }).replace(/\.\s*$/, '')}</span>
+                  )}
                 </p>
               </div>
               <div className="flex items-center gap-2">

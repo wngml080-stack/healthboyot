@@ -150,6 +150,7 @@ export interface ConsultationCard {
 export interface OtProgramExercise {
   name: string
   weight: string
+  reps: string
   sets: string
 }
 
@@ -163,6 +164,52 @@ export interface OtProgramSession {
   inbody: boolean
   images: string[]
   completed: boolean
+  approval_status?: OtProgramApprovalStatus
+  submitted_at?: string | null
+  approved_at?: string | null
+  approved_by?: string | null
+  rejection_reason?: string | null
+  admin_feedback?: string | null
+  signature_url?: string | null
+  signed_at?: string | null
+  signer_name?: string | null
+  plan?: string | null
+  plan_detail?: OtSessionPlanDetail | null
+  inbody_images?: string[] | null
+  image_records?: OtSessionImageRecord[] | null
+  result_category?: OtSessionResultCategory | null
+  result_note?: string | null
+  sales_status?: string | null
+  expected_amount?: number | null
+  expected_sessions?: number | null
+  closing_probability?: number | null
+  closing_fail_reason?: string | null
+  sales_note?: string | null
+  is_sales_target?: boolean | null
+  is_pt_conversion?: boolean | null
+  pt_sales_amount?: number | null
+}
+
+export interface OtSessionImageRecord {
+  url: string
+  uploaded_at: string
+  label?: 'before' | 'after' | null
+}
+
+export type OtSessionResultCategory = '매출대상' | '등록완료' | '클로징실패' | '거부자'
+
+export interface OtSessionPlanRoadmapItem {
+  week: string
+  content: string
+}
+
+export interface OtSessionPlanDetail {
+  sessions_needed?: string
+  duration?: string
+  current_state?: string
+  target_state?: string
+  weekly_roadmap?: OtSessionPlanRoadmapItem[]
+  notes?: string
 }
 
 export interface OtProgramConsultationData {
@@ -216,6 +263,7 @@ export interface OtProgram {
   approved_at: string | null
   approved_by: string | null
   rejection_reason: string | null
+  share_token?: string | null
   created_by: string | null
   created_at: string
   updated_at: string

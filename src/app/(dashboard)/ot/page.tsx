@@ -1,3 +1,4 @@
+import { Suspense } from 'react'
 import { getOtAssignments } from '@/actions/ot'
 import { getTrainerFolders } from '@/actions/trainer-folders'
 import { getStaffList } from '@/actions/staff'
@@ -7,10 +8,8 @@ import { getTrainerScheduleSlots } from '@/actions/schedule'
 import { TrainerCardList } from '@/components/ot/trainer-card-list'
 import { TrainerFolderGrid } from '@/components/ot/trainer-folder-grid'
 import { TrainerSubNav } from '@/components/ot/trainer-sub-nav'
-import { OtSummaryCards } from '@/components/ot/ot-summary-cards'
-import { WeeklyReport } from '@/components/ot/weekly-report'
+import { TrainerStats } from '@/components/ot/trainer-stats'
 import { WeeklyCalendar } from '@/components/ot/weekly-calendar'
-import { ApprovalList } from '@/components/approvals/approval-list'
 import { PageTitle } from '@/components/shared/page-title'
 import { NotificationBell } from '@/components/ot/notification-bell'
 import { ArrowLeft } from 'lucide-react'
@@ -27,35 +26,66 @@ export default async function OtPage({ searchParams }: OtPageProps) {
 
   // 폴더 뷰
   if (!trainerId) {
-    const [folders, staffList, profile] = await Promise.all([
-      getTrainerFolders(),
-      getStaffList(),
-      getCurrentProfile(),
-    ])
     return (
-      <div className="space-y-4">
-        <div className="flex items-center justify-between">
-          <PageTitle>트레이너 관리</PageTitle>
-          {profile?.role === 'admin' && (
-            <Link
-              href="/ot/recover"
-              className="text-xs text-orange-600 hover:text-orange-700 underline"
-            >
-              OT 세션 복구
-            </Link>
-          )}
-        </div>
-        <TrainerFolderGrid
-          folders={folders}
-          allStaff={staffList.map((s) => ({ id: s.id, name: s.name, role: s.role, is_approved: s.is_approved }))}
-          currentUserRole={profile?.role ?? 'fc'}
-          currentUserId={profile?.id}
-        />
-      </div>
+      <Suspense fallback={<FolderViewSkeleton />}>
+        <FolderView />
+      </Suspense>
     )
   }
 
-  // 트레이너 데이터 — 필요한 모든 fetch를 단일 Promise.all로 묶어서 waterfall 제거
+  // 트레이너 상세 — 쉘 먼저 표시, 콘텐츠는 스트리밍
+  return (
+    <Suspense fallback={<TrainerDetailSkeleton />}>
+      <TrainerDetailView trainerId={trainerId} tab={tab} />
+    </Suspense>
+  )
+}
+
+// ─── 폴더 뷰 ─────────────────────────────────────────────
+async function FolderView() {
+  const [folders, staffList, profile] = await Promise.all([
+    getTrainerFolders(),
+    getStaffList(),
+    getCurrentProfile(),
+  ])
+  return (
+    <div className="space-y-4">
+      <div className="flex items-center justify-between">
+        <PageTitle>트레이너 관리</PageTitle>
+        {profile?.role === 'admin' && (
+          <Link
+            href="/ot/recover"
+            className="text-xs text-orange-600 hover:text-orange-700 underline"
+          >
+            OT 세션 복구
+          </Link>
+        )}
+      </div>
+      <TrainerFolderGrid
+        folders={folders}
+        allStaff={staffList.map((s) => ({ id: s.id, name: s.name, role: s.role, is_approved: s.is_approved }))}
+        currentUserRole={profile?.role ?? 'fc'}
+        currentUserId={profile?.id}
+      />
+    </div>
+  )
+}
+
+function FolderViewSkeleton() {
+  return (
+    <div className="space-y-4">
+      <div className="h-6 w-48 bg-gray-200 rounded animate-pulse" />
+      <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-3">
+        {Array.from({ length: 10 }).map((_, i) => (
+          <div key={i} className="aspect-square rounded-lg bg-gray-200 animate-pulse" />
+        ))}
+      </div>
+    </div>
+  )
+}
+
+// ─── 트레이너 상세 뷰 ────────────────────────────────────
+async function TrainerDetailView({ trainerId, tab }: { trainerId: string; tab: string }) {
   let trainerAssignments: Awaited<ReturnType<typeof getOtAssignments>> = []
   let staffList: Awaited<ReturnType<typeof getStaffList>> = []
   let profile: Awaited<ReturnType<typeof getCurrentProfile>> = null
@@ -67,7 +97,7 @@ export default async function OtPage({ searchParams }: OtPageProps) {
       getOtAssignments({ trainerId }),
       getCurrentProfile(),
       getStaffList(),
-      getAllOtPrograms(),
+      getAllOtPrograms(tab === 'stats' ? { includeAll: true } : undefined),
       trainerId !== 'unassigned'
         ? getTrainerScheduleSlots(trainerId)
         : Promise.resolve([]),
@@ -103,7 +133,6 @@ export default async function OtPage({ searchParams }: OtPageProps) {
     ? '미배정'
     : staffList.find((s) => s.id === trainerId)?.name ?? '트레이너'
 
-  // 현재 유저의 역할 판별 (이 폴더에서 PT인지 PPT인지)
   const myRole = profile ? (() => {
     const isPT = trainerAssignments.some((a) => a.pt_trainer_id === profile.id)
     const isPPT = trainerAssignments.some((a) => a.ppt_trainer_id === profile.id)
@@ -114,12 +143,10 @@ export default async function OtPage({ searchParams }: OtPageProps) {
     return ''
   })() : ''
 
-  // 트레이너 프로그램 데이터 (알림 + 승인탭 공용) — 위 Promise.all에서 이미 받음
   const trainerPrograms = allPrograms.filter((p) => p.trainer_name === trainerName)
 
   return (
     <div className="space-y-4">
-      {/* 상단 */}
       <div className="flex items-center gap-3">
         <Link href="/ot" className="flex items-center gap-1 text-sm text-muted-foreground hover:text-foreground transition-colors">
           <ArrowLeft className="h-4 w-4" />
@@ -134,7 +161,6 @@ export default async function OtPage({ searchParams }: OtPageProps) {
         </div>
       </div>
 
-      {/* 좌측 메뉴 + 콘텐츠 */}
       <div className="flex flex-col md:flex-row gap-4 md:gap-6">
         <TrainerSubNav trainerId={trainerId} />
         <div className="flex-1 min-w-0">
@@ -150,19 +176,37 @@ export default async function OtPage({ searchParams }: OtPageProps) {
           )}
 
           {tab === 'schedule' && (
-            <WeeklyCalendar assignments={trainerAssignments} trainerId={trainerId} />
-          )}
-
-          {tab === 'approvals' && profile && (
-            <ApprovalList programs={trainerPrograms} profile={profile} />
+            <WeeklyCalendar assignments={trainerAssignments} trainerId={trainerId} profile={profile ?? undefined} />
           )}
 
           {tab === 'stats' && (
-            <div className="space-y-6">
-              <WeeklyReport assignments={trainerAssignments} trainerName={trainerName} />
-              <OtSummaryCards assignments={trainerAssignments} />
-            </div>
+            <TrainerStats assignments={trainerAssignments} trainerName={trainerName} programs={trainerPrograms} />
           )}
+        </div>
+      </div>
+    </div>
+  )
+}
+
+function TrainerDetailSkeleton() {
+  return (
+    <div className="space-y-4">
+      <div className="flex items-center gap-3">
+        <div className="h-4 w-20 bg-gray-200 rounded animate-pulse" />
+        <div className="h-6 w-32 bg-gray-200 rounded animate-pulse" />
+      </div>
+      <div className="flex flex-col md:flex-row gap-4 md:gap-6">
+        <div className="w-full md:w-44 space-y-2">
+          {Array.from({ length: 4 }).map((_, i) => (
+            <div key={i} className="h-9 bg-gray-200 rounded-lg animate-pulse" />
+          ))}
+        </div>
+        <div className="flex-1 space-y-3">
+          <div className="h-9 bg-gray-200 rounded animate-pulse" />
+          <div className="h-10 bg-gray-200 rounded-lg animate-pulse" />
+          {Array.from({ length: 5 }).map((_, i) => (
+            <div key={i} className="h-16 bg-gray-200 rounded-lg animate-pulse" />
+          ))}
         </div>
       </div>
     </div>

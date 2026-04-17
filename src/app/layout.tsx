@@ -1,5 +1,6 @@
 import type { Metadata, Viewport } from "next";
 import localFont from "next/font/local";
+import Script from "next/script";
 import "./globals.css";
 import { Providers } from "@/components/providers";
 
@@ -48,6 +49,26 @@ export default function RootLayout({
         className={`${geistSans.variable} ${geistMono.variable} antialiased`}
       >
         <Providers>{children}</Providers>
+        <Script
+          src="https://t1.kakaocdn.net/kakao_js_sdk/2.7.2/kakao.min.js"
+          integrity="sha384-TiCUE00h649CAMonG018J2ujOgDKW/kVWlChEuu4jK2vxfAAD0eZxzCKakxg55G4"
+          crossOrigin="anonymous"
+          strategy="afterInteractive"
+        />
+        <Script id="kakao-init" strategy="afterInteractive">
+          {`
+            if (typeof window !== 'undefined') {
+              window.__initKakao = function() {
+                var key = '${process.env.NEXT_PUBLIC_KAKAO_JS_KEY ?? ''}';
+                if (key && window.Kakao && !window.Kakao.isInitialized()) {
+                  window.Kakao.init(key);
+                }
+              };
+              var tryInit = function(){ if (window.Kakao) { window.__initKakao(); } else { setTimeout(tryInit, 100); } };
+              tryInit();
+            }
+          `}
+        </Script>
       </body>
     </html>
   );

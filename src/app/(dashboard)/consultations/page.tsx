@@ -21,7 +21,7 @@ export default async function ConsultationsPage() {
   return (
     <div className="space-y-4">
       <PageTitle>상담카드 관리</PageTitle>
-      <ConsultationList cards={cards} members={membersData} profile={profile} staffList={staffList} />
+      <ConsultationList cards={cards} members={membersData} staffList={staffList} />
     </div>
   )
 }

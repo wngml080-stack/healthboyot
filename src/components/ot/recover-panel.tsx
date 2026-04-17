@@ -94,7 +94,7 @@ export function RecoverPanel() {
             </p>
           </div>
 
-          <div className="grid grid-cols-2 md:grid-cols-5 gap-2 text-xs">
+          <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-2 text-xs">
             <div className="rounded bg-gray-50 p-2">
               <p className="text-gray-500">총 회원</p>
               <p className="font-bold text-gray-900">{result.total_assignments}</p>

@@ -45,8 +45,7 @@ export async function getTrainerFolders(): Promise<TrainerFolder[]> {
 
   if (!trainers || trainers.length === 0) return []
 
-  // 해당 트레이너들의 배정만 조회 (PT 또는 PPT 담당)
-  // member 조인 — registration_source로 PT 수기 회원을 카운트에서 제외
+  // 해당 트레이너들의 배정만 조회 (PT 또는 PPT 담당) — 수기 회원 포함 전체 카운트
   const trainerIds = trainers.map((t) => t.id)
   const { data: assignments } = await supabase
     .from('ot_assignments')
@@ -65,11 +64,9 @@ export async function getTrainerFolders(): Promise<TrainerFolder[]> {
     .in('trainer_id', trainerIds)
 
   const folders: TrainerFolder[] = trainers.map((t) => {
-    // OT 회원만 (PT 수기 회원 제외) — 트레이너 본인 담당 회원
+    // 트레이너 본인 담당 회원 전체 (수기 포함)
     const myAssignments = (assignments ?? []).filter((a) => {
-      if (a.pt_trainer_id !== t.id && a.ppt_trainer_id !== t.id) return false
-      const member = a.member as unknown as { registration_source?: string } | null
-      return member?.registration_source !== '수기'
+      return a.pt_trainer_id === t.id || a.ppt_trainer_id === t.id
     })
 
     // 오늘 이 트레이너의 OT 수업
@@ -97,7 +94,7 @@ export async function getTrainerFolders(): Promise<TrainerFolder[]> {
         inProgress: myTodayOts.length, // 금일 OT 수업 개수
         pending: todaySalesTargetMemberIds.size, // 금일 매출대상자
         completed: myAssignments.filter((a) => a.is_pt_conversion).length, // PT전환
-        total: myAssignments.length, // 전체 OT 회원 (PT 수기 제외)
+        total: myAssignments.length, // 전체 회원 (수기 포함)
       },
     }
   })

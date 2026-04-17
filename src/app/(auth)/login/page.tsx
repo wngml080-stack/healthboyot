@@ -1,6 +1,6 @@
 'use client'
 
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { useForm } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
 import { loginSchema, type LoginFormValues } from '@/lib/validators'
@@ -18,14 +18,28 @@ export default function LoginPage() {
   const [success, setSuccess] = useState<string | null>(null)
   const [loading, setLoading] = useState(false)
   const [signupName, setSignupName] = useState('')
+  const [rememberEmail, setRememberEmail] = useState(true)
 
   const {
     register,
     handleSubmit,
+    setValue,
     formState: { errors },
   } = useForm<LoginFormValues>({
     resolver: zodResolver(loginSchema),
   })
+
+  // 저장된 이메일 복원
+  useEffect(() => {
+    if (typeof window === 'undefined') return
+    const saved = localStorage.getItem('remembered_email')
+    if (saved) {
+      setValue('email', saved)
+      setRememberEmail(true)
+    } else {
+      setRememberEmail(false)
+    }
+  }, [setValue])
 
   const onSubmit = async (data: LoginFormValues) => {
     setLoading(true)
@@ -33,6 +47,14 @@ export default function LoginPage() {
     setSuccess(null)
 
     if (mode === 'login') {
+      // 이메일 저장 처리
+      if (typeof window !== 'undefined') {
+        if (rememberEmail) {
+          localStorage.setItem('remembered_email', data.email)
+        } else {
+          localStorage.removeItem('remembered_email')
+        }
+      }
       const result = await signIn(data)
       if (result?.error) {
         if (result.error === 'NOT_APPROVED') {
@@ -110,6 +132,18 @@ export default function LoginPage() {
                 <p className="text-sm text-red-500">{errors.password.message}</p>
               )}
             </div>
+
+            {mode === 'login' && (
+              <label className="flex items-center gap-2 text-sm text-gray-700 cursor-pointer select-none">
+                <input
+                  type="checkbox"
+                  checked={rememberEmail}
+                  onChange={(e) => setRememberEmail(e.target.checked)}
+                  className="h-4 w-4 rounded border-gray-300 accent-blue-600"
+                />
+                아이디 저장
+              </label>
+            )}
 
             {error && (
               <div className="rounded-md bg-red-50 p-3 text-sm text-red-600">

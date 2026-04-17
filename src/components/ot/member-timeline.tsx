@@ -84,30 +84,30 @@ export function MemberTimeline({ assignment }: Props) {
         <CardTitle className="text-base text-gray-900">히스토리</CardTitle>
       </CardHeader>
       <CardContent>
-        <div className="relative pl-6">
-          {/* 세로 선 */}
-          <div className="absolute left-[11px] top-2 bottom-2 w-0.5 bg-gray-200" />
+        <div className="relative">
+          {/* 세로 선 (아이콘 중앙 정렬: left = icon-size/2 = 12px) */}
+          <div className="absolute left-3 top-3 bottom-3 w-0.5 bg-gray-200" />
 
-          <div className="space-y-4">
+          <ol className="space-y-5">
             {events.map((event, i) => (
-              <div key={i} className="relative flex gap-3">
-                {/* 점 */}
-                <div className={`absolute -left-6 top-0.5 flex h-6 w-6 items-center justify-center rounded-full text-white ${event.color}`}>
+              <li key={i} className="relative flex items-start gap-4">
+                {/* 아이콘 원 */}
+                <div className={`relative z-10 flex h-6 w-6 shrink-0 items-center justify-center rounded-full text-white shadow-sm ring-4 ring-white ${event.color}`}>
                   {event.icon}
                 </div>
                 {/* 내용 */}
-                <div className="min-w-0">
-                  <p className="text-sm font-medium text-gray-900">{event.title}</p>
+                <div className="min-w-0 flex-1 pt-0.5">
+                  <p className="text-sm font-semibold text-gray-900 leading-tight">{event.title}</p>
                   {event.description && (
-                    <p className="text-xs text-gray-500 mt-0.5">{event.description}</p>
+                    <p className="text-xs text-gray-600 mt-1 whitespace-pre-wrap break-words">{event.description}</p>
                   )}
-                  <p className="text-[11px] text-gray-400 mt-0.5">
+                  <p className="text-[11px] text-gray-400 mt-1">
                     {format(new Date(event.date), 'yyyy.M.d', { locale: ko })}
                   </p>
                 </div>
-              </div>
+              </li>
             ))}
-          </div>
+          </ol>
         </div>
       </CardContent>
     </Card>

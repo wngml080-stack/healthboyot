@@ -2,20 +2,30 @@
 
 import { createClient } from '@/lib/supabase/server'
 import { getConsultationCard } from './consultation'
-import type { OtProgram, OtProgramSession, OtProgramApprovalStatus, OtProgramConsultationData, OtProgramInbodyData } from '@/types'
+import type { OtProgram, OtProgramSession, OtProgramConsultationData, OtProgramInbodyData } from '@/types'
 
 const emptySession = (): OtProgramSession => ({
   date: '', time: '',
   exercises: [
-    { name: '', weight: '', sets: '' },
-    { name: '', weight: '', sets: '' },
-    { name: '', weight: '', sets: '' },
+    { name: '', weight: '', reps: '', sets: '' },
+    { name: '', weight: '', reps: '', sets: '' },
+    { name: '', weight: '', reps: '', sets: '' },
   ],
   tip: '', next_ot_date: '',
   cardio: { types: [], duration_min: '' },
   inbody: false,
   images: [],
   completed: false,
+  approval_status: '작성중',
+  submitted_at: null,
+  approved_at: null,
+  approved_by: null,
+  rejection_reason: null,
+  admin_feedback: null,
+  plan: '',
+  plan_detail: null,
+  result_category: null,
+  result_note: '',
 })
 
 const emptyConsultation = (): OtProgramConsultationData => ({
@@ -80,6 +90,33 @@ export async function getOtProgram(assignmentId: string): Promise<OtProgram | nu
 
   if (error || !data) return null
   return normalizeProgram(data as Record<string, unknown>)
+}
+
+// 상담카드 + OT 프로그램 한 번의 요청으로 병렬 조회 (카드 펼침 속도 개선)
+export async function getAssignmentExpandData(
+  memberId: string,
+  assignmentId: string
+): Promise<{ card: import('@/types').ConsultationCard | null; program: OtProgram | null }> {
+  const supabase = await createClient()
+  const [cardRes, programRes] = await Promise.all([
+    supabase
+      .from('consultation_cards')
+      .select('*')
+      .eq('member_id', memberId)
+      .order('created_at', { ascending: false })
+      .limit(1)
+      .maybeSingle(),
+    supabase
+      .from('ot_programs')
+      .select('*')
+      .eq('ot_assignment_id', assignmentId)
+      .order('created_at', { ascending: false })
+      .limit(1)
+      .maybeSingle(),
+  ])
+  const card = cardRes.error || !cardRes.data ? null : (cardRes.data as import('@/types').ConsultationCard)
+  const program = programRes.error || !programRes.data ? null : normalizeProgram(programRes.data as Record<string, unknown>)
+  return { card, program }
 }
 
 export async function upsertOtProgram(
@@ -194,6 +231,143 @@ export async function rejectOtProgram(programId: string, reason: string) {
   return { success: true }
 }
 
+function rollupStatus(sessions: OtProgramSession[]): OtProgram['approval_status'] {
+  const relevant = sessions.filter((s) => s.approval_status && s.approval_status !== '작성중')
+  if (relevant.length === 0) return '작성중'
+  if (sessions.every((s) => s.approval_status === '승인')) return '승인'
+  if (relevant.some((s) => s.approval_status === '제출완료')) return '제출완료'
+  if (relevant.every((s) => s.approval_status === '반려')) return '반려'
+  return '제출완료'
+}
+
+async function updateSessionApproval(
+  programId: string,
+  sessionIdx: number,
+  patch: Partial<OtProgramSession>,
+) {
+  const supabase = await createClient()
+  const { data: existing, error: readErr } = await supabase
+    .from('ot_programs')
+    .select('*')
+    .eq('id', programId)
+    .single()
+  if (readErr || !existing) return { error: readErr?.message ?? '프로그램을 찾을 수 없습니다.' }
+
+  const current = normalizeProgram(existing as Record<string, unknown>)
+  const sessions = [...current.sessions]
+  if (!sessions[sessionIdx]) return { error: '세션을 찾을 수 없습니다.' }
+  sessions[sessionIdx] = { ...sessions[sessionIdx], ...patch }
+
+  const nextStatus = rollupStatus(sessions)
+  const updates: Record<string, unknown> = {
+    sessions,
+    approval_status: nextStatus,
+    updated_at: new Date().toISOString(),
+  }
+  if (nextStatus === '승인' && !current.approved_at) {
+    updates.approved_at = new Date().toISOString()
+  }
+
+  const { error } = await supabase.from('ot_programs').update(updates).eq('id', programId)
+  if (error) return { error: error.message }
+  return { success: true }
+}
+
+export async function submitOtSession(programId: string, sessionIdx: number) {
+  return updateSessionApproval(programId, sessionIdx, {
+    approval_status: '제출완료',
+    submitted_at: new Date().toISOString(),
+    rejection_reason: null,
+  })
+}
+
+export async function upsertOtSessionByAssignment(
+  assignmentId: string,
+  memberId: string,
+  sessionIdx: number,
+  patch: Partial<OtProgramSession>,
+) {
+  const supabase = await createClient()
+
+  const existing = await getOtProgram(assignmentId)
+  if (!existing) {
+    const initialSessions: OtProgramSession[] = []
+    while (initialSessions.length <= sessionIdx) initialSessions.push(emptySession())
+    initialSessions[sessionIdx] = { ...initialSessions[sessionIdx], ...patch }
+    const { data: { user } } = await supabase.auth.getUser()
+    const { data, error } = await supabase
+      .from('ot_programs')
+      .insert({
+        ot_assignment_id: assignmentId,
+        member_id: memberId,
+        sessions: initialSessions,
+        created_by: user?.id,
+      })
+      .select()
+      .single()
+    if (error) return { error: error.message }
+    return { data }
+  }
+
+  const sessions = [...existing.sessions]
+  while (sessions.length <= sessionIdx) sessions.push(emptySession())
+  sessions[sessionIdx] = { ...sessions[sessionIdx], ...patch }
+
+  const { error } = await supabase
+    .from('ot_programs')
+    .update({ sessions, updated_at: new Date().toISOString() })
+    .eq('id', existing.id)
+  if (error) return { error: error.message }
+  return { success: true }
+}
+
+export async function saveSessionSignatureInPerson(
+  programId: string,
+  sessionIdx: number,
+  signatureDataUrl: string,
+  signerName: string,
+) {
+  if (!signatureDataUrl.startsWith('data:image/')) {
+    return { error: '유효하지 않은 서명 이미지' }
+  }
+  return updateSessionApproval(programId, sessionIdx, {
+    signature_url: signatureDataUrl,
+    signer_name: signerName,
+    signed_at: new Date().toISOString(),
+  })
+}
+
+export async function unsubmitOtSession(programId: string, sessionIdx: number) {
+  return updateSessionApproval(programId, sessionIdx, {
+    approval_status: '작성중',
+    submitted_at: null,
+    approved_at: null,
+    approved_by: null,
+    rejection_reason: null,
+  })
+}
+
+export async function approveOtSession(programId: string, sessionIdx: number) {
+  const supabase = await createClient()
+  const { data: { user } } = await supabase.auth.getUser()
+  return updateSessionApproval(programId, sessionIdx, {
+    approval_status: '승인',
+    approved_at: new Date().toISOString(),
+    approved_by: user?.id ?? null,
+    rejection_reason: null,
+  })
+}
+
+export async function rejectOtSession(programId: string, sessionIdx: number, reason: string) {
+  const supabase = await createClient()
+  const { data: { user } } = await supabase.auth.getUser()
+  return updateSessionApproval(programId, sessionIdx, {
+    approval_status: '반려',
+    approved_by: user?.id ?? null,
+    rejection_reason: reason,
+  })
+}
+
 export async function getPendingOtPrograms(): Promise<(OtProgram & { member_name?: string })[]> {
   const supabase = await createClient()
 
@@ -212,15 +386,20 @@ export async function getPendingOtPrograms(): Promise<(OtProgram & { member_name
   })
 }
 
-export async function getAllOtPrograms(): Promise<(OtProgram & { member_name?: string })[]> {
+export async function getAllOtPrograms(options?: { includeAll?: boolean }): Promise<(OtProgram & { member_name?: string })[]> {
   const supabase = await createClient()
 
-  const { data, error } = await supabase
+  let query = supabase
     .from('ot_programs')
     .select('*, member:members!inner(name)')
-    .in('approval_status', ['제출완료', '승인', '반려'])
-    .order('submitted_at', { ascending: false })
-    .limit(100)
+
+  if (!options?.includeAll) {
+    query = query.in('approval_status', ['제출완료', '승인', '반려'])
+  }
+
+  const { data, error } = await query
+    .order('updated_at', { ascending: false })
+    .limit(200)
 
   if (error || !data) return []
 

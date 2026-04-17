@@ -40,7 +40,11 @@ export async function getOtAssignments(params?: {
     query = query.eq('status', params.status)
   }
   if (params?.trainerId) {
-    query = query.or(`pt_trainer_id.eq.${params.trainerId},ppt_trainer_id.eq.${params.trainerId}`)
+    if (params.trainerId === 'unassigned') {
+      query = query.is('pt_trainer_id', null).is('ppt_trainer_id', null)
+    } else {
+      query = query.or(`pt_trainer_id.eq.${params.trainerId},ppt_trainer_id.eq.${params.trainerId}`)
+    }
   }
 
   const { data, error } = await query
@@ -134,7 +138,9 @@ export async function updateOtAssignment(id: string, values: Record<string, any>
         changed_by: session?.user?.id ?? null,
       })
     }
-  } catch {}
+  } catch (err) {
+    console.error('updateOtAssignment: change_logs insert 실패', err)
+  }
 
   return { success: true }
 }

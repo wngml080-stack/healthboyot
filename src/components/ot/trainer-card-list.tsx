@@ -16,13 +16,17 @@ import {
   DialogTitle,
   DialogDescription,
 } from '@/components/ui/dialog'
-import { CheckCircle, User, AlertTriangle, BarChart3, CalendarDays, ClipboardList, Pencil, Plus, Undo2, UserPlus, Send } from 'lucide-react'
-import { upsertOtSession, updateOtAssignment } from '@/actions/ot'
-import { getOtProgram, upsertOtProgram, submitOtProgram } from '@/actions/ot-program'
+import { CheckCircle, User, AlertTriangle, BarChart3, CalendarDays, ClipboardList, Pencil, Plus, Undo2, UserPlus, Send, Target, HeartPulse, Dumbbell, Phone } from 'lucide-react'
+import { upsertOtSession, updateOtAssignment, deleteOtSession } from '@/actions/ot'
+import { getOtProgram, submitOtProgram } from '@/actions/ot-program'
 import { quickRegisterMember } from '@/actions/members'
 import { createClient } from '@/lib/supabase/client'
-import { OtProgramForm } from './ot-program-form'
+import dynamic from 'next/dynamic'
 import type { OtProgramFormRef } from './ot-program-form'
+const OtProgramForm = dynamic(() => import('./ot-program-form').then((m) => m.OtProgramForm), {
+  ssr: false,
+  loading: () => <div className="py-10 text-center text-sm text-gray-500">프로그램 로드 중...</div>,
+}) as unknown as typeof import('./ot-program-form').OtProgramForm
 import type { OtAssignmentWithDetails, SalesStatus, Profile, OtProgram } from '@/types'
 
 interface Props {
@@ -55,6 +59,7 @@ const TIME_SLOTS = [
 ]
 const CARDIO_OPTIONS = ['러닝머신', '싸이클', '스텝퍼']
 const CARDIO_DURATIONS = [10, 15, 20, 30]
+function toManwon(v: number): number { return v >= 10000 ? Math.round(v / 10000) : v }
 
 // eslint-disable-next-line @typescript-eslint/no-unused-vars
 export function TrainerCardList({ assignments, trainers = [], trainerId, trainerName = '', profile, initialSchedules }: Props) {
@@ -101,6 +106,15 @@ export function TrainerCardList({ assignments, trainers = [], trainerId, trainer
 
   // 펼침
   const [expandedId, setExpandedId] = useState<string | null>(null)
+  const [expandedData, setExpandedData] = useState<Record<string, { card: import('@/types').ConsultationCard | null; program: OtProgram | null } | 'loading'>>({})
+
+  const loadExpandedData = async (memberId: string, assignmentId: string) => {
+    if (expandedData[assignmentId]) return
+    setExpandedData((p) => ({ ...p, [assignmentId]: 'loading' }))
+    const { getAssignmentExpandData } = await import('@/actions/ot-program')
+    const { card, program } = await getAssignmentExpandData(memberId, assignmentId)
+    setExpandedData((p) => ({ ...p, [assignmentId]: { card, program } }))
+  }
 
   // 완료 바텀시트
   const [completeTarget, setCompleteTarget] = useState<{
@@ -145,6 +159,102 @@ export function TrainerCardList({ assignments, trainers = [], trainerId, trainer
   // 회원 퀵뷰
   const [quickViewTarget, setQuickViewTarget] = useState<OtAssignmentWithDetails | null>(null)
 
+  // 상담카드 상세 보기
+  const [cardDetailTarget, setCardDetailTarget] = useState<import('@/types').ConsultationCard | null>(null)
+
+  // 일정만 잡기 (완료 처리 없이)
+  const [scheduleOnlyTarget, setScheduleOnlyTarget] = useState<{ assignment: OtAssignmentWithDetails; sessionNumber: number } | null>(null)
+  const [scheduleOnlyDate, setScheduleOnlyDate] = useState('')
+  const [scheduleOnlyTime, setScheduleOnlyTime] = useState('')
+  const [scheduleOnlyDuration, setScheduleOnlyDuration] = useState<30 | 50>(30)
+  const [scheduleOnlyLoading, setScheduleOnlyLoading] = useState(false)
+
+  const openScheduleOnly = (a: OtAssignmentWithDetails, sessionNumber: number) => {
+    setScheduleOnlyTarget({ assignment: a, sessionNumber })
+    setScheduleOnlyDuration(30)
+    const existing = a.sessions?.find((s) => s.session_number === sessionNumber)
+    if (existing?.scheduled_at) {
+      const d = new Date(existing.scheduled_at)
+      setScheduleOnlyDate(format(d, 'yyyy-MM-dd'))
+      setScheduleOnlyTime(format(d, 'HH:mm'))
+    } else {
+      setScheduleOnlyDate('')
+      setScheduleOnlyTime('')
+    }
+  }
+
+  const handleScheduleOnlySave = async () => {
+    if (!scheduleOnlyTarget || !scheduleOnlyDate || !scheduleOnlyTime) return
+    setScheduleOnlyLoading(true)
+    try {
+      const { assignment, sessionNumber } = scheduleOnlyTarget
+      // 1) OT 세션 일정 저장
+      await upsertOtSession({
+        ot_assignment_id: assignment.id,
+        session_number: sessionNumber,
+        scheduled_at: `${scheduleOnlyDate}T${scheduleOnlyTime}:00`,
+      })
+      // 2) trainer_schedules에도 OT 일정 등록 (스케줄 관리 반영)
+      const assignedTrainerId = assignment.pt_trainer_id || assignment.ppt_trainer_id
+      if (assignedTrainerId) {
+        const { createSchedule } = await import('@/actions/schedule')
+        await createSchedule({
+          trainer_id: assignedTrainerId,
+          schedule_type: 'OT',
+          member_name: assignment.member.name,
+          scheduled_date: scheduleOnlyDate,
+          start_time: scheduleOnlyTime,
+          duration: scheduleOnlyDuration,
+        })
+      }
+      setScheduleOnlyTarget(null)
+      startTransition(() => router.refresh())
+    } catch (err) {
+      console.error('일정 저장 실패:', err)
+      alert('일정 저장 중 오류가 발생했습니다.')
+    } finally {
+      setScheduleOnlyLoading(false)
+    }
+  }
+
+  // 상담카드 연결 (배정된 회원용)
+  const [linkCardTarget, setLinkCardTarget] = useState<OtAssignmentWithDetails | null>(null)
+  const [unlinkedCards, setUnlinkedCards] = useState<import('@/types').ConsultationCard[]>([])
+  const [unlinkedLoading, setUnlinkedLoading] = useState(false)
+  const [linkCardSelectedId, setLinkCardSelectedId] = useState<string>('')
+  const [linkCardSaving, setLinkCardSaving] = useState(false)
+
+  const openLinkCard = async (a: OtAssignmentWithDetails) => {
+    setLinkCardTarget(a)
+    setLinkCardSelectedId('')
+    setUnlinkedLoading(true)
+    const { getUnlinkedCards } = await import('@/actions/consultation')
+    const list = await getUnlinkedCards()
+    setUnlinkedCards(list)
+    setUnlinkedLoading(false)
+  }
+
+  const handleLinkCardSave = async () => {
+    if (!linkCardTarget || !linkCardSelectedId) return
+    setLinkCardSaving(true)
+    const { linkCardToMember } = await import('@/actions/consultation')
+    const res = await linkCardToMember(linkCardSelectedId, linkCardTarget.member_id)
+    setLinkCardSaving(false)
+    if ('error' in res && res.error) {
+      alert('연결 실패: ' + res.error)
+      return
+    }
+    // 펼침 캐시 무효화 → 재조회 트리거
+    setExpandedData((p) => {
+      const next = { ...p }
+      delete next[linkCardTarget.id]
+      return next
+    })
+    await loadExpandedData(linkCardTarget.member_id, linkCardTarget.id)
+    setLinkCardTarget(null)
+    startTransition(() => router.refresh())
+  }
+
   // 세일즈 편집
   const [salesTarget, setSalesTarget] = useState<OtAssignmentWithDetails | null>(null)
   const [salesStatus, setSalesStatus] = useState<SalesStatus>('OT진행중')
@@ -158,7 +268,6 @@ export function TrainerCardList({ assignments, trainers = [], trainerId, trainer
   const [isPtConversion, setIsPtConversion] = useState(false)
   const [ptSalesAmount, setPtSalesAmount] = useState(0)
   const [ptSalesCount, setPtSalesCount] = useState(0)
-
   const openSalesEdit = (a: OtAssignmentWithDetails) => {
     setSalesTarget(a)
     setSalesStatus((a.sales_status as SalesStatus) || 'OT진행중')
@@ -188,20 +297,16 @@ export function TrainerCardList({ assignments, trainers = [], trainerId, trainer
         is_sales_target: isSalesTarget,
         is_pt_conversion: isPtConversion,
       }
-      // PT전환이면 상태도 완료 + notes에 PT 전환 희망 추가
       if (isPtConversion && !salesTarget.is_pt_conversion) {
         updates.status = '완료'
         updates.notes = ((salesTarget.notes ?? '') + ' PT 전환 희망').trim()
         if (ptSalesAmount > 0) updates.actual_sales = ptSalesAmount
       }
-      // PT전환 해제하면 notes에서 제거
       if (!isPtConversion && salesTarget.is_pt_conversion) {
         updates.notes = (salesTarget.notes ?? '').replace(/PT 전환 희망/g, '').trim() || null
       }
-      console.log('세일즈 저장:', salesTarget.id, updates)
       const result = await updateOtAssignment(salesTarget.id, updates)
       if (result && 'error' in result) {
-        console.error('세일즈 저장 실패:', result.error)
         alert('저장에 실패했습니다: ' + result.error)
         setSalesLoading(false)
         return
@@ -217,11 +322,9 @@ export function TrainerCardList({ assignments, trainers = [], trainerId, trainer
   }
 
   // 필터 카운트를 한 번에 계산 (useMemo로 캐시)
-  // PT 수기 회원은 OT 시스템 외부이므로 카운트에서도 제외
   const filterCounts = useMemo(() => {
-    const otOnly = assignments.filter((a) => a.member.registration_source !== '수기')
-    const counts: Record<string, number> = { '전체': otOnly.length }
-    for (const a of otOnly) {
+    const counts: Record<string, number> = { '전체': assignments.length }
+    for (const a of assignments) {
       const done = a.sessions?.filter((s) => s.completed_at).length ?? 0
       if (trainerId && trainerId !== 'unassigned') {
         if (a.pt_trainer_id === trainerId) counts['PT'] = (counts['PT'] ?? 0) + 1
@@ -241,17 +344,16 @@ export function TrainerCardList({ assignments, trainers = [], trainerId, trainer
     return counts
   }, [assignments])
 
-  // 회원관리 탭은 OT 회원만 — PT 수기 등록 회원(registration_source === '수기')은 제외.
-  // PT 회원은 OT 일정이 필요 없으므로 캘린더에서만 시간 기록하고, 회원관리 리스트에서는 안 보임.
-  const otOnlyAssignments = useMemo(
-    () => assignments.filter((a) => a.member.registration_source !== '수기'),
-    [assignments],
-  )
+  // 회원관리 탭은 배정된 모든 회원 표시 (수기 등록 포함)
+  const otOnlyAssignments = useMemo(() => assignments, [assignments])
 
   // 필터링된 회원
+  const [search, setSearch] = useState('')
+  const [dateFrom, setDateFrom] = useState('')
+  const [dateTo, setDateTo] = useState('')
+  const [categoryFilter, setCategoryFilter] = useState('전체')
   const filteredMembers = useMemo(() => {
-    if (filter === '전체') return otOnlyAssignments
-    return otOnlyAssignments.filter((a) => {
+    const base = filter === '전체' ? otOnlyAssignments : otOnlyAssignments.filter((a) => {
       const done = a.sessions?.filter((s) => s.completed_at).length ?? 0
       if (filter === 'PT') return a.pt_trainer_id === trainerId
       if (filter === 'PPT') return a.ppt_trainer_id === trainerId
@@ -267,7 +369,33 @@ export function TrainerCardList({ assignments, trainers = [], trainerId, trainer
       if (filter === 'PT전환') return a.is_pt_conversion
       return true
     })
-  }, [otOnlyAssignments, filter, trainerId])
+    // 기간 필터 (등록일 기준)
+    const withDate = (dateFrom || dateTo)
+      ? base.filter((a) => {
+          const reg = a.member.registered_at
+          if (!reg) return false
+          const regDate = reg.slice(0, 10)
+          if (dateFrom && regDate < dateFrom) return false
+          if (dateTo && regDate > dateTo) return false
+          return true
+        })
+      : base
+    // 카테고리 필터
+    const withCategory = categoryFilter === '전체'
+      ? withDate
+      : withDate.filter((a) => a.member.ot_category === categoryFilter)
+    // 검색
+    const q = search.trim().toLowerCase()
+    if (!q) return withCategory
+    const qDigits = q.replace(/\D/g, '')
+    return withCategory.filter((a) => {
+      const name = a.member.name?.toLowerCase() ?? ''
+      const phone = (a.member.phone ?? '').replace(/\D/g, '')
+      if (name.includes(q)) return true
+      if (qDigits && phone.includes(qDigits)) return true
+      return false
+    })
+  }, [otOnlyAssignments, filter, trainerId, search, dateFrom, dateTo, categoryFilter])
 
   const getNextSessionNumber = (a: OtAssignmentWithDetails): number => {
     const completed = a.sessions?.filter((s) => s.completed_at).length ?? 0
@@ -382,6 +510,72 @@ export function TrainerCardList({ assignments, trainers = [], trainerId, trainer
   return (
     <>
       <div className="space-y-4">
+        {/* 회원 검색 + 기간/카테고리 필터 */}
+        <div className="flex flex-col sm:flex-row gap-2 items-stretch">
+          {/* 검색창 */}
+          <div className="relative flex-1 min-w-0">
+            <Input
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+              placeholder="회원 이름 또는 전화번호로 검색"
+              className="h-9 text-sm pl-9 pr-9 bg-white text-gray-900 placeholder:text-gray-400 border border-gray-300"
+            />
+            <svg className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-gray-500 pointer-events-none" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+              <circle cx="11" cy="11" r="8" />
+              <path d="m21 21-4.35-4.35" />
+            </svg>
+            {search && (
+              <button
+                type="button"
+                onClick={() => setSearch('')}
+                className="absolute right-2 top-1/2 -translate-y-1/2 h-6 w-6 rounded-full bg-gray-200 text-gray-700 hover:bg-gray-300 flex items-center justify-center text-xs font-bold"
+                aria-label="검색 지우기"
+              >×</button>
+            )}
+          </div>
+          {/* 기간 필터 */}
+          <div className="flex items-center gap-1.5 bg-white border border-gray-300 rounded-md px-3 h-9 shrink-0">
+            <span className="text-[10px] text-gray-500 font-medium shrink-0">기간</span>
+            <Input
+              type="date"
+              value={dateFrom}
+              onChange={(e) => setDateFrom(e.target.value)}
+              className="h-7 text-xs border-0 p-0 bg-white text-gray-900 w-[140px]"
+              aria-label="시작일"
+            />
+            <span className="text-gray-400 text-xs shrink-0">~</span>
+            <Input
+              type="date"
+              value={dateTo}
+              onChange={(e) => setDateTo(e.target.value)}
+              className="h-7 text-xs border-0 p-0 bg-white text-gray-900 w-[140px]"
+              aria-label="종료일"
+            />
+            {(dateFrom || dateTo) && (
+              <button
+                type="button"
+                onClick={() => { setDateFrom(''); setDateTo('') }}
+                className="h-5 w-5 rounded-full bg-gray-200 text-gray-700 hover:bg-gray-300 flex items-center justify-center text-[10px] font-bold ml-1 shrink-0"
+                aria-label="기간 초기화"
+              >×</button>
+            )}
+          </div>
+          {/* 카테고리 필터 */}
+          <select
+            value={categoryFilter}
+            onChange={(e) => setCategoryFilter(e.target.value)}
+            className="h-9 text-sm bg-white text-gray-900 border border-gray-300 rounded-md px-3 shrink-0"
+            aria-label="카테고리 필터"
+          >
+            <option value="전체">전체 카테고리</option>
+            <option value="헬스">헬스</option>
+            <option value="필라">필라</option>
+            <option value="헬스,필라">헬스·필라</option>
+            <option value="PT등록">PT등록</option>
+            <option value="거부">거부</option>
+          </select>
+        </div>
+
         {/* 필터 + 회원추가 */}
         <div className="flex flex-wrap gap-2 items-center">
           {trainerId && (
@@ -438,7 +632,16 @@ export function TrainerCardList({ assignments, trainers = [], trainerId, trainer
                       key={a.id}
                       className="rounded-lg border border-gray-200 overflow-hidden"
                     >
-                      <div className="p-3 sm:p-4 hover:bg-gray-50 cursor-pointer" onClick={() => setExpandedId(isExpanded ? null : a.id)}>
+                      <div
+                        className="p-3 sm:p-4 hover:bg-gray-50 cursor-pointer"
+                        onMouseEnter={() => loadExpandedData(a.member_id, a.id)}
+                        onTouchStart={() => loadExpandedData(a.member_id, a.id)}
+                        onClick={() => {
+                          const next = isExpanded ? null : a.id
+                          setExpandedId(next)
+                          if (next) loadExpandedData(a.member_id, a.id)
+                        }}
+                      >
                       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-1">
                         <div className="flex items-center gap-2 flex-wrap">
                           <span className="font-bold text-gray-900">{a.member.name}</span>
@@ -448,18 +651,13 @@ export function TrainerCardList({ assignments, trainers = [], trainerId, trainer
                           {trainerId && trainerId !== 'unassigned' && (() => {
                             const isPt = a.pt_trainer_id === trainerId
                             const role = isPt ? 'PT' : 'PPT'
-                            // 수기 등록 회원 (OT 시스템 외부에서 트레이너가 직접 추가한 PT 회원)은
-                            // 일반 PT/PPT와 시각적으로 구분 — 노란색 배경 + 검정 글자 + "PT 회원" 라벨
-                            const isManual = a.member.registration_source === '수기'
                             return (
                               <Badge variant="outline" className={`text-[10px] px-1.5 font-bold ${
-                                isManual
-                                  ? 'bg-yellow-300 text-black border-yellow-500'
-                                  : isPt
-                                    ? 'bg-blue-50 text-blue-700 border-blue-300'
-                                    : 'bg-violet-50 text-violet-700 border-violet-300'
+                                isPt
+                                  ? 'bg-blue-50 text-blue-700 border-blue-300'
+                                  : 'bg-violet-50 text-violet-700 border-violet-300'
                               }`}>
-                                {isManual ? `${role} 회원` : role}
+                                {role}
                               </Badge>
                             )
                           })()}
@@ -475,7 +673,7 @@ export function TrainerCardList({ assignments, trainers = [], trainerId, trainer
                             <Badge className="text-[10px] px-1.5 bg-red-500 text-white border-red-500 font-bold">★ 매출대상</Badge>
                           )}
                           {a.is_pt_conversion && (
-                            <Badge variant="outline" className="text-[10px] px-1.5 bg-purple-50 text-purple-600 border-purple-300">PT전환</Badge>
+                            <Badge variant="outline" className="text-[10px] px-1.5 font-bold bg-yellow-300 text-black border-yellow-500">PT전환</Badge>
                           )}
                         </div>
                         <div className="text-right text-xs text-gray-500">
@@ -488,7 +686,7 @@ export function TrainerCardList({ assignments, trainers = [], trainerId, trainer
                         {a.member.ot_category && <span>{a.member.ot_category}</span>}
                         {a.member.exercise_time && <span className="text-blue-600">{a.member.exercise_time}</span>}
                         {a.member.phone && <span>번호) {a.member.phone.replace(/(\d{3})(\d{4})(\d{4})/, '$1-$2-$3')}</span>}
-                        {a.expected_amount > 0 && <span className="text-green-600 font-medium">예상 {a.expected_amount.toLocaleString()}만원{a.expected_sessions ? ` (${a.expected_sessions}회)` : ''}</span>}
+                        {a.expected_amount > 0 && <span className="text-green-600 font-medium">예상 {toManwon(a.expected_amount).toLocaleString()}만원{a.expected_sessions ? ` (${a.expected_sessions}회)` : ''}</span>}
                         {nextScheduled && <span>OT일정: {nextSession}차 {format(new Date(nextScheduled.scheduled_at!), 'M/d HH:mm')}</span>}
                       </div>
                       </div>
@@ -497,7 +695,7 @@ export function TrainerCardList({ assignments, trainers = [], trainerId, trainer
                       {isExpanded && (
                         <div className="border-t border-gray-200 bg-gray-50 p-4 space-y-4">
                           {/* 상세 정보 */}
-                          <div className="grid grid-cols-2 md:grid-cols-4 gap-3 text-sm">
+                          <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 text-sm">
                             <div><p className="text-xs text-gray-500">연락처</p><p className="font-medium">{a.member.phone ? a.member.phone.replace(/(\d{3})(\d{4})(\d{4})/, '$1-$2-$3') : '-'}</p></div>
                             <div><p className="text-xs text-gray-500">성별</p><p className="font-medium">{a.member.gender ?? '-'}</p></div>
                             <div><p className="text-xs text-gray-500">운동기간</p><p className="font-medium">{a.member.duration_months ?? '-'}</p></div>
@@ -510,8 +708,354 @@ export function TrainerCardList({ assignments, trainers = [], trainerId, trainer
                             <div><p className="text-xs text-gray-500">특이사항</p><p className="text-sm text-gray-900 mt-0.5">{a.member.notes}</p></div>
                           )}
 
-                          {/* OT 일정 - 스크린샷처럼 1차/2차/3차 카드형 일정표 */}
-                          <div onClick={(e) => e.stopPropagation()}>
+                          {/* 상담카드 요약 + 세일즈 여정 */}
+                          <div onClick={(e) => e.stopPropagation()} className="space-y-4">
+                            {(() => {
+                              const ex = expandedData[a.id]
+                              if (ex === 'loading' || !ex) {
+                                return <p className="text-xs text-gray-400">상담/세일즈 정보 불러오는 중...</p>
+                              }
+                              const card = ex.card
+                              const programSessions = ex.program?.sessions ?? []
+                              const journey: { label: string; date?: string; status?: string; detail?: string }[] = []
+                              programSessions.forEach((s, i) => {
+                                const status = s.sales_status || (s.completed ? 'OT완료' : null)
+                                if (!status && !s.sales_note && !s.is_sales_target && !s.is_pt_conversion && !s.closing_fail_reason) return
+                                journey.push({
+                                  label: `${i + 1}차 OT`,
+                                  date: s.date || undefined,
+                                  status: status ?? '',
+                                  detail: [
+                                    s.is_sales_target ? '매출대상 지정' : null,
+                                    s.is_pt_conversion ? `PT 전환${s.pt_sales_amount ? ` · ${s.pt_sales_amount}만원` : ''}` : null,
+                                    s.closing_probability ? `클로징 ${s.closing_probability}%` : null,
+                                    s.expected_amount ? `예상 ${s.expected_amount}만` : null,
+                                    s.expected_sessions ? `${s.expected_sessions}회` : null,
+                                    s.closing_fail_reason ? `실패: ${s.closing_fail_reason}` : null,
+                                    s.sales_note ? s.sales_note : null,
+                                  ].filter(Boolean).join(' · '),
+                                })
+                              })
+                              const statusBadgeColor = (st?: string) => {
+                                switch (st) {
+                                  case '등록완료': return 'bg-green-600 text-white'
+                                  case '클로징실패': return 'bg-red-500 text-white'
+                                  case '거부자':
+                                  case 'OT거부자': return 'bg-orange-500 text-white'
+                                  case '연락두절': return 'bg-gray-500 text-white'
+                                  case '매출대상': return 'bg-blue-600 text-white'
+                                  case 'OT완료': return 'bg-emerald-500 text-white'
+                                  default: return 'bg-gray-400 text-white'
+                                }
+                              }
+                              // OT 진행 현황 — ot_sessions + program sessions 병합
+                              const maxNum = Math.max(
+                                0,
+                                ...(a.sessions?.map((s) => s.session_number) ?? []),
+                                programSessions.length,
+                              )
+                              const otProgress = Array.from({ length: maxNum }, (_, i) => {
+                                const num = i + 1
+                                const ot = a.sessions?.find((s) => s.session_number === num)
+                                const prog = programSessions[i]
+                                return {
+                                  num,
+                                  scheduled_at: ot?.scheduled_at ?? null,
+                                  completed_at: ot?.completed_at ?? null,
+                                  approval_status: prog?.approval_status ?? null,
+                                  inbody: prog?.inbody ?? false,
+                                }
+                              })
+                              const completedCount = otProgress.filter((s) => s.completed_at).length
+
+                              return (
+                                <>
+                                  {/* OT 진행 현황 */}
+                                  {otProgress.length > 0 && (
+                                    <div className="rounded-xl border border-indigo-200 bg-indigo-50/40 p-4 space-y-3">
+                                      <div className="flex items-center justify-between flex-wrap gap-2">
+                                        <p className="text-sm font-bold text-indigo-900">🏋️ OT 진행 현황</p>
+                                        <span className="text-xs font-bold text-indigo-700 bg-white px-2 py-0.5 rounded-full border border-indigo-200">
+                                          완료 {completedCount} / {otProgress.length}
+                                        </span>
+                                      </div>
+                                      <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+                                        {otProgress.map((s) => {
+                                          const isDone = !!s.completed_at
+                                          const scheduledDate = s.scheduled_at ? new Date(s.scheduled_at) : null
+                                          const isPastDue = !isDone && scheduledDate !== null && scheduledDate.getTime() < Date.now()
+                                          const isScheduled = !!s.scheduled_at && !isDone && !isPastDue
+                                          const statusLabel = isDone
+                                            ? '완료'
+                                            : isPastDue
+                                              ? '수업여부 변경 필요'
+                                              : isScheduled
+                                                ? '예정'
+                                                : '대기'
+                                          const statusColor = isDone
+                                            ? 'bg-emerald-500 text-white'
+                                            : isPastDue
+                                              ? 'bg-rose-500 text-white'
+                                              : isScheduled
+                                                ? 'bg-blue-500 text-white'
+                                                : 'bg-gray-400 text-white'
+                                          const approvalColor = s.approval_status === '승인'
+                                            ? 'bg-green-100 text-green-800 border-green-300'
+                                            : s.approval_status === '제출완료'
+                                              ? 'bg-yellow-100 text-yellow-800 border-yellow-300'
+                                              : s.approval_status === '반려'
+                                                ? 'bg-red-100 text-red-800 border-red-300'
+                                                : 'bg-gray-100 text-gray-600 border-gray-200'
+                                          const approvalLabel = s.approval_status ?? '작성중'
+                                          const approvalTitle = s.approval_status === '승인'
+                                            ? '관리자 승인 완료'
+                                            : s.approval_status === '제출완료'
+                                              ? '관리자 승인 대기 중'
+                                              : s.approval_status === '반려'
+                                                ? '관리자가 반려함'
+                                                : '트레이너가 아직 제출하지 않은 상태'
+                                          const dateStr = (s.completed_at || s.scheduled_at) || null
+                                          const formatted = dateStr
+                                            ? new Date(dateStr).toLocaleDateString('ko', { month: 'numeric', day: 'numeric' })
+                                            : null
+                                          const timeStr = s.scheduled_at && !isDone
+                                            ? new Date(s.scheduled_at).toLocaleTimeString('ko', { hour: '2-digit', minute: '2-digit', hour12: false })
+                                            : null
+                                          const border = isDone
+                                            ? 'border-emerald-200'
+                                            : isPastDue
+                                              ? 'border-rose-300'
+                                              : isScheduled
+                                                ? 'border-blue-200'
+                                                : 'border-gray-200'
+                                          const canDelete = (profile?.role === 'admin' || profile?.role === '관리자') && !isDone
+                                          return (
+                                            <div
+                                              key={s.num}
+                                              className={`relative rounded-lg border-2 bg-white p-2 text-center space-y-1 ${border} ${(isPastDue || (isScheduled && !isDone)) ? 'cursor-pointer hover:shadow-md transition-shadow' : ''}`}
+                                              onClick={async (e) => {
+                                                e.stopPropagation()
+                                                if (isDone) return
+                                                if (!s.scheduled_at) return
+                                                const options = ['수업완료', '노쇼', '차감노쇼', '상담', '취소']
+                                                const choice = prompt(`${a.member.name} ${s.num}차 OT 상태 변경\n\n다음 중 하나를 입력하세요:\n수업완료 / 노쇼 / 차감노쇼 / 상담`)
+                                                if (!choice || !['수업완료', '노쇼', '차감노쇼', '상담'].includes(choice.trim())) return
+                                                const result = choice.trim()
+                                                if (result === '수업완료') {
+                                                  await upsertOtSession({
+                                                    ot_assignment_id: a.id,
+                                                    session_number: s.num,
+                                                    scheduled_at: s.scheduled_at ?? undefined,
+                                                    completed_at: new Date().toISOString(),
+                                                  })
+                                                }
+                                                router.refresh()
+                                              }}
+                                            >
+                                              {canDelete && (
+                                                <button
+                                                  type="button"
+                                                  className="absolute -top-1.5 -right-1.5 bg-red-500 hover:bg-red-600 text-white rounded-full w-5 h-5 flex items-center justify-center text-xs font-bold shadow"
+                                                  title={`${s.num}차 OT 세션 삭제`}
+                                                  onClick={async (e) => {
+                                                    e.stopPropagation()
+                                                    if (!confirm(`${a.member.name}님의 ${s.num}차 OT 세션을 삭제할까요?`)) return
+                                                    const res = await deleteOtSession(a.id, s.num)
+                                                    if (res.error) { alert('삭제 실패: ' + res.error); return }
+                                                    router.refresh()
+                                                  }}
+                                                  aria-label="세션 삭제"
+                                                >×</button>
+                                              )}
+                                              <div className="flex items-center justify-between gap-1">
+                                                <span className="text-xs font-bold text-gray-800">{s.num}차 OT</span>
+                                                {s.inbody && (
+                                                  <span className="text-[9px] bg-purple-100 text-purple-700 px-1 py-0.5 rounded">📊</span>
+                                                )}
+                                              </div>
+                                              <div className="flex flex-col gap-0.5 items-stretch">
+                                                <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded leading-tight ${statusColor}`}>
+                                                  {statusLabel}
+                                                </span>
+                                                <span className={`text-[10px] font-medium px-1.5 py-0.5 rounded border ${approvalColor}`} title={approvalTitle}>
+                                                  {approvalLabel}
+                                                </span>
+                                              </div>
+                                              {formatted && (
+                                                <p className="text-[10px] text-gray-500 leading-tight">
+                                                  {formatted}{timeStr && ` ${timeStr}`}
+                                                </p>
+                                              )}
+                                              {(isPastDue || isScheduled) && !isDone && (
+                                                <p className="text-[8px] text-indigo-500 font-medium">클릭하여 상태변경</p>
+                                              )}
+                                            </div>
+                                          )
+                                        })}
+                                      </div>
+                                      <p className="text-[10px] text-gray-500 leading-tight">
+                                        💡 <strong>작성중</strong> = 트레이너가 프로그램을 제출하지 않은 상태 · <strong>제출완료</strong> = 관리자 승인 대기 · <strong>승인</strong> = 관리자 승인 완료
+                                      </p>
+                                    </div>
+                                  )}
+
+                                  {/* 상담카드 요약 */}
+                                  <div className="rounded-xl border border-amber-200 bg-amber-50/40 p-4 space-y-2">
+                                    <div className="flex items-center justify-between flex-wrap gap-2">
+                                      <p className="text-sm font-bold text-amber-900">📋 상담카드 요약</p>
+                                      <div className="flex items-center gap-1.5">
+                                        {card && (
+                                          <Button
+                                            size="sm"
+                                            className="h-7 text-xs bg-amber-700 hover:bg-amber-800 text-white"
+                                            onClick={(e) => { e.stopPropagation(); setCardDetailTarget(card) }}
+                                          >
+                                            <ClipboardList className="h-3 w-3 mr-1" />상담카드 상세 보기
+                                          </Button>
+                                        )}
+                                        {!card && (
+                                          <Button
+                                            size="sm"
+                                            className="h-7 text-xs bg-amber-600 hover:bg-amber-700 text-white"
+                                            onClick={(e) => { e.stopPropagation(); openLinkCard(a) }}
+                                          >
+                                            <ClipboardList className="h-3 w-3 mr-1" />상담카드 연결
+                                          </Button>
+                                        )}
+                                      </div>
+                                    </div>
+                                    {card ? (
+                                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-4 gap-y-1 text-xs text-gray-800">
+                                        {card.exercise_goals?.length > 0 && <p><span className="font-bold">운동목적:</span> {card.exercise_goals.join(', ')}{card.exercise_goal_detail ? ` — ${card.exercise_goal_detail}` : ''}</p>}
+                                        {card.body_correction_area && <p><span className="font-bold">체형교정:</span> {card.body_correction_area}</p>}
+                                        {card.medical_conditions?.length > 0 && <p><span className="font-bold">병력:</span> {card.medical_conditions.join(', ')}{card.medical_detail ? ` (${card.medical_detail})` : ''}</p>}
+                                        {card.surgery_detail && <p><span className="font-bold">수술:</span> {card.surgery_detail}</p>}
+                                        {card.exercise_experiences?.length > 0 && <p><span className="font-bold">운동경험:</span> {card.exercise_experiences.join(', ')}{card.exercise_duration ? ` / ${card.exercise_duration}` : ''}</p>}
+                                        {card.exercise_time_preference && <p><span className="font-bold">선호 시간:</span> {card.exercise_time_preference}</p>}
+                                        {card.desired_body_type && <p><span className="font-bold">원하는 체형:</span> {card.desired_body_type}</p>}
+                                        {card.pt_satisfaction && <p><span className="font-bold">PT 만족도:</span> {card.pt_satisfaction}</p>}
+                                      </div>
+                                    ) : (
+                                      <p className="text-xs text-gray-500">작성된 상담카드가 없습니다.</p>
+                                    )}
+                                  </div>
+
+                                  {/* 세일즈 여정 */}
+                                  {(() => {
+                                    // 세션에서 가장 최근 입력값을 assignment 레벨 fallback으로 사용
+                                    const latestSessionWithData = [...programSessions].reverse().find((s) =>
+                                      s.expected_amount || s.expected_sessions || s.closing_probability || s.sales_status || s.is_sales_target || s.is_pt_conversion || s.pt_sales_amount,
+                                    )
+                                    const expAmount = toManwon(a.expected_amount || latestSessionWithData?.expected_amount || 0)
+                                    const expSessions = a.expected_sessions || latestSessionWithData?.expected_sessions || 0
+                                    const closeProb = a.closing_probability || latestSessionWithData?.closing_probability || 0
+                                    const ptSalesSum = programSessions.reduce((acc, s) => acc + (s.pt_sales_amount || 0), 0)
+                                    const actSales = toManwon(a.actual_sales || ptSalesSum)
+                                    const salesStatus = a.sales_status || latestSessionWithData?.sales_status
+                                    const isSalesTarget = a.is_sales_target || programSessions.some((s) => s.is_sales_target)
+                                    const isPtConversion = a.is_pt_conversion || programSessions.some((s) => s.is_pt_conversion)
+                                    return (
+                                  <div className="rounded-xl border border-blue-200 bg-blue-50/40 p-4 space-y-3">
+                                    <div className="flex items-center justify-between flex-wrap gap-2">
+                                      <p className="text-sm font-bold text-blue-900">🛣️ 세일즈 · 등록 여정</p>
+                                      <div className="flex items-center gap-1.5 flex-wrap">
+                                        {isSalesTarget && <Badge className="bg-blue-600 text-white text-[10px]">매출대상</Badge>}
+                                        {isPtConversion && <Badge className="bg-purple-600 text-white text-[10px]">PT전환</Badge>}
+                                        {salesStatus && <Badge className={`${statusBadgeColor(salesStatus)} text-[10px]`}>{salesStatus}</Badge>}
+                                        {actSales > 0 && <Badge className="bg-green-700 text-white text-[10px]">실매출 {actSales}만</Badge>}
+                                      </div>
+                                    </div>
+
+                                    <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 text-xs">
+                                      <div className="rounded bg-white p-2">
+                                        <p className="text-gray-500">예상 매출</p>
+                                        <p className="font-bold text-gray-900">{expAmount ? `${expAmount.toLocaleString()}만` : '-'}</p>
+                                      </div>
+                                      <div className="rounded bg-white p-2">
+                                        <p className="text-gray-500">예상 회수</p>
+                                        <p className="font-bold text-gray-900">{expSessions ? `${expSessions}회` : '-'}</p>
+                                      </div>
+                                      <div className="rounded bg-white p-2">
+                                        <p className="text-gray-500">클로징 확률</p>
+                                        <p className="font-bold text-gray-900">{closeProb ? `${closeProb}%` : '-'}</p>
+                                      </div>
+                                      <div className="rounded bg-white p-2">
+                                        <p className="text-gray-500">실제 매출</p>
+                                        <p className="font-bold text-green-700">{actSales ? `${actSales.toLocaleString()}만` : '-'}</p>
+                                      </div>
+                                    </div>
+
+                                    {journey.length > 0 ? (
+                                      <div className="relative pl-4 border-l-2 border-blue-300 space-y-3">
+                                        {journey.map((j, ji) => (
+                                          <div key={ji} className="relative">
+                                            <span className="absolute -left-[21px] top-1 h-3 w-3 rounded-full bg-blue-500 border-2 border-white" />
+                                            <div className="flex items-center gap-2 flex-wrap">
+                                              <span className="text-sm font-bold text-gray-900">{j.label}</span>
+                                              {j.date && <span className="text-[11px] text-gray-500">{j.date}</span>}
+                                              {j.status && <Badge className={`${statusBadgeColor(j.status)} text-[10px]`}>{j.status}</Badge>}
+                                            </div>
+                                            {j.detail && <p className="text-xs text-gray-700 mt-0.5">{j.detail}</p>}
+                                          </div>
+                                        ))}
+                                      </div>
+                                    ) : (
+                                      <p className="text-xs text-gray-500">차수별 세일즈 기록이 아직 없습니다. 프로그램 팝업의 각 세션에서 세일즈 정보를 입력하면 여정으로 표시됩니다.</p>
+                                    )}
+
+                                    {a.sales_note && (
+                                      <div className="rounded bg-white p-2 text-xs">
+                                        <p className="font-bold text-gray-600 mb-0.5">메모</p>
+                                        <p className="text-gray-800 whitespace-pre-wrap">{a.sales_note}</p>
+                                      </div>
+                                    )}
+                                    {a.closing_fail_reason && (
+                                      <div className="rounded bg-red-50 border border-red-200 p-2 text-xs">
+                                        <p className="font-bold text-red-700 mb-0.5">클로징 실패 사유</p>
+                                        <p className="text-red-800 whitespace-pre-wrap">{a.closing_fail_reason}</p>
+                                      </div>
+                                    )}
+                                  </div>
+                                  )
+                                  })()}
+
+                                  {/* 관리자 피드백 요약 — 모든 세션의 admin_feedback을 한 박스에 모아 표시 */}
+                                  {(() => {
+                                    const feedbacks = programSessions
+                                      .map((s, i) => ({ idx: i, text: s.admin_feedback, status: s.approval_status }))
+                                      .filter((f) => f.text && f.text.trim())
+                                    if (feedbacks.length === 0) return null
+                                    return (
+                                      <div className="rounded-xl border-2 border-blue-300 bg-blue-50/60 p-4 space-y-2">
+                                        <p className="text-sm font-bold text-blue-800">📋 관리자 피드백</p>
+                                        <div className="space-y-2">
+                                          {feedbacks.map((f) => (
+                                            <div key={f.idx} className="bg-white rounded border border-blue-200 p-2">
+                                              <div className="flex items-center gap-2 mb-1">
+                                                <Badge className="bg-blue-600 text-white text-[10px]">{f.idx + 1}차</Badge>
+                                                {f.status && f.status !== '작성중' && (
+                                                  <Badge className={`text-[10px] text-white ${
+                                                    f.status === '승인' ? 'bg-green-600'
+                                                    : f.status === '반려' ? 'bg-red-500'
+                                                    : 'bg-yellow-500'
+                                                  }`}>{f.status}</Badge>
+                                                )}
+                                              </div>
+                                              <p className="text-xs text-gray-800 whitespace-pre-wrap">{f.text}</p>
+                                            </div>
+                                          ))}
+                                        </div>
+                                      </div>
+                                    )
+                                  })()}
+                                </>
+                              )
+                            })()}
+
+                          </div>
+
+                          {/* (구) OT 일정 UI — 스케줄 탭으로 이동됨 */}
+                          <div style={{ display: 'none' }} onClick={(e) => e.stopPropagation()}>
                             <p className="text-base font-bold text-gray-900 mb-3 flex items-center gap-2">
                               <CalendarDays className="h-5 w-5" />
                               OT 일정
@@ -757,12 +1301,58 @@ export function TrainerCardList({ assignments, trainers = [], trainerId, trainer
 
                           {/* 퀵 액션 */}
                           <div className="flex flex-wrap gap-2">
-                            <Button size="sm" className="bg-blue-600 hover:bg-blue-700 text-white" onClick={(e) => { e.stopPropagation(); openSalesEdit(a) }}>
-                              <BarChart3 className="h-4 w-4 mr-1" />세일즈 관리
-                            </Button>
                             <Button size="sm" className="bg-emerald-600 hover:bg-emerald-700 text-white" onClick={(e) => { e.stopPropagation(); handleCompleteOpen(a, getNextSessionNumber(a)) }}>
                               <ClipboardList className="h-4 w-4 mr-1" />프로그램
                             </Button>
+                            {(() => {
+                              const ex = expandedData[a.id]
+                              const progSessions = ex && ex !== 'loading' ? (ex.program?.sessions ?? []) : []
+                              const completedCount = a.sessions?.filter((s) => s.completed_at).length ?? 0
+                              // 제출/승인/반려까지 포함한 최대 진행 차수 (완료 여부와 무관하게 다음 차수 계산)
+                              const progressedSessionNumbers = progSessions
+                                .map((s, i) => (s.approval_status && s.approval_status !== '작성중' ? i + 1 : 0))
+                                .filter((n) => n > 0)
+                              const maxProgressed = Math.max(completedCount, ...progressedSessionNumbers, 0)
+                              const nextNumber = Math.min(maxProgressed + 1, 3)
+
+                              // 최신 진행 세션의 상태 (배지용)
+                              const lastIdx = maxProgressed - 1
+                              const lastProgSession = lastIdx >= 0 ? progSessions[lastIdx] : null
+                              const lastApproval = lastProgSession?.approval_status
+                              const isCompleted = lastIdx >= 0 && (a.sessions?.find((s) => s.session_number === maxProgressed)?.completed_at)
+
+                              const statusLabel =
+                                maxProgressed === 0 ? null
+                                : lastApproval === '승인' ? `OT${maxProgressed}차 승인완료`
+                                : lastApproval === '반려' ? `OT${maxProgressed}차 반려`
+                                : lastApproval === '제출완료' ? `OT${maxProgressed}차 제출완료`
+                                : isCompleted ? `OT${maxProgressed}차 완료`
+                                : null
+                              const statusColor =
+                                lastApproval === '승인' ? 'bg-green-600 text-white'
+                                : lastApproval === '반려' ? 'bg-red-500 text-white'
+                                : lastApproval === '제출완료' ? 'bg-yellow-500 text-white'
+                                : 'bg-emerald-500 text-white'
+
+                              return (
+                                <>
+                                  {statusLabel && (
+                                    <Badge className={`${statusColor} h-8 px-3 text-xs font-bold flex items-center`}>
+                                      <CheckCircle className="h-3.5 w-3.5 mr-1" />{statusLabel}
+                                    </Badge>
+                                  )}
+                                  {maxProgressed < 3 && (
+                                    <Button
+                                      size="sm"
+                                      className="bg-indigo-600 hover:bg-indigo-700 text-white"
+                                      onClick={(e) => { e.stopPropagation(); openScheduleOnly(a, nextNumber) }}
+                                    >
+                                      <CalendarDays className="h-4 w-4 mr-1" />스케줄잡기
+                                    </Button>
+                                  )}
+                                </>
+                              )
+                            })()}
                             <Button size="sm" variant="outline" className="text-white bg-gray-800 border-gray-700" onClick={(e) => { e.stopPropagation(); router.push(`/ot/${a.id}`) }}>
                               상세 페이지
                             </Button>
@@ -786,7 +1376,7 @@ export function TrainerCardList({ assignments, trainers = [], trainerId, trainer
           }
         }
       }}>
-        <DialogContent className="max-w-4xl max-h-[95vh] overflow-y-auto" onPointerDownOutside={(e) => e.preventDefault()} onEscapeKeyDown={(e) => e.preventDefault()}>
+        <DialogContent className="w-[95vw] max-w-[95vw] sm:max-w-4xl max-h-[95vh] overflow-y-auto" onPointerDownOutside={(e) => e.preventDefault()} onEscapeKeyDown={(e) => e.preventDefault()}>
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2">
               <ClipboardList className="h-5 w-5 text-blue-600" />
@@ -804,6 +1394,9 @@ export function TrainerCardList({ assignments, trainers = [], trainerId, trainer
                 program={completeProgramData}
                 profile={profile}
                 hideButtons
+                completingSessionIdx={completeTarget.sessionNumber - 1}
+                completeLoading={completeLoading}
+                onCompleteSession={async () => { await handleCompleteSubmit() }}
                 onSaved={async () => {
                   const updated = await getOtProgram(completeTarget.assignment.id)
                   setCompleteProgramData(updated)
@@ -951,46 +1544,6 @@ export function TrainerCardList({ assignments, trainers = [], trainerId, trainer
               </div>
             )}
 
-            {/* 결과 분류 */}
-            <div className="space-y-2">
-              <Label>결과 분류 <span className="text-xs text-gray-400">(선택)</span></Label>
-              <div className="grid grid-cols-2 gap-2">
-                {[
-                  { value: '매출대상', label: '매출대상', color: 'bg-yellow-400 text-black border-yellow-400' },
-                  { value: '등록완료', label: '등록완료', color: 'bg-blue-500 text-white border-blue-500' },
-                  { value: '클로징실패', label: '클로징실패', color: 'bg-red-500 text-white border-red-500' },
-                  { value: '거부자', label: '거부자', color: 'bg-orange-500 text-white border-orange-500' },
-                ].map((opt) => (
-                  <button
-                    key={opt.value}
-                    type="button"
-                    className={`rounded-md border px-3 py-2 text-sm font-medium transition-colors ${
-                      completeResult === opt.value
-                        ? opt.color
-                        : 'bg-white text-gray-700 border-gray-300 hover:bg-gray-50'
-                    }`}
-                    onClick={() => setCompleteResult(completeResult === opt.value ? '' : opt.value)}
-                  >
-                    {opt.label}
-                  </button>
-                ))}
-              </div>
-              {completeResult === '클로징실패' && (
-                <Input
-                  placeholder="실패 사유 (선택)"
-                  value={completeFailReason}
-                  onChange={(e) => setCompleteFailReason(e.target.value)}
-                />
-              )}
-            </div>
-
-            <Button
-              className="w-full bg-green-600 hover:bg-green-700 text-white"
-              onClick={handleCompleteSubmit}
-              disabled={completeLoading}
-            >
-              {completeLoading ? '저장 중...' : '완료 저장'}
-            </Button>
           </div>}
 
           {/* 다음 OT 일정 + 결과 분류 + 완료 버튼 (프로그램 폼이 있을 때) */}
@@ -1015,60 +1568,6 @@ export function TrainerCardList({ assignments, trainers = [], trainerId, trainer
                 </div>
               )}
 
-              <div className="border-t pt-4 space-y-2">
-                <Label className="font-bold">결과 분류 <span className="text-xs text-gray-400 font-normal">(선택)</span></Label>
-                <div className="grid grid-cols-2 gap-2">
-                  {[
-                    { value: '매출대상', label: '매출대상', color: 'bg-yellow-400 text-black border-yellow-400' },
-                    { value: '등록완료', label: '등록완료', color: 'bg-blue-500 text-white border-blue-500' },
-                    { value: '클로징실패', label: '클로징실패', color: 'bg-red-500 text-white border-red-500' },
-                    { value: '거부자', label: '거부자', color: 'bg-orange-500 text-white border-orange-500' },
-                  ].map((opt) => (
-                    <button key={opt.value} type="button" className={`rounded-md border px-3 py-2 text-sm font-medium transition-colors ${completeResult === opt.value ? opt.color : 'bg-white text-gray-700 border-gray-300 hover:bg-gray-50'}`} onClick={() => setCompleteResult(completeResult === opt.value ? '' : opt.value)}>
-                      {opt.label}
-                    </button>
-                  ))}
-                </div>
-                {completeResult === '클로징실패' && (
-                  <Input placeholder="실패 사유 (선택)" value={completeFailReason} onChange={(e) => setCompleteFailReason(e.target.value)} />
-                )}
-              </div>
-
-              <div className="flex flex-col sm:flex-row gap-2">
-                <Button className="flex-1 bg-green-600 hover:bg-green-700 text-white h-12 text-sm sm:text-base" onClick={handleCompleteSubmit} disabled={completeLoading}>
-                  <CheckCircle className="h-5 w-5 mr-2" />
-                  {completeLoading ? '저장 중...' : `${completeTarget.sessionNumber}차 OT 완료 저장`}
-                </Button>
-                <Button className="flex-1 bg-blue-600 hover:bg-blue-700 text-white h-12 text-sm sm:text-base" disabled={completeLoading} onClick={async () => {
-                  // 먼저 완료 저장
-                  await handleCompleteSubmit()
-                  // 프로그램 제출
-                  if (completeProgramData?.id) {
-                    const result = await submitOtProgram(completeProgramData.id)
-                    if (result.error) {
-                      alert('전송 실패: ' + result.error)
-                    } else {
-                      alert('관리자에게 프로그램이 전송되었습니다.')
-                    }
-                  } else {
-                    // 프로그램이 아직 저장 안 된 경우 — 먼저 저장 후 제출
-                    if (programFormRef.current) {
-                      const saveResult = await programFormRef.current.saveData()
-                      if (!saveResult.error) {
-                        const prog = await getOtProgram(completeTarget.assignment.id)
-                        if (prog?.id) {
-                          const result = await submitOtProgram(prog.id)
-                          if (result.error) alert('전송 실패: ' + result.error)
-                          else alert('관리자에게 프로그램이 전송되었습니다.')
-                        }
-                      }
-                    }
-                  }
-                }}>
-                  <Send className="h-5 w-5 mr-2" />
-                  {completeLoading ? '전송 중...' : '완료 + 관리자 전송'}
-                </Button>
-              </div>
             </div>
           )}
         </DialogContent>
@@ -1188,7 +1687,7 @@ export function TrainerCardList({ assignments, trainers = [], trainerId, trainer
               <BarChart3 className="h-5 w-5 text-blue-500" />
               {salesTarget?.member.name} 세일즈 관리
             </DialogTitle>
-            <DialogDescription>OT 현황과 매출 정보를 입력하세요</DialogDescription>
+            <DialogDescription>OT 현황과 매출 정보를 입력하세요. 차수별 세일즈는 프로그램 팝업의 각 세션 카드에서 작성하세요.</DialogDescription>
           </DialogHeader>
           <div className="space-y-4">
             {/* 매출대상자 / PT전환 */}
@@ -1507,6 +2006,309 @@ export function TrainerCardList({ assignments, trainers = [], trainerId, trainer
               }}
             >
               {addLoading ? '등록 중...' : '회원 등록'}
+            </Button>
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* 상담카드 상세 보기 다이얼로그 */}
+      <Dialog open={!!cardDetailTarget} onOpenChange={(o) => { if (!o) setCardDetailTarget(null) }}>
+        <DialogContent className="w-[95vw] max-w-[95vw] sm:max-w-3xl max-h-[92vh] overflow-y-auto p-0 gap-0 bg-white">
+          {cardDetailTarget && (() => {
+            const c = cardDetailTarget
+            const phone = c.member_phone?.replace(/(\d{3})(\d{4})(\d{4})/, '$1-$2-$3')
+            const initial = c.member_name?.trim().charAt(0) ?? '?'
+            const genderColor = c.member_gender === '여' ? 'from-pink-400 to-rose-500' : c.member_gender === '남' ? 'from-blue-400 to-indigo-500' : 'from-gray-400 to-gray-500'
+
+            const hasAny = (vals: (string | null | undefined | string[])[]) =>
+              vals.some((v) => Array.isArray(v) ? v.length > 0 : v != null && v !== '')
+
+            const Field = ({ label, value, full }: { label: string; value?: string | null; full?: boolean }) => {
+              if (!value) return null
+              return (
+                <div className={full ? 'sm:col-span-2' : ''}>
+                  <p className="text-[11px] font-bold text-gray-400 uppercase tracking-wider mb-0.5">{label}</p>
+                  <p className="text-sm text-gray-900 whitespace-pre-wrap break-words">{value}</p>
+                </div>
+              )
+            }
+            const ChipField = ({ label, values, color, full }: { label: string; values?: string[] | null; color: string; full?: boolean }) => {
+              if (!values?.length) return null
+              return (
+                <div className={full ? 'sm:col-span-2' : ''}>
+                  <p className="text-[11px] font-bold text-gray-400 uppercase tracking-wider mb-1">{label}</p>
+                  <div className="flex flex-wrap gap-1.5">
+                    {values.map((v, i) => (
+                      <span key={i} className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${color}`}>
+                        {v}
+                      </span>
+                    ))}
+                  </div>
+                </div>
+              )
+            }
+            const Section = ({ title, icon: Icon, accent, children }: { title: string; icon: React.ComponentType<{ className?: string }>; accent: string; children: React.ReactNode }) => (
+              <div className="border-t border-gray-100 px-6 py-4">
+                <div className="flex items-center gap-2 mb-3">
+                  <div className={`w-7 h-7 rounded-lg flex items-center justify-center ${accent}`}>
+                    <Icon className="h-3.5 w-3.5" />
+                  </div>
+                  <h3 className="text-sm font-bold text-gray-900">{title}</h3>
+                </div>
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-6 gap-y-3 pl-9">
+                  {children}
+                </div>
+              </div>
+            )
+
+            const isEmpty = ![
+              c.occupation, c.residence_area, c.instagram_id, c.fc_name, c.consultation_date,
+              c.registration_product, c.expiry_date, c.exercise_start_date, c.exercise_time_preference,
+              c.desired_body_type, c.exercise_goal_detail, c.body_correction_area, c.medical_detail,
+              c.surgery_history, c.surgery_detail, c.exercise_experience_detail, c.exercise_experience_history,
+              c.exercise_duration, c.pt_satisfaction, c.pt_satisfaction_reason,
+              c.referral_sources, c.exercise_goals, c.medical_conditions, c.exercise_experiences,
+              c.exercise_personality,
+            ].some((v) => Array.isArray(v) ? v.length > 0 : v != null && v !== '')
+
+            return (
+              <>
+                {/* 히어로 헤더 */}
+                <DialogHeader className={`px-6 pt-6 pb-5 bg-gradient-to-br ${genderColor} text-white`}>
+                  <div className="flex items-center gap-4">
+                    <div className="w-14 h-14 rounded-full bg-white/20 backdrop-blur flex items-center justify-center text-2xl font-black shrink-0">
+                      {initial}
+                    </div>
+                    <div className="min-w-0 flex-1">
+                      <DialogTitle className="text-xl font-bold text-white drop-shadow-sm">{c.member_name ?? '-'}</DialogTitle>
+                      <DialogDescription className="text-white/90 mt-0.5 flex flex-wrap gap-x-2 gap-y-0.5 text-xs">
+                        {c.member_gender && <span>{c.member_gender}</span>}
+                        {c.age && <><span>·</span><span>{c.age}</span></>}
+                        {phone && <><span>·</span>
+                          <a href={`tel:${c.member_phone}`} className="inline-flex items-center gap-1 hover:underline">
+                            <Phone className="h-3 w-3" />{phone}
+                          </a>
+                        </>}
+                      </DialogDescription>
+                    </div>
+                  </div>
+                </DialogHeader>
+
+                {isEmpty ? (
+                  <p className="text-sm text-gray-500 py-10 text-center">작성된 상담카드 내용이 없습니다.</p>
+                ) : (
+                  <div>
+                    {/* 기본 정보 */}
+                    {hasAny([c.occupation, c.residence_area, c.instagram_id]) && (
+                      <Section title="기본 정보" icon={User} accent="bg-indigo-100 text-indigo-700">
+                        <Field label="직업" value={c.occupation} />
+                        <Field label="거주지역" value={c.residence_area} />
+                        <Field label="인스타" value={c.instagram_id} />
+                      </Section>
+                    )}
+
+                    {/* 등록 정보 */}
+                    {hasAny([c.fc_name, c.registration_product, c.consultation_date, c.exercise_start_date, c.expiry_date, c.exercise_time_preference]) && (
+                      <Section title="등록 정보" icon={ClipboardList} accent="bg-amber-100 text-amber-700">
+                        <Field label="담당 FC" value={c.fc_name} />
+                        <Field label="등록상품" value={c.registration_product} />
+                        <Field label="상담일" value={c.consultation_date} />
+                        <Field label="운동시작일" value={c.exercise_start_date} />
+                        <Field label="만료일" value={c.expiry_date} />
+                        <Field label="선호 운동시간" value={c.exercise_time_preference} />
+                      </Section>
+                    )}
+
+                    {/* 운동 목표 */}
+                    {hasAny([c.exercise_goals, c.exercise_goal_detail, c.desired_body_type, c.body_correction_area, c.referral_sources, c.referral_detail]) && (
+                      <Section title="운동 목표 & 유입" icon={Target} accent="bg-emerald-100 text-emerald-700">
+                        <ChipField label="운동 목적" values={c.exercise_goals} color="bg-emerald-50 text-emerald-700 border border-emerald-200" full />
+                        <Field label="운동 목적 상세" value={c.exercise_goal_detail} full />
+                        <Field label="원하는 체형" value={c.desired_body_type} />
+                        <Field label="체형교정 부위" value={c.body_correction_area} />
+                        <ChipField label="유입경로" values={c.referral_sources} color="bg-sky-50 text-sky-700 border border-sky-200" full />
+                        <Field label="유입 상세" value={c.referral_detail} full />
+                      </Section>
+                    )}
+
+                    {/* 건강 상태 */}
+                    {hasAny([c.medical_conditions, c.medical_detail, c.surgery_history, c.surgery_detail]) && (
+                      <Section title="건강 상태" icon={HeartPulse} accent="bg-rose-100 text-rose-700">
+                        <ChipField label="병력" values={c.medical_conditions} color="bg-rose-50 text-rose-700 border border-rose-200" full />
+                        <Field label="병력 상세" value={c.medical_detail} full />
+                        <Field label="수술이력" value={c.surgery_history} />
+                        <Field label="수술 상세" value={c.surgery_detail} full />
+                      </Section>
+                    )}
+
+                    {/* 운동 경험 */}
+                    {hasAny([c.exercise_experiences, c.exercise_experience_detail, c.exercise_experience_history, c.exercise_duration, c.pt_satisfaction, c.pt_satisfaction_reason, c.exercise_personality]) && (
+                      <Section title="운동 경험 & 성향" icon={Dumbbell} accent="bg-purple-100 text-purple-700">
+                        <ChipField label="운동 경험" values={c.exercise_experiences} color="bg-purple-50 text-purple-700 border border-purple-200" full />
+                        <Field label="경험 상세" value={c.exercise_experience_detail} full />
+                        <Field label="경험 이력" value={c.exercise_experience_history} full />
+                        <Field label="운동 지속기간" value={c.exercise_duration} />
+                        <Field label="PT 만족도" value={c.pt_satisfaction} />
+                        <Field label="PT 만족도 사유" value={c.pt_satisfaction_reason} full />
+                        <ChipField label="운동 성향" values={c.exercise_personality} color="bg-indigo-50 text-indigo-700 border border-indigo-200" full />
+                      </Section>
+                    )}
+                  </div>
+                )}
+              </>
+            )
+          })()}
+        </DialogContent>
+      </Dialog>
+
+      {/* N차 일정 잡기 다이얼로그 */}
+      <Dialog open={!!scheduleOnlyTarget} onOpenChange={(o) => { if (!o) setScheduleOnlyTarget(null) }}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle>스케줄 추가</DialogTitle>
+            <DialogDescription>
+              {scheduleOnlyTarget && (
+                <span className="text-sm">
+                  <strong className="text-gray-900">{scheduleOnlyTarget.assignment.member.name}</strong> · {scheduleOnlyTarget.sessionNumber}차 OT
+                  {scheduleOnlyTarget.assignment.member.phone && (
+                    <span className="text-gray-500"> · {scheduleOnlyTarget.assignment.member.phone.replace(/(\d{3})(\d{4})(\d{4})/, '$1-$2-$3')}</span>
+                  )}
+                </span>
+              )}
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4">
+            {/* 일정 종류 (OT 고정 표시) */}
+            <div>
+              <Label className="text-xs mb-1 block">일정 종류</Label>
+              <div className="inline-flex px-4 py-2 rounded-md bg-emerald-100 text-emerald-900 border-2 border-emerald-400 font-bold text-sm">OT</div>
+            </div>
+
+            {/* 날짜 */}
+            <div className="space-y-1">
+              <Label className="text-xs">날짜</Label>
+              <Input
+                type="date"
+                value={scheduleOnlyDate}
+                min={today}
+                onChange={(e) => setScheduleOnlyDate(e.target.value)}
+                className="h-10"
+              />
+            </div>
+
+            {/* 시작 시간 */}
+            <div className="space-y-1">
+              <Label className="text-xs">시작 시간</Label>
+              <select
+                className="w-full rounded-md border border-gray-300 bg-white px-3 py-2 text-sm h-10"
+                value={scheduleOnlyTime}
+                onChange={(e) => setScheduleOnlyTime(e.target.value)}
+              >
+                <option value="">시간 선택</option>
+                {TIME_SLOTS.map((t) => {
+                  const booked = scheduleOnlyDate ? getBookedSlots(scheduleOnlyDate) : new Map()
+                  const bookedBy = booked.get(t)
+                  return <option key={t} value={t} disabled={!!bookedBy}>{bookedBy ? `${t} (${bookedBy})` : t}</option>
+                })}
+              </select>
+            </div>
+
+            {/* 수업 시간 */}
+            <div className="space-y-1">
+              <Label className="text-xs">수업 시간</Label>
+              <div className="grid grid-cols-2 gap-2">
+                {([30, 50] as const).map((d) => (
+                  <button
+                    key={d}
+                    type="button"
+                    onClick={() => setScheduleOnlyDuration(d)}
+                    className={`h-11 rounded-md border-2 text-sm font-bold transition-colors ${
+                      scheduleOnlyDuration === d
+                        ? 'bg-gray-900 text-white border-gray-900'
+                        : 'bg-white text-gray-700 border-gray-300 hover:bg-gray-50'
+                    }`}
+                  >
+                    {d}분
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            <div className="flex gap-2 pt-2">
+              <Button
+                type="button"
+                variant="outline"
+                className="flex-1 bg-white text-gray-700 border-gray-300 hover:bg-gray-50 hover:text-gray-900"
+                onClick={() => setScheduleOnlyTarget(null)}
+                disabled={scheduleOnlyLoading}
+              >
+                취소
+              </Button>
+              <Button
+                type="button"
+                className="flex-1 bg-indigo-600 hover:bg-indigo-700 text-white font-bold"
+                disabled={scheduleOnlyLoading || !scheduleOnlyDate || !scheduleOnlyTime}
+                onClick={handleScheduleOnlySave}
+              >
+                {scheduleOnlyLoading ? '저장 중...' : '일정 저장'}
+              </Button>
+            </div>
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* 상담카드 연결 다이얼로그 (배정된 회원용) */}
+      <Dialog open={!!linkCardTarget} onOpenChange={(o) => { if (!o) setLinkCardTarget(null) }}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle>상담카드 연결</DialogTitle>
+            <DialogDescription>
+              <strong>{linkCardTarget?.member.name}</strong> 회원({linkCardTarget?.member.phone ? linkCardTarget.member.phone.replace(/(\d{3})(\d{4})(\d{4})/, '$1-$2-$3') : '-'})에게 연결할 미연결 상담카드를 선택하세요
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-3">
+            {(() => {
+              const memberPhoneDigits = (linkCardTarget?.member.phone ?? '').replace(/\D/g, '')
+              const memberName = linkCardTarget?.member.name ?? ''
+              const list = unlinkedCards.filter((c) => {
+                const cp = (c.member_phone ?? '').replace(/\D/g, '')
+                return memberPhoneDigits && cp && cp === memberPhoneDigits
+              })
+              return (
+                <>
+                  <div className="max-h-64 overflow-y-auto border rounded-md">
+                    {unlinkedLoading ? (
+                      <p className="text-center py-6 text-sm text-gray-400">불러오는 중...</p>
+                    ) : list.length === 0 ? (
+                      <p className="text-center py-8 text-sm text-gray-500 px-4">
+                        이 회원({memberName})의 연락처와 일치하는 미연결 상담카드가 없어요.
+                      </p>
+                    ) : (
+                      list.map((c) => (
+                        <button
+                          key={c.id}
+                          type="button"
+                          className={`w-full text-left px-3 py-2 text-sm hover:bg-amber-50 border-b last:border-0 flex justify-between items-center ${linkCardSelectedId === c.id ? 'bg-amber-100' : ''}`}
+                          onClick={() => setLinkCardSelectedId(c.id)}
+                        >
+                          <span className="flex items-center gap-2">
+                            <span className="font-medium">{c.member_name ?? '-'}</span>
+                            <Badge className="bg-green-500 text-white text-[9px]">연락처 일치</Badge>
+                          </span>
+                          <span className="text-gray-400 text-xs">{c.member_phone ? c.member_phone.replace(/(\d{3})(\d{4})(\d{4})/, '$1-$2-$3') : '-'}</span>
+                        </button>
+                      ))
+                    )}
+                  </div>
+                </>
+              )
+            })()}
+            <Button
+              onClick={handleLinkCardSave}
+              disabled={linkCardSaving || !linkCardSelectedId}
+              className="w-full bg-amber-600 hover:bg-amber-700 text-white"
+            >
+              {linkCardSaving ? '연결 중...' : '연결하기'}
             </Button>
           </div>
         </DialogContent>

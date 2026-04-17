@@ -3,6 +3,31 @@
 import { createClient } from '@/lib/supabase/server'
 import type { ConsultationCard } from '@/types'
 
+// 여러 회원의 exercise_start_date 배치 조회 (N+1 방지)
+export async function getExerciseStartDatesByMemberIds(
+  memberIds: string[]
+): Promise<Record<string, string | null>> {
+  if (!memberIds.length) return {}
+  const supabase = await createClient()
+
+  const { data, error } = await supabase
+    .from('consultation_cards')
+    .select('member_id, exercise_start_date, created_at')
+    .in('member_id', memberIds)
+    .order('created_at', { ascending: false })
+
+  if (error || !data) return {}
+
+  // 회원당 가장 최근 카드의 exercise_start_date만 남김
+  const result: Record<string, string | null> = {}
+  for (const row of data as { member_id: string; exercise_start_date: string | null }[]) {
+    if (!(row.member_id in result)) {
+      result[row.member_id] = row.exercise_start_date ?? null
+    }
+  }
+  return result
+}
+
 // 회원 ID로 상담카드 조회
 export async function getConsultationCard(memberId: string): Promise<ConsultationCard | null> {
   const supabase = await createClient()

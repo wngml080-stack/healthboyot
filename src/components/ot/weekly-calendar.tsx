@@ -11,14 +11,18 @@ import { Textarea } from '@/components/ui/textarea'
 import {
   Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription,
 } from '@/components/ui/dialog'
-import {
-  Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
-} from '@/components/ui/select'
 import { ChevronLeft, ChevronRight, X, Search } from 'lucide-react'
 import { createClient } from '@/lib/supabase/client'
 import { updateOtAssignment, upsertOtSession, moveOtSchedule } from '@/actions/ot'
 // import { OtStatusBadge } from './ot-status-badge'
-import type { OtAssignmentWithDetails, OtStatus, SalesStatus } from '@/types'
+import type { OtAssignmentWithDetails, SalesStatus, Profile, OtProgram } from '@/types'
+import dynamic from 'next/dynamic'
+const OtProgramForm = dynamic(() => import('@/components/ot/ot-program-form').then((m) => m.OtProgramForm), {
+  ssr: false,
+  loading: () => <div className="py-10 text-center text-sm text-gray-500">프로그램 로드 중...</div>,
+}) as unknown as typeof import('@/components/ot/ot-program-form').OtProgramForm
+import { getOtProgram } from '@/actions/ot-program'
+import { ClipboardList } from 'lucide-react'
 
 interface ScheduleItem {
   id: string
@@ -36,6 +40,7 @@ interface ScheduleItem {
 interface Props {
   assignments: OtAssignmentWithDetails[]
   trainerId: string
+  profile?: Profile
 }
 
 const HOURS = Array.from({ length: 19 }, (_, i) => i + 6) // 06~24
@@ -86,8 +91,6 @@ const PT_RESULT_TEXT_COLORS: Record<PtClassResult, string> = {
   '차감노쇼': 'text-red-600',
   '서비스수업': 'text-purple-700',
 }
-
-const STATUS_OPTIONS: OtStatus[] = ['신청대기', '배정완료', '진행중', '완료', '거부', '추후결정']
 
 // OT 회원의 sales_status (캘린더 다이얼로그에서 변경 가능 — 진행 상태 외 영업 상태)
 // trainer-card-list.tsx의 SALES_STATUSES와 동일
@@ -218,7 +221,7 @@ function buildPtNote(opts: {
   return parts.length > 0 ? parts.join(' ') : null
 }
 
-export function WeeklyCalendar({ assignments, trainerId }: Props) {
+export function WeeklyCalendar({ assignments, trainerId, profile }: Props) {
   const router = useRouter()
   const [weekOffset, setWeekOffset] = useState(0)
   const [schedules, setSchedules] = useState<ScheduleItem[]>([])
@@ -240,6 +243,11 @@ export function WeeklyCalendar({ assignments, trainerId }: Props) {
   const [createExpectedAmount, setCreateExpectedAmount] = useState(0)
   const [createClosingProb, setCreateClosingProb] = useState(0)
   const [createSaving, setCreateSaving] = useState(false)
+  const createSavingRef = useRef(false)
+  const stopCreateSaving = () => {
+    createSavingRef.current = false
+    setCreateSaving(false)
+  }
   // 반복 생성: 추가로 같이 생성할 요일 (월=1 ... 일=0). createDate 자체는 항상 포함.
   const [createRepeatDows, setCreateRepeatDows] = useState<number[]>([])
   // OT 회원 검색 필터
@@ -252,7 +260,19 @@ export function WeeklyCalendar({ assignments, trainerId }: Props) {
 
   // 회원 상세 다이얼로그
   const [detailAssignment, setDetailAssignment] = useState<OtAssignmentWithDetails | null>(null)
-  const [detailStatus, setDetailStatus] = useState<OtStatus>('신청대기')
+  const [programTarget, setProgramTarget] = useState<{ assignment: OtAssignmentWithDetails; program: OtProgram | null } | null>(null)
+  const [programLoading, setProgramLoading] = useState(false)
+
+  const openProgramDialog = async (a: OtAssignmentWithDetails) => {
+    setProgramLoading(true)
+    try {
+      const program = await getOtProgram(a.id)
+      setProgramTarget({ assignment: a, program })
+      setDetailAssignment(null)
+    } finally {
+      setProgramLoading(false)
+    }
+  }
   const [detailSalesStatus, setDetailSalesStatus] = useState<SalesStatus>('OT진행중')
   const [detailSalesNote, setDetailSalesNote] = useState('')
   const [detailIsSalesTarget, setDetailIsSalesTarget] = useState(false)
@@ -260,6 +280,19 @@ export function WeeklyCalendar({ assignments, trainerId }: Props) {
   const [detailExpectedAmount, setDetailExpectedAmount] = useState(0)
   const [detailClosingProb, setDetailClosingProb] = useState(0)
   const [detailSaving, setDetailSaving] = useState(false)
+
+  // OT 수업 상태 (스케줄 클릭 시)
+  const [otClassSchedule, setOtClassSchedule] = useState<ScheduleItem | null>(null)
+  const OT_CLASS_OPTIONS = ['수업완료', '노쇼', '차감노쇼', '상담', '기타'] as const
+  const OT_CLASS_COLORS: Record<string, string> = {
+    '수업완료': 'bg-green-500 border-green-500 text-white',
+    '노쇼': 'bg-red-500 border-red-500 text-white',
+    '차감노쇼': 'bg-orange-500 border-orange-500 text-white',
+    '상담': 'bg-blue-500 border-blue-500 text-white',
+    '기타': 'bg-gray-500 border-gray-500 text-white',
+  }
+  const [otClassResult, setOtClassResult] = useState<string | null>(null)
+  const [otClassMemo, setOtClassMemo] = useState('')
 
   // 스케줄 편집 다이얼로그 (OT/식사/회의 등 일반 스케줄용 — 시간/수업시간만)
   const [editSchedule, setEditSchedule] = useState<ScheduleItem | null>(null)
@@ -392,6 +425,9 @@ export function WeeklyCalendar({ assignments, trainerId }: Props) {
     if ((createType === 'PT' || createType === 'PPT') && !createName.trim()) return
     // 식사/회의/대외활동 등 비-회원 타입은 제목(createName) 입력 불필요 — 빈 문자열로 저장
 
+    // 이중 클릭 방지: ref로 즉시 차단 (state는 비동기라 rapid click 허용될 수 있음)
+    if (createSavingRef.current) return
+    createSavingRef.current = true
     setCreateSaving(true)
 
     if (createType === 'OT') {
@@ -404,7 +440,7 @@ export function WeeklyCalendar({ assignments, trainerId }: Props) {
       )
       if (!assignment) {
         alert('OT 회원을 찾을 수 없습니다')
-        setCreateSaving(false)
+        stopCreateSaving()
         return
       }
       // 다음 회차 = 1,2,3... 중 아직 등록 안 된 가장 작은 번호
@@ -421,7 +457,7 @@ export function WeeklyCalendar({ assignments, trainerId }: Props) {
       })
       if (result?.error) {
         alert('저장 실패: ' + result.error)
-        setCreateSaving(false)
+        stopCreateSaving()
         return
       }
       if (createIsSalesTarget || createExpectedAmount > 0) {
@@ -438,7 +474,7 @@ export function WeeklyCalendar({ assignments, trainerId }: Props) {
       if (RANGE_TYPES.has(createType)) {
         if (!createEndTime) {
           alert('종료 시간을 입력해주세요')
-          setCreateSaving(false)
+          stopCreateSaving()
           return
         }
         const [sh, sm] = createTime.split(':').map(Number)
@@ -447,7 +483,7 @@ export function WeeklyCalendar({ assignments, trainerId }: Props) {
         const endMin = eh * 60 + em
         if (endMin <= startMin) {
           alert('종료 시간은 시작 시간보다 늦어야 합니다')
-          setCreateSaving(false)
+          stopCreateSaving()
           return
         }
         effectiveDuration = endMin - startMin
@@ -494,7 +530,7 @@ export function WeeklyCalendar({ assignments, trainerId }: Props) {
       }
       if (conflicts.length > 0) {
         alert(`다음 날짜에 이미 일정이 있어 추가할 수 없습니다:\n${conflicts.join('\n')}`)
-        setCreateSaving(false)
+        stopCreateSaving()
         return
       }
 
@@ -525,13 +561,13 @@ export function WeeklyCalendar({ assignments, trainerId }: Props) {
       const { error } = await supabaseRef.current.from('trainer_schedules').insert(rows)
       if (error) {
         alert('저장 실패: ' + error.message)
-        setCreateSaving(false)
+        stopCreateSaving()
         return
       }
     }
 
     setShowCreate(false)
-    setCreateSaving(false)
+    stopCreateSaving()
     await fetchSchedules()
     // 부모 서버 컴포넌트의 trainerAssignments(ot_sessions 포함) 갱신 → 회원관리 탭에도 반영
     router.refresh()
@@ -564,19 +600,18 @@ export function WeeklyCalendar({ assignments, trainerId }: Props) {
       setEditPtMemo(parsed.memo)
       return
     }
-    // OT 스케줄은 회원 상세 + 시간 수정 다이얼로그
+    // OT 스케줄은 회원 상세 다이얼로그 열기 (상태변경 + 프로그램 진입)
     const matched = assignments.find((a) => a.member.name === schedule.member_name)
     if (matched) {
       setDetailAssignment(matched)
-      setDetailStatus(matched.status)
-      setDetailSalesStatus((matched.sales_status as SalesStatus) || 'OT진행중')
+      setDetailSalesStatus((matched.sales_status as SalesStatus) ?? 'OT진행중')
       setDetailSalesNote(matched.sales_note ?? '')
-      setDetailIsSalesTarget(matched.is_sales_target ?? false)
+      setDetailIsSalesTarget(matched.is_sales_target)
       setDetailExpectedSessions(matched.expected_sessions ?? 0)
-      setDetailExpectedAmount(matched.expected_amount ?? 0)
-      setDetailClosingProb(matched.closing_probability ?? 0)
+      setOtClassSchedule(schedule)
+      return
     }
-    // 모든 스케줄은 시간/수업시간 편집 가능 (식사/회의 등도 포함)
+    // 매칭 안 되는 스케줄은 시간 편집만
     setEditSchedule(schedule)
     setEditTime(schedule.start_time)
     setEditDuration(schedule.duration)
@@ -991,7 +1026,6 @@ export function WeeklyCalendar({ assignments, trainerId }: Props) {
                     const ptResult = ptParsed?.classResult ?? ''
                     // OT 회원의 sales_status (진행중/거부자/등록완료 등) — 캘린더 블록에 라벨로 표시
                     const otSalesStatus = s.schedule_type === 'OT' ? (matched?.sales_status as SalesStatus | null | undefined) : null
-                    const hasDetail = !!matched
                     const draggable = canDragSchedule(s)
                     const isDragging = draggingId === s.id
 
@@ -1068,7 +1102,7 @@ export function WeeklyCalendar({ assignments, trainerId }: Props) {
           </DialogHeader>
           <div className="space-y-4">
             {/* 타입 선택 */}
-            <div className="grid grid-cols-4 gap-1">
+            <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-1">
               {SCHEDULE_TYPES.map((t) => {
                 const c = TYPE_COLORS[t] ?? TYPE_COLORS.기타
                 return (
@@ -1227,7 +1261,7 @@ export function WeeklyCalendar({ assignments, trainerId }: Props) {
             {createType !== 'OT' && (
               <div className="space-y-2">
                 <Label className="text-xs">반복 요일 (선택) — 같은 주의 다른 요일에도 같은 시간으로 함께 생성</Label>
-                <div className="grid grid-cols-7 gap-1">
+                <div className="grid grid-cols-4 sm:grid-cols-7 gap-1">
                   {[
                     { dow: 1, label: '월' },
                     { dow: 2, label: '화' },
@@ -1364,6 +1398,71 @@ export function WeeklyCalendar({ assignments, trainerId }: Props) {
                 <DialogDescription>회원 정보 · 상태 변경</DialogDescription>
               </DialogHeader>
               <div className="space-y-5">
+                {/* OT 수업 상태 변경 */}
+                {otClassSchedule && (
+                  <div className="rounded-lg border border-indigo-200 bg-indigo-50/50 p-3 space-y-2">
+                    <p className="text-xs font-bold text-indigo-800">수업 상태 변경</p>
+                    <div className="flex flex-wrap gap-1.5">
+                      {OT_CLASS_OPTIONS.map((opt) => (
+                        <button
+                          key={opt}
+                          type="button"
+                          className={`rounded-md border px-3 py-1.5 text-xs font-medium transition-colors ${otClassResult === opt ? OT_CLASS_COLORS[opt] : 'bg-white text-gray-700 border-gray-300 hover:bg-gray-50'}`}
+                          onClick={() => setOtClassResult(otClassResult === opt ? null : opt)}
+                        >
+                          {opt}
+                        </button>
+                      ))}
+                    </div>
+                    {otClassResult === '기타' && (
+                      <Input value={otClassMemo} onChange={(e) => setOtClassMemo(e.target.value)} placeholder="기타 사유 입력" className="text-sm bg-white" />
+                    )}
+                    {otClassResult && (
+                      <Button
+                        size="sm"
+                        className="w-full bg-indigo-600 hover:bg-indigo-700 text-white"
+                        onClick={async () => {
+                          if (!otClassSchedule || !detailAssignment) return
+                          const note = `[${otClassResult}]${otClassMemo ? ` ${otClassMemo}` : ''}`
+                          await supabaseRef.current
+                            .from('trainer_schedules')
+                            .update({ note })
+                            .eq('id', otClassSchedule.id)
+
+                          if (otClassResult === '수업완료') {
+                            const otSession = detailAssignment.sessions?.find((s) => s.scheduled_at && otClassSchedule.ot_session_id && s.id === otClassSchedule.ot_session_id)
+                            if (otSession && !otSession.completed_at) {
+                              await upsertOtSession({
+                                ot_assignment_id: detailAssignment.id,
+                                session_number: otSession.session_number,
+                                scheduled_at: otSession.scheduled_at ?? undefined,
+                                completed_at: new Date().toISOString(),
+                              })
+                            }
+                          }
+                          setOtClassSchedule(null)
+                          setOtClassResult(null)
+                          setOtClassMemo('')
+                          setDetailAssignment(null)
+                          router.refresh()
+                        }}
+                      >
+                        상태 저장
+                      </Button>
+                    )}
+                  </div>
+                )}
+
+                {/* 프로그램 & 세일즈 관리 */}
+                <button
+                  type="button"
+                  onClick={() => openProgramDialog(detailAssignment)}
+                  disabled={programLoading}
+                  className="w-full rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white font-bold py-3 text-sm flex items-center justify-center gap-2 shadow disabled:opacity-50"
+                >
+                  <ClipboardList className="h-4 w-4" />
+                  {programLoading ? '불러오는 중...' : '프로그램 & 세일즈 관리 (차수별 기록)'}
+                </button>
                 {/* 회원 정보 */}
                 <div className="space-y-3">
                   <div className="grid grid-cols-2 gap-2">
@@ -1479,7 +1578,7 @@ export function WeeklyCalendar({ assignments, trainerId }: Props) {
                       </div>
                       <div className="space-y-1.5">
                         <Label className="text-xs">클로징 확률</Label>
-                        <div className="grid grid-cols-5 gap-1">
+                        <div className="grid grid-cols-3 sm:grid-cols-5 gap-1">
                           {[20, 40, 60, 80, 100].map((p) => (
                             <button
                               key={p}
@@ -1864,6 +1963,32 @@ export function WeeklyCalendar({ assignments, trainerId }: Props) {
                 </button>
               </div>
             </>
+          )}
+        </DialogContent>
+      </Dialog>
+
+      {/* 프로그램 & 세일즈 다이얼로그 (스케줄에서 열기) */}
+      <Dialog open={!!programTarget} onOpenChange={() => setProgramTarget(null)}>
+        <DialogContent className="w-[95vw] max-w-[95vw] sm:max-w-5xl max-h-[95vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle className="text-lg">
+              {programTarget?.assignment.member.name} · 프로그램 & 세일즈
+            </DialogTitle>
+            <DialogDescription>각 차수 카드에서 운동·계획서·세일즈·결과까지 한 번에 기록하세요</DialogDescription>
+          </DialogHeader>
+          {programTarget && profile && (
+            <OtProgramForm
+              assignment={programTarget.assignment}
+              program={programTarget.program}
+              profile={profile}
+              onSaved={async () => {
+                const fresh = await getOtProgram(programTarget.assignment.id)
+                setProgramTarget({ ...programTarget, program: fresh })
+              }}
+            />
+          )}
+          {programTarget && !profile && (
+            <p className="text-sm text-red-600">프로필 정보가 없어 프로그램을 열 수 없습니다. 관리자에게 문의하세요.</p>
           )}
         </DialogContent>
       </Dialog>

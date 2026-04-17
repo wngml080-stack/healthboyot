@@ -26,11 +26,10 @@ interface MemberWithOt extends Member {
 interface Props {
   cards: ConsultationCard[]
   members: MemberWithOt[]
-  profile: Profile
   staffList?: Pick<Profile, 'id' | 'name'>[]
 }
 
-export function ConsultationList({ cards: initialCards, members, profile, staffList = [] }: Props) {
+export function ConsultationList({ cards: initialCards, members, staffList = [] }: Props) {
   const router = useRouter()
   const [cards, setCards] = useState(initialCards)
   const [filter, setFilter] = useState<'all' | '미연결' | '연결완료'>('all')
@@ -115,11 +114,19 @@ export function ConsultationList({ cards: initialCards, members, profile, staffL
     setCards((prev) => prev.map((c) => c.id === linkTarget.id ? { ...c, status: '연결완료' as const, member_id: linkMemberId } : c))
   }
 
-  const filteredMembers = members.filter((m) => {
-    if (!memberSearch) return true
+  const filteredMembers = (() => {
+    const cardPhoneDigits = (linkTarget?.member_phone ?? '').replace(/\D/g, '')
+    if (!cardPhoneDigits) return []
+    const phoneMatched = members.filter((m) => {
+      const mp = (m.phone ?? '').replace(/\D/g, '')
+      return mp && mp === cardPhoneDigits
+    })
+    if (!memberSearch) return phoneMatched
     const q = memberSearch.toLowerCase()
-    return m.name.toLowerCase().includes(q) || (m.phone ?? '').includes(q)
-  }).slice(0, 20)
+    return phoneMatched.filter(
+      (m) => m.name.toLowerCase().includes(q) || (m.phone ?? '').includes(q),
+    )
+  })()
 
   return (
     <div className="space-y-4">
@@ -239,7 +246,7 @@ export function ConsultationList({ cards: initialCards, members, profile, staffL
 
       {/* 새 상담카드 작성 다이얼로그 */}
       <Dialog open={showNewCard} onOpenChange={setShowNewCard}>
-        <DialogContent className="max-w-5xl max-h-[95vh] overflow-y-auto">
+        <DialogContent className="w-[95vw] max-w-[95vw] sm:max-w-5xl max-h-[95vh] overflow-y-auto">
           <DialogHeader>
             <DialogTitle>새 상담카드 작성</DialogTitle>
             <DialogDescription>회원 등록 전에 상담카드를 먼저 작성합니다</DialogDescription>
@@ -293,7 +300,7 @@ export function ConsultationList({ cards: initialCards, members, profile, staffL
 
       {/* 상담카드 보기 다이얼로그 */}
       <Dialog open={!!viewCard} onOpenChange={() => setViewCard(null)}>
-        <DialogContent className="max-w-5xl max-h-[95vh] overflow-y-auto">
+        <DialogContent className="w-[95vw] max-w-[95vw] sm:max-w-5xl max-h-[95vh] overflow-y-auto">
           <DialogHeader>
             <DialogTitle>{viewCard?.member_name ?? '상담카드'}</DialogTitle>
             <DialogDescription>

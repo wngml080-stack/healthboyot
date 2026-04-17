@@ -36,7 +36,7 @@ export default async function OtDetailPage({ params }: Props) {
         <PageTitle>{assignment.member.name}</PageTitle>
       </div>
 
-      <div className="flex flex-col md:flex-row gap-4 md:gap-6">
+      <div className="flex flex-col lg:flex-row gap-4 lg:gap-6">
         <TrainerSubNav trainerId={trainerId} />
         <div className="flex-1 min-w-0">
           <OtDetailView assignment={assignment} profile={profile} />

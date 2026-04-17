@@ -179,17 +179,16 @@ export function MemberList({ initialMembers, trainers = [] }: Props) {
   }
 
   const sortedMembers = useMemo(() => {
-    // 0) PT 수기 등록 회원은 OT 회원관리 대상이 아니므로 제외
-    //    (캘린더에서 PT 스케줄로만 시간 기록하는 회원 — 회원 마스터 리스트에서 빼서 OT 운영에 집중)
-    const otOnly = initialMembers.filter((m) => m.registration_source !== '수기')
+    // 수기 회원 포함 — 모든 회원 표시 (회원 추가로 만든 수기 회원도 여기 나타남)
+    const allMembers = initialMembers
 
     // 1) 검색어로 즉시 필터링 (서버 round-trip 기다리지 않고 0ms 응답)
     const q = search.trim().toLowerCase()
     const filtered = q
-      ? otOnly.filter(
+      ? allMembers.filter(
           (m) => m.name.toLowerCase().includes(q) || (m.phone ?? '').includes(q),
         )
-      : otOnly
+      : allMembers
 
     // 2) 정렬
     const collator = new Intl.Collator('ko')

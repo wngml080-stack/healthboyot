@@ -26,6 +26,7 @@ export function OtDetailView({ assignment, profile }: Props) {
 
   const [status, setStatus] = useState<OtStatus>(a.status)
   const ptConversion = a.notes?.includes('PT 전환') ?? false
+  const ptConverted = ptConversion && (a.is_pt_conversion || status === '완료' || (a.actual_sales ?? 0) > 0)
   const [saving, setSaving] = useState(false)
 
   const handleStatusChange = async (newStatus: OtStatus) => {
@@ -71,7 +72,7 @@ export function OtDetailView({ assignment, profile }: Props) {
           </div>
         </CardHeader>
         <CardContent>
-          <div className="grid grid-cols-2 gap-4 text-sm md:grid-cols-4">
+          <div className="grid grid-cols-2 gap-4 text-sm lg:grid-cols-4">
             <div>
               <span className="text-muted-foreground">연락처</span>
               <p className="font-medium">
@@ -124,11 +125,15 @@ export function OtDetailView({ assignment, profile }: Props) {
               {a.member.notes}
             </div>
           )}
-          {ptConversion && (
+          {ptConverted ? (
+            <div className="mt-3 rounded-md bg-purple-50 border border-purple-200 p-3 text-sm text-purple-700 font-medium">
+              ✓ PT 전환 완료 회원입니다
+            </div>
+          ) : ptConversion ? (
             <div className="mt-3 rounded-md bg-blue-50 border border-blue-200 p-3 text-sm text-blue-700">
               PT 전환 희망 회원입니다
             </div>
-          )}
+          ) : null}
         </CardContent>
       </Card>
 
