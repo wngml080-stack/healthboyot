@@ -1358,9 +1358,14 @@ export function TrainerCardList({ assignments, trainers = [], trainerId, trainer
       {/* 완료 처리 — OT 프로그램 팝업 */}
       <Dialog open={!!completeTarget} onOpenChange={(open) => {
         if (!open) {
-          if (window.confirm('작성 중인 내용이 있습니다. 닫으시겠습니까?')) {
-            setCompleteTarget(null)
+          const choice = window.confirm('저장하시겠습니까?\n\n확인: 저장 후 닫기\n취소: 저장하지 않고 닫기')
+          if (choice) {
+            // 프로그램 폼의 저장 호출
+            programFormRef.current?.saveData().then(() => {
+              startTransition(() => router.refresh())
+            })
           }
+          setCompleteTarget(null)
         }
       }}>
         <DialogContent className="w-[95vw] max-w-[95vw] sm:max-w-4xl max-h-[95vh] overflow-y-auto" onPointerDownOutside={(e) => e.preventDefault()} onEscapeKeyDown={(e) => e.preventDefault()}>
