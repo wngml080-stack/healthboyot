@@ -161,7 +161,7 @@ async function TrainerDetailView({ trainerId, tab }: { trainerId: string; tab: s
         </div>
       </div>
 
-      <div className="flex flex-col md:flex-row gap-4 md:gap-6">
+      <div className="flex flex-col lg:flex-row gap-4 lg:gap-6">
         <TrainerSubNav trainerId={trainerId} />
         <div className="flex-1 min-w-0">
           {tab === 'members' && (
