@@ -45,7 +45,7 @@ export function TopNav({ profile }: Props) {
           </Link>
 
           {/* 데스크톱 메뉴 */}
-          <div className="hidden md:flex items-center gap-8">
+          <div className="hidden lg:flex items-center gap-6">
             {NAV_ITEMS.map((item) => {
               const isActive = pathname.startsWith(item.href)
               const hasAccess = MENU_ACCESS[item.href]?.includes(profile.role) ?? true
@@ -70,7 +70,7 @@ export function TopNav({ profile }: Props) {
           </div>
 
           {/* 유저 + 로그아웃 */}
-          <div className="hidden md:flex items-center gap-3">
+          <div className="hidden lg:flex items-center gap-3">
             <div className="flex items-center gap-1.5 text-sm text-gray-400">
               <User className="h-4 w-4" />
               <span>{profile.name}</span>
@@ -84,7 +84,7 @@ export function TopNav({ profile }: Props) {
 
           {/* 모바일 메뉴 버튼 */}
           <button
-            className="md:hidden text-gray-300"
+            className="lg:hidden text-gray-300"
             onClick={() => setMobileOpen(!mobileOpen)}
           >
             {mobileOpen ? <X className="h-5 w-5" /> : <Menu className="h-5 w-5" />}
@@ -93,7 +93,7 @@ export function TopNav({ profile }: Props) {
 
         {/* 모바일 메뉴 */}
         {mobileOpen && (
-          <div className="md:hidden border-t border-white/10 px-6 py-3 space-y-2">
+          <div className="lg:hidden border-t border-white/10 px-6 py-3 space-y-2">
             {NAV_ITEMS.map((item) => {
               const isActive = pathname.startsWith(item.href)
               return (

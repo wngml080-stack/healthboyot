@@ -43,7 +43,7 @@ async function run() {
   const r6 = await supabase.from('ot_assignments').update({
     sales_status: null,
     expected_amount: 0,
-    expected_sessions: null,
+    expected_sessions: 0,
     expected_sales: 0,
     actual_sales: 0,
     closing_probability: 0,
@@ -59,9 +59,22 @@ async function run() {
   const r7 = await supabase.from('ot_assignments').update({ status: '배정완료' }).eq('status', '진행중')
   results.ot_assignments_status_reset = r7.error ? `ERROR: ${r7.error.message}` : 'OK'
 
-  // 8. 완료 → 배정완료로 리셋
-  const r8 = await supabase.from('ot_assignments').update({ status: '배정완료' }).eq('status', '완료')
-  results.ot_assignments_completed_reset = r8.error ? `ERROR: ${r8.error.message}` : 'OK'
+  // 8. 완료 상태는 유지 (같은 회원에 활성 배정이 있으면 unique 제약 위반)
+  // 대신 완료 배정의 세일즈 필드도 초기화
+  const r8 = await supabase.from('ot_assignments').update({
+    sales_status: null,
+    expected_amount: 0,
+    expected_sessions: 0,
+    expected_sales: 0,
+    actual_sales: 0,
+    closing_probability: 0,
+    closing_fail_reason: null,
+    sales_note: null,
+    is_sales_target: false,
+    is_pt_conversion: false,
+    contact_status: '',
+  }).eq('status', '완료')
+  results.ot_assignments_completed_sales_reset = r8.error ? `ERROR: ${r8.error.message}` : 'OK'
 
   // 검증
   const [s1, s2, s3, s4, s5] = await Promise.all([
