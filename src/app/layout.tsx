@@ -49,6 +49,21 @@ export default function RootLayout({
         className={`${geistSans.variable} ${geistMono.variable} antialiased`}
       >
         <Providers>{children}</Providers>
+        <Script id="chunk-reload" strategy="beforeInteractive">
+          {`
+            if (typeof window !== 'undefined') {
+              window.addEventListener('error', function(e) {
+                if (e.message && e.message.indexOf('Loading chunk') !== -1 || (e.message && e.message.indexOf('ChunkLoadError') !== -1)) {
+                  var key = 'chunk_reload_' + location.pathname;
+                  if (!sessionStorage.getItem(key)) {
+                    sessionStorage.setItem(key, '1');
+                    location.reload();
+                  }
+                }
+              });
+            }
+          `}
+        </Script>
         <Script
           src="https://t1.kakaocdn.net/kakao_js_sdk/2.7.2/kakao.min.js"
           integrity="sha384-TiCUE00h649CAMonG018J2ujOgDKW/kVWlChEuu4jK2vxfAAD0eZxzCKakxg55G4"

@@ -814,7 +814,7 @@ export function TrainerCardList({ assignments, trainers = [], trainerId, trainer
                                               : s.approval_status === '반려'
                                                 ? '관리자가 반려함'
                                                 : '트레이너가 아직 제출하지 않은 상태'
-                                          const dateStr = (s.completed_at || s.scheduled_at) || null
+                                          const dateStr = (s.scheduled_at || s.completed_at) || null
                                           const formatted = dateStr
                                             ? new Date(dateStr).toLocaleDateString('ko', { month: 'numeric', day: 'numeric' })
                                             : null

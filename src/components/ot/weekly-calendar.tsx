@@ -1398,61 +1398,6 @@ export function WeeklyCalendar({ assignments, trainerId, profile }: Props) {
                 <DialogDescription>회원 정보 · 상태 변경</DialogDescription>
               </DialogHeader>
               <div className="space-y-5">
-                {/* OT 수업 상태 변경 */}
-                {otClassSchedule && (
-                  <div className="rounded-lg border border-indigo-200 bg-indigo-50/50 p-3 space-y-2">
-                    <p className="text-xs font-bold text-indigo-800">수업 상태 변경</p>
-                    <div className="flex flex-wrap gap-1.5">
-                      {OT_CLASS_OPTIONS.map((opt) => (
-                        <button
-                          key={opt}
-                          type="button"
-                          className={`rounded-md border px-3 py-1.5 text-xs font-medium transition-colors ${otClassResult === opt ? OT_CLASS_COLORS[opt] : 'bg-white text-gray-700 border-gray-300 hover:bg-gray-50'}`}
-                          onClick={() => setOtClassResult(otClassResult === opt ? null : opt)}
-                        >
-                          {opt}
-                        </button>
-                      ))}
-                    </div>
-                    {otClassResult === '기타' && (
-                      <Input value={otClassMemo} onChange={(e) => setOtClassMemo(e.target.value)} placeholder="기타 사유 입력" className="text-sm bg-white" />
-                    )}
-                    {otClassResult && (
-                      <Button
-                        size="sm"
-                        className="w-full bg-indigo-600 hover:bg-indigo-700 text-white"
-                        onClick={async () => {
-                          if (!otClassSchedule || !detailAssignment) return
-                          const note = `[${otClassResult}]${otClassMemo ? ` ${otClassMemo}` : ''}`
-                          await supabaseRef.current
-                            .from('trainer_schedules')
-                            .update({ note })
-                            .eq('id', otClassSchedule.id)
-
-                          if (otClassResult === '수업완료') {
-                            const otSession = detailAssignment.sessions?.find((s) => s.scheduled_at && otClassSchedule.ot_session_id && s.id === otClassSchedule.ot_session_id)
-                            if (otSession && !otSession.completed_at) {
-                              await upsertOtSession({
-                                ot_assignment_id: detailAssignment.id,
-                                session_number: otSession.session_number,
-                                scheduled_at: otSession.scheduled_at ?? undefined,
-                                completed_at: new Date().toISOString(),
-                              })
-                            }
-                          }
-                          setOtClassSchedule(null)
-                          setOtClassResult(null)
-                          setOtClassMemo('')
-                          setDetailAssignment(null)
-                          router.refresh()
-                        }}
-                      >
-                        상태 저장
-                      </Button>
-                    )}
-                  </div>
-                )}
-
                 {/* 프로그램 & 세일즈 관리 */}
                 <button
                   type="button"

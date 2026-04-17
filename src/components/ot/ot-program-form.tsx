@@ -10,6 +10,7 @@ import { Badge } from '@/components/ui/badge'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Save, Loader2, Send, CheckCircle, XCircle, Plus, ImagePlus, X, ChevronDown, ChevronUp, Download, Share2 } from 'lucide-react'
 import { upsertOtProgram, submitOtProgram, submitOtSession, unsubmitOtSession, approveOtProgram, rejectOtProgram } from '@/actions/ot-program'
+import { upsertOtSession } from '@/actions/ot'
 import { ensureShareToken } from '@/actions/ot-signing'
 import { SessionShareCard } from './session-share-card'
 import { getConsultationCard } from '@/actions/consultation'
@@ -867,8 +868,49 @@ export const OtProgramForm = forwardRef<OtProgramFormRef, Props>(function OtProg
                   {!hasContent && !session.date && <span className="text-gray-400">내용 없음 (펼치기 클릭)</span>}
                 </div>
               ) : (
-                /* 편집 가능 영역 (완료 세션도 펼치면 볼 수 있음, 미완료는 항상 표시) */
+                /* 편집 가능 영역 */
                 <div className="space-y-3">
+                  {/* 수업 상태 변경 (미완료 세션에만 표시) */}
+                  {!isCompleted && canEdit && (() => {
+                    const otSession = a.sessions?.find((s) => s.session_number === idx + 1)
+                    if (!otSession?.scheduled_at) return null
+                    return (
+                      <div className="flex flex-wrap items-center gap-1.5 bg-indigo-50 rounded-lg p-2">
+                        <span className="text-[10px] font-bold text-indigo-700 mr-1">수업상태:</span>
+                        {(['수업완료', '노쇼', '차감노쇼', '상담', '기타'] as const).map((opt) => {
+                          const colors: Record<string, string> = { '수업완료': 'bg-green-500 text-white', '노쇼': 'bg-red-500 text-white', '차감노쇼': 'bg-orange-500 text-white', '상담': 'bg-blue-500 text-white', '기타': 'bg-gray-500 text-white' }
+                          return (
+                            <button
+                              key={opt}
+                              type="button"
+                              className={`rounded px-2 py-1 text-[10px] font-bold border transition-colors ${colors[opt]} hover:opacity-80`}
+                              onClick={async () => {
+                                if (opt === '기타') {
+                                  const reason = prompt('기타 사유를 입력하세요')
+                                  if (!reason) return
+                                }
+                                if (opt === '수업완료') {
+                                  if (!confirm(`${idx + 1}차 OT를 수업완료 처리할까요?`)) return
+                                  await upsertOtSession({
+                                    ot_assignment_id: a.id,
+                                    session_number: idx + 1,
+                                    scheduled_at: otSession.scheduled_at ?? undefined,
+                                    completed_at: new Date().toISOString(),
+                                  })
+                                  onSaved?.()
+                                } else {
+                                  alert(`${idx + 1}차 OT: ${opt} 처리되었습니다.`)
+                                }
+                              }}
+                            >
+                              {opt}
+                            </button>
+                          )
+                        })}
+                      </div>
+                    )
+                  })()}
+
                   <div className="grid grid-cols-2 gap-2">
                     <div className="flex items-center gap-1">
                       <Label className="text-xs font-bold">날짜:</Label>

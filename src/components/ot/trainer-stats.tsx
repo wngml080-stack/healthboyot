@@ -5,7 +5,7 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
-import { ChevronLeft, ChevronRight, Target, CheckCircle2, Circle, Trash2, Plus, Camera } from 'lucide-react'
+import { ChevronLeft, ChevronRight, Target, CheckCircle2, Circle, Trash2, Plus, Camera, X } from 'lucide-react'
 import { format, startOfWeek, endOfWeek, addDays, addWeeks } from 'date-fns'
 import { ko } from 'date-fns/locale'
 import type { OtAssignmentWithDetails, OtProgram } from '@/types'
@@ -44,6 +44,19 @@ function useGoals(key: string) {
   }
 }
 
+// 차주 매출대상자 수동 입력 (localStorage)
+interface CustomTarget { id: string; name: string; expectedAmount: number }
+function useCustomTargets(key: string) {
+  const [targets, setTargets] = useState<CustomTarget[]>([])
+  useEffect(() => { try { const s = localStorage.getItem(key); if (s) setTargets(JSON.parse(s)) } catch {} }, [key])
+  const save = (t: CustomTarget[]) => { setTargets(t); localStorage.setItem(key, JSON.stringify(t)) }
+  return {
+    targets,
+    add: (name: string, amount: number) => save([...targets, { id: crypto.randomUUID(), name, expectedAmount: amount }]),
+    remove: (id: string) => save(targets.filter((t) => t.id !== id)),
+  }
+}
+
 export function TrainerStats({ assignments, trainerName, programs }: Props) {
   const now = new Date()
   const captureRef = useRef<HTMLDivElement>(null)
@@ -66,12 +79,19 @@ export function TrainerStats({ assignments, trainerName, programs }: Props) {
   const prevPeriod = () => { if (viewMode === 'monthly') { if (month === 1) { setYear(year - 1); setMonth(12) } else setMonth(month - 1) } else setWeekOffset(weekOffset - 1) }
   const nextPeriod = () => { if (viewMode === 'monthly') { if (month === 12) { setYear(year + 1); setMonth(1) } else setMonth(month + 1) } else setWeekOffset(weekOffset + 1) }
 
-  // 목표
+  // 목표 (차주 목표달성용)
   const goalWeekStart = startOfWeek(now, { weekStartsOn: 1 })
   const weekKey = `trainer-goals-${trainerName}-${format(goalWeekStart, 'yyyy-MM-dd')}`
   const { goals, addWeekly, addDaily, toggleWeekly, toggleDaily, removeWeekly, removeDaily } = useGoals(weekKey)
   const [newWeeklyGoal, setNewWeeklyGoal] = useState('')
   const [newDailyGoals, setNewDailyGoals] = useState<Record<string, string>>({})
+
+  // 차주 매출대상자 수동 입력
+  const nextWeekStart = addWeeks(goalWeekStart, 1)
+  const customTargetKey = `next-targets-${trainerName}-${format(nextWeekStart, 'yyyy-MM-dd')}`
+  const { targets: customTargets, add: addCustomTarget, remove: removeCustomTarget } = useCustomTargets(customTargetKey)
+  const [newTargetName, setNewTargetName] = useState('')
+  const [newTargetAmount, setNewTargetAmount] = useState('')
 
   // 이미지 저장
   const handleCapture = async () => {
@@ -91,7 +111,7 @@ export function TrainerStats({ assignments, trainerName, programs }: Props) {
   }
 
   // 데이터 매핑
-  const { memberRows, dailyTotals, columns, summary, inbodyRows, nextWeekTargets } = useMemo(() => {
+  const { memberRows, dailyTotals, columns, summary, periodSummary, inbodyRows, nextWeekTargets } = useMemo(() => {
     const nowTime = Date.now()
     const programMap = new Map<string, OtProgram>()
     for (const p of programs) programMap.set(p.ot_assignment_id, p)
@@ -125,7 +145,7 @@ export function TrainerStats({ assignments, trainerName, programs }: Props) {
         const prog = programMap.get(a.id)
 
         for (const s of a.sessions ?? []) {
-          const dateStr = s.completed_at ?? s.scheduled_at
+          const dateStr = s.scheduled_at ?? s.completed_at
           if (!dateStr) continue
           const d = new Date(dateStr)
           if (d < dateRange.start || d > dateRange.end) continue
@@ -159,6 +179,19 @@ export function TrainerStats({ assignments, trainerName, programs }: Props) {
     const totalScheduled = rows.reduce((s, r) => s + r.totalScheduled, 0)
     const registered = assignments.filter((a) => a.status === '완료').length
 
+    // 선택 기간 내 활동이 있는 회원 기준 통계
+    const activeRows = rows.filter((r) => r.totalSessions > 0)
+    const periodStats = {
+      activeMembers: activeRows.length,
+      totalOt,
+      totalCompleted,
+      totalScheduled,
+      ptConversions: activeRows.filter((r) => r.isPtConversion).length,
+      salesTargets: activeRows.filter((r) => r.isSalesTarget).length,
+      totalActualSales: activeRows.reduce((s, r) => s + r.actualSales, 0),
+      totalExpectedSales: activeRows.reduce((s, r) => s + r.expectedAmount, 0),
+    }
+
     // 인바디 (전체 — 월 필터 없이 프로그램 기반)
     const inbody: { name: string; session: number; date: string; hasImages: boolean }[] = []
     for (const a of assignments) {
@@ -176,15 +209,14 @@ export function TrainerStats({ assignments, trainerName, programs }: Props) {
       })
     }
 
-    // 다음주 매출대상자
+    // 다음주 매출대상자 (스케줄 유무와 관계없이 모든 매출대상자 표시)
     const nws = addDays(goalWeekStart, 7); const nwe = addDays(nws, 6)
     const nextTargets = assignments
       .filter((a) => a.is_sales_target && a.status !== '완료')
       .map((a) => {
         const ns = a.sessions?.find((s) => s.scheduled_at && !s.completed_at && new Date(s.scheduled_at) >= nws && new Date(s.scheduled_at) <= nwe)
-        return { name: a.member.name, expectedAmount: toManwon(a.expected_amount ?? a.expected_sales ?? 0), session: ns }
+        return { id: a.id, name: a.member.name, expectedAmount: toManwon(a.expected_amount ?? a.expected_sales ?? 0), session: ns, isCustom: false }
       })
-      .filter((t) => t.session)
 
     return {
       memberRows: rows, dailyTotals: totals, columns: cols,
@@ -200,6 +232,7 @@ export function TrainerStats({ assignments, trainerName, programs }: Props) {
         closingFailed: assignments.filter((a) => a.sales_status === '클로징실패').length,
         scheduleUndecided: assignments.filter((a) => a.sales_status === '스케줄미확정').length,
       },
+      periodSummary: periodStats,
       inbodyRows: inbody, nextWeekTargets: nextTargets,
     }
   }, [assignments, programs, year, month, daysInMonth, isCurrentMonth, todayDate, viewMode, selectedWeekStart, selectedWeekEnd, weekDays, goalWeekStart, now])
@@ -208,6 +241,16 @@ export function TrainerStats({ assignments, trainerName, programs }: Props) {
   const periodLabel = viewMode === 'monthly'
     ? `${year}년 ${month}월`
     : `${format(selectedWeekStart, 'M/d')} ~ ${format(selectedWeekEnd, 'M/d')}`
+
+  // 차주 라벨
+  const nextWeekLabel = `${format(nextWeekStart, 'M/d')} ~ ${format(addDays(nextWeekStart, 6), 'M/d')}`
+
+  // 전체 차주 대상자 (자동 + 수동)
+  const allNextTargets = [
+    ...nextWeekTargets,
+    ...customTargets.map((t) => ({ id: t.id, name: t.name, expectedAmount: t.expectedAmount, session: undefined as any, isCustom: true })),
+  ]
+  const totalNextExpected = allNextTargets.reduce((s, t) => s + t.expectedAmount, 0)
 
   return (
     <div ref={captureRef} className="space-y-4">
@@ -258,36 +301,39 @@ export function TrainerStats({ assignments, trainerName, programs }: Props) {
               <tbody>
                 {memberRows.length === 0 ? (
                   <tr><td colSpan={columns.length + 2} className="py-6 text-center text-xs text-gray-400">해당 기간에 OT 데이터가 없습니다</td></tr>
-                ) : memberRows.map((row) => (
-                  <tr key={row.id} className="border-b border-gray-100 hover:bg-gray-50/50">
-                    <td className="sticky left-0 z-10 bg-white border-r border-gray-200 px-1 py-0.5 text-center font-medium text-gray-900 whitespace-nowrap text-[10px]">
-                      <div className="flex items-center justify-center gap-0.5">
-                        <span className="truncate max-w-[50px]">{row.name}</span>
-                        {row.isPtConversion && <Badge className="bg-purple-500 text-white text-[7px] px-0.5 py-0 leading-tight rounded-sm">PT전환</Badge>}
-                        {row.isSalesTarget && !row.isPtConversion && <Badge className="bg-blue-500 text-white text-[7px] px-0.5 py-0 leading-tight rounded-sm">매출대상</Badge>}
-                      </div>
-                    </td>
-                    {columns.map((col, ci) => {
-                      const key = format(col.date, 'yyyy-MM-dd')
-                      const cell = row.cells[key]
-                      if (!cell) return <td key={ci} className={`px-0 py-0.5 text-center ${col.isToday ? 'bg-yellow-50' : col.isWknd ? 'bg-gray-50/70' : ''}`} />
-                      const bg = cell.completed && cell.approved ? 'bg-amber-500 text-white' : cell.completed ? 'bg-emerald-500 text-white' : cell.pastDue ? 'bg-rose-500 text-white' : 'bg-blue-500 text-white'
-                      return (
-                        <td key={ci} className={`px-0 py-0.5 text-center ${col.isToday ? 'bg-yellow-50' : ''}`}>
-                          {viewMode === 'weekly' ? (
-                            <div className={`inline-flex flex-col items-center justify-center rounded-sm px-1 py-0.5 ${bg}`}>
-                              <span className="text-[9px] font-bold leading-none">{cell.time ?? ''}</span>
-                              <span className="text-[8px] leading-none opacity-80">{cell.sessionNumber}차</span>
-                            </div>
-                          ) : (
-                            <span className={`inline-flex items-center justify-center w-[16px] h-[16px] rounded-sm text-[8px] font-bold ${bg}`} title={`${cell.sessionNumber}차`}>{cell.sessionNumber}</span>
-                          )}
-                        </td>
-                      )
-                    })}
-                    <td className="px-1 py-0.5 text-center font-bold text-gray-900 bg-gray-50 border-l border-gray-200 text-[10px]">{row.totalSessions}</td>
-                  </tr>
-                ))}
+                ) : memberRows.map((row) => {
+                  const hasSession = row.totalSessions > 0
+                  return (
+                    <tr key={row.id} className={`border-b border-gray-100 hover:bg-gray-50/50 ${!hasSession ? 'opacity-60' : ''}`}>
+                      <td className={`sticky left-0 z-10 bg-white border-r border-gray-200 px-1 text-center font-medium text-gray-900 whitespace-nowrap text-[10px] ${hasSession ? 'py-1' : 'py-[1px]'}`}>
+                        <div className="flex items-center justify-center gap-0.5">
+                          <span className="truncate max-w-[50px]">{row.name}</span>
+                          {row.isPtConversion && <Badge className="bg-purple-500 text-white text-[7px] px-0.5 py-0 leading-tight rounded-sm">PT전환</Badge>}
+                          {row.isSalesTarget && !row.isPtConversion && <Badge className="bg-blue-500 text-white text-[7px] px-0.5 py-0 leading-tight rounded-sm">매출대상</Badge>}
+                        </div>
+                      </td>
+                      {columns.map((col, ci) => {
+                        const key = format(col.date, 'yyyy-MM-dd')
+                        const cell = row.cells[key]
+                        if (!cell) return <td key={ci} className={`px-0 ${hasSession ? 'py-1' : 'py-[1px]'} text-center ${col.isToday ? 'bg-yellow-50' : col.isWknd ? 'bg-gray-50/70' : ''}`} />
+                        const bg = cell.completed && cell.approved ? 'bg-amber-500 text-white' : cell.completed ? 'bg-emerald-500 text-white' : cell.pastDue ? 'bg-rose-500 text-white' : 'bg-blue-500 text-white'
+                        return (
+                          <td key={ci} className={`px-0 py-1 text-center ${col.isToday ? 'bg-yellow-50' : ''}`}>
+                            {viewMode === 'weekly' ? (
+                              <div className={`inline-flex flex-col items-center justify-center rounded-sm px-1 py-0.5 ${bg}`}>
+                                <span className="text-[9px] font-bold leading-none">{cell.time ?? ''}</span>
+                                <span className="text-[8px] leading-none opacity-80">{cell.sessionNumber}차</span>
+                              </div>
+                            ) : (
+                              <span className={`inline-flex items-center justify-center w-[16px] h-[16px] rounded-sm text-[8px] font-bold ${bg}`} title={`${cell.sessionNumber}차`}>{cell.sessionNumber}</span>
+                            )}
+                          </td>
+                        )
+                      })}
+                      <td className={`px-1 ${hasSession ? 'py-1' : 'py-[1px]'} text-center font-bold text-gray-900 bg-gray-50 border-l border-gray-200 text-[10px]`}>{row.totalSessions}</td>
+                    </tr>
+                  )
+                })}
                 <tr className="bg-gray-100 border-t-2 border-gray-300 font-bold">
                   <td className="sticky left-0 z-10 bg-gray-100 border-r border-gray-200 px-1 py-1 text-center text-gray-900 text-[10px]">합계</td>
                   {columns.map((col, ci) => {
@@ -346,31 +392,82 @@ export function TrainerStats({ assignments, trainerName, programs }: Props) {
 
       {/* ④ 다음주 매출대상자 */}
       <Card>
-        <CardHeader className="py-2 px-4"><CardTitle className="text-sm text-gray-900">🎯 다음주 매출대상자</CardTitle></CardHeader>
-        <CardContent className="px-4 pb-3">
-          {nextWeekTargets.length === 0 ? (
-            <p className="text-xs text-gray-400 text-center py-3">다음주 스케줄이 잡힌 매출대상자가 없습니다</p>
+        <CardHeader className="py-2 px-4">
+          <div className="flex items-center justify-between">
+            <CardTitle className="text-sm text-gray-900">🎯 다음주 매출대상자 ({nextWeekLabel})</CardTitle>
+            {totalNextExpected > 0 && <Badge className="bg-pink-100 text-pink-700 text-[10px]">예상 총 {totalNextExpected.toLocaleString()}만</Badge>}
+          </div>
+        </CardHeader>
+        <CardContent className="px-4 pb-3 space-y-3">
+          {allNextTargets.length === 0 ? (
+            <p className="text-xs text-gray-400 text-center py-3">다음주 매출대상자가 없습니다</p>
           ) : (
             <div className="space-y-2">
-              {nextWeekTargets.map((t, i) => (
-                <div key={i} className="flex items-center justify-between bg-blue-50 rounded-lg px-3 py-2">
+              {allNextTargets.map((t, i) => (
+                <div key={t.id || i} className="flex items-center justify-between bg-blue-50 rounded-lg px-3 py-2">
                   <div className="flex items-center gap-2">
                     <span className="text-sm font-bold text-gray-900">{t.name}</span>
-                    {t.session && <span className="text-[10px] text-blue-600">{t.session.session_number}차 · {format(new Date(t.session.scheduled_at!), 'M/d (EEE) HH:mm', { locale: ko })}</span>}
+                    {t.session ? (
+                      <span className="text-[10px] text-blue-600">{t.session.session_number}차 · {format(new Date(t.session.scheduled_at!), 'M/d (EEE) HH:mm', { locale: ko })}</span>
+                    ) : !t.isCustom ? (
+                      <span className="text-[10px] text-gray-400">스케줄 미정</span>
+                    ) : (
+                      <Badge className="bg-gray-200 text-gray-600 text-[8px]">수동 입력</Badge>
+                    )}
                   </div>
-                  {t.expectedAmount > 0 && <Badge className="bg-blue-600 text-white text-[10px]">예상 {t.expectedAmount}만</Badge>}
+                  <div className="flex items-center gap-1.5">
+                    {t.expectedAmount > 0 && <Badge className="bg-blue-600 text-white text-[10px]">예상 {t.expectedAmount.toLocaleString()}만</Badge>}
+                    {t.isCustom && (
+                      <button onClick={() => removeCustomTarget(t.id)} className="text-gray-400 hover:text-red-500 transition-colors">
+                        <X className="h-3.5 w-3.5" />
+                      </button>
+                    )}
+                  </div>
                 </div>
               ))}
             </div>
           )}
+          {/* 수동 추가 */}
+          <div className="flex gap-2 items-center pt-1 border-t border-gray-100">
+            <Input
+              value={newTargetName}
+              onChange={(e) => setNewTargetName(e.target.value)}
+              placeholder="이름"
+              className="text-xs h-8 bg-white flex-1"
+            />
+            <Input
+              type="number"
+              inputMode="numeric"
+              value={newTargetAmount}
+              onChange={(e) => setNewTargetAmount(e.target.value)}
+              placeholder="예상 (만원)"
+              className="text-xs h-8 bg-white w-24"
+            />
+            <Button
+              variant="outline"
+              size="sm"
+              className="shrink-0 h-8 bg-blue-50 hover:bg-blue-100 text-blue-700 border-blue-200"
+              disabled={!newTargetName.trim()}
+              onClick={() => {
+                addCustomTarget(newTargetName.trim(), Number(newTargetAmount) || 0)
+                setNewTargetName('')
+                setNewTargetAmount('')
+              }}
+            >
+              <Plus className="h-3.5 w-3.5 mr-1" />추가
+            </Button>
+          </div>
         </CardContent>
       </Card>
 
-      {/* ⑤ OT 현황 + 매출 */}
+      {/* ⑤ OT 현황 + 매출 (선택 기간 기준) */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
         <Card>
           <CardContent className="pt-4 space-y-2">
-            <h3 className="text-sm font-bold text-gray-900 mb-2">OT 현황</h3>
+            <div className="flex items-center justify-between mb-2">
+              <h3 className="text-sm font-bold text-gray-900">OT 현황</h3>
+              <span className="text-[10px] text-gray-400">{periodLabel}</span>
+            </div>
             <div className="grid grid-cols-2 gap-2">
               <StatPill label="총 인원" value={summary.totalMembers} color="bg-gray-100 text-gray-800" />
               <StatPill label="진행중" value={summary.totalMembers - summary.rejected - summary.registered} color="bg-green-100 text-green-800" />
@@ -387,22 +484,27 @@ export function TrainerStats({ assignments, trainerName, programs }: Props) {
         </Card>
         <Card>
           <CardContent className="pt-4 space-y-3">
-            <h3 className="text-sm font-bold text-gray-900 mb-2">매출 요약</h3>
+            <div className="flex items-center justify-between mb-2">
+              <h3 className="text-sm font-bold text-gray-900">매출 요약</h3>
+              <span className="text-[10px] text-gray-400">
+                {periodSummary.activeMembers > 0 ? `${periodSummary.activeMembers}명 활동` : ''}
+              </span>
+            </div>
             <div className="flex justify-between items-center">
               <span className="text-xs text-gray-500">예상 매출</span>
-              <span className="text-lg font-bold text-pink-600">{summary.totalExpectedSales ? `${summary.totalExpectedSales.toLocaleString()}만` : '-'}</span>
+              <span className="text-lg font-bold text-pink-600">{periodSummary.totalExpectedSales ? `${periodSummary.totalExpectedSales.toLocaleString()}만` : '-'}</span>
             </div>
             <div className="flex justify-between items-center">
               <span className="text-xs text-gray-500">등록 매출</span>
-              <span className="text-lg font-bold text-green-700">{summary.totalActualSales ? `${summary.totalActualSales.toLocaleString()}만` : '-'}</span>
+              <span className="text-lg font-bold text-green-700">{periodSummary.totalActualSales ? `${periodSummary.totalActualSales.toLocaleString()}만` : '-'}</span>
             </div>
-            {summary.totalExpectedSales > 0 && (
+            {periodSummary.totalExpectedSales > 0 && (
               <div>
                 <div className="flex justify-between text-[10px] text-gray-500 mb-1">
-                  <span>달성율</span><span>{Math.round((summary.totalActualSales / summary.totalExpectedSales) * 100)}%</span>
+                  <span>달성율</span><span>{Math.round((periodSummary.totalActualSales / periodSummary.totalExpectedSales) * 100)}%</span>
                 </div>
                 <div className="h-2 bg-gray-200 rounded-full overflow-hidden">
-                  <div className="h-full bg-green-500 rounded-full transition-all" style={{ width: `${Math.min(100, Math.round((summary.totalActualSales / summary.totalExpectedSales) * 100))}%` }} />
+                  <div className="h-full bg-green-500 rounded-full transition-all" style={{ width: `${Math.min(100, Math.round((periodSummary.totalActualSales / periodSummary.totalExpectedSales) * 100))}%` }} />
                 </div>
               </div>
             )}
@@ -410,10 +512,11 @@ export function TrainerStats({ assignments, trainerName, programs }: Props) {
         </Card>
       </div>
 
-      {/* ⑥ 주간/일일 목표 */}
+      {/* ⑥ 차주 목표달성을 위한 To Do List */}
       <Card>
         <CardHeader className="pb-2">
-          <CardTitle className="text-base text-gray-900 flex items-center gap-2"><Target className="h-4 w-4 text-yellow-500" />이번 주 목표</CardTitle>
+          <CardTitle className="text-base text-gray-900 flex items-center gap-2"><Target className="h-4 w-4 text-yellow-500" />차주 목표달성을 위한 To Do List</CardTitle>
+          <p className="text-[10px] text-gray-400 mt-0.5">다음주 ({nextWeekLabel}) 목표를 위해 이번 주에 해야 할 일</p>
         </CardHeader>
         <CardContent className="space-y-5">
           <div>
