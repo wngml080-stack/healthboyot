@@ -58,6 +58,8 @@ export function ConsultationCardForm({ member, card, onSaved, isStandalone, card
   const [regProduct, setRegProduct] = useState(card?.registration_product ?? '')
   const [exerciseStartDate, setExerciseStartDate] = useState(card?.exercise_start_date ?? '')
   const [expiryDate, setExpiryDate] = useState(card?.expiry_date ?? '')
+  const [durationValue, setDurationValue] = useState('')
+  const [durationUnit, setDurationUnit] = useState<'month' | 'day'>('month')
   const [age, setAge] = useState(card?.age ?? '')
   const [occupation, setOccupation] = useState(card?.occupation ?? '')
   const [exerciseTimePref, setExerciseTimePref] = useState(card?.exercise_time_preference ?? '')
@@ -166,15 +168,65 @@ export function ConsultationCardForm({ member, card, onSaved, isStandalone, card
 
         {/* 개인정보 */}
         <div className="p-4 border-b border-gray-300">
-          <div className="flex items-center gap-2 mb-3 flex-wrap">
-            <span className="text-sm font-semibold text-gray-500">&lt;개인정보 Personal Information&gt;</span>
-            <Input type="date" value={consultDate} onChange={(e) => setConsultDate(e.target.value)} className="w-40 h-7 text-sm" />
-            <span className="text-sm ml-2">등록상품:</span>
-            <Input value={regProduct} onChange={(e) => setRegProduct(e.target.value)} className="w-32 h-7 text-sm" />
-            <span className="text-sm ml-2">운동시작일:</span>
-            <Input type="date" value={exerciseStartDate} onChange={(e) => setExerciseStartDate(e.target.value)} className="w-40 h-7 text-sm" />
-            <span className="text-sm ml-2">만료날짜:</span>
-            <Input type="date" value={expiryDate} onChange={(e) => setExpiryDate(e.target.value)} className="w-40 h-7 text-sm" />
+          <p className="text-sm font-semibold text-gray-500 mb-3">&lt;개인정보 Personal Information&gt;</p>
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 mb-4">
+            <div className="flex items-center gap-2">
+              <Label className="text-sm font-bold whitespace-nowrap w-16 shrink-0">등록일:</Label>
+              <Input type="date" value={consultDate} onChange={(e) => setConsultDate(e.target.value)} className="h-8 text-sm flex-1" />
+            </div>
+            <div className="flex items-center gap-2">
+              <Label className="text-sm font-bold whitespace-nowrap shrink-0">등록상품:</Label>
+              <Input value={regProduct} onChange={(e) => setRegProduct(e.target.value)} className="h-8 text-sm flex-1" placeholder="예: 기필5, PT30회 등" />
+            </div>
+            <div className="flex items-center gap-2">
+              <Label className="text-sm font-bold whitespace-nowrap shrink-0">운동시작일:</Label>
+              <Input type="date" value={exerciseStartDate} onChange={(e) => setExerciseStartDate(e.target.value)} className="h-8 text-sm flex-1" />
+            </div>
+            <div className="flex items-center gap-2">
+              <Label className="text-sm font-bold whitespace-nowrap shrink-0">만료일:</Label>
+              <div className="flex items-center gap-1 flex-1">
+                <Input
+                  type="number"
+                  inputMode="numeric"
+                  value={durationValue}
+                  onChange={(e) => {
+                    setDurationValue(e.target.value)
+                    const n = Number(e.target.value)
+                    if (n > 0 && exerciseStartDate) {
+                      const [y, m, d] = exerciseStartDate.split('-').map(Number)
+                      const base = new Date(y, m - 1, d)
+                      const end = durationUnit === 'month'
+                        ? new Date(base.getFullYear(), base.getMonth() + n, base.getDate())
+                        : new Date(base.getTime() + n * 86400000)
+                      setExpiryDate(end.toISOString().slice(0, 10))
+                    }
+                  }}
+                  placeholder="기간"
+                  className="h-8 text-sm w-16"
+                />
+                <select
+                  value={durationUnit}
+                  onChange={(e) => {
+                    const unit = e.target.value as 'month' | 'day'
+                    setDurationUnit(unit)
+                    const n = Number(durationValue)
+                    if (n > 0 && exerciseStartDate) {
+                      const [y, m, d] = exerciseStartDate.split('-').map(Number)
+                      const base = new Date(y, m - 1, d)
+                      const end = unit === 'month'
+                        ? new Date(base.getFullYear(), base.getMonth() + n, base.getDate())
+                        : new Date(base.getTime() + n * 86400000)
+                      setExpiryDate(end.toISOString().slice(0, 10))
+                    }
+                  }}
+                  className="h-8 text-sm rounded-md border border-gray-300 px-2 bg-white"
+                >
+                  <option value="month">개월</option>
+                  <option value="day">일</option>
+                </select>
+                <Input type="date" value={expiryDate} onChange={(e) => setExpiryDate(e.target.value)} className="h-8 text-sm flex-1" />
+              </div>
+            </div>
           </div>
 
           <div className="bg-gray-50 rounded p-3 space-y-2">
