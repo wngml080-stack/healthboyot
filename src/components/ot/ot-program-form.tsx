@@ -582,7 +582,7 @@ export const OtProgramForm = forwardRef<OtProgramFormRef, Props>(function OtProg
             </div>
           </div>
 
-          {/* Row 2: 일정 (상담일 / 운동시작일 / 기간 / 만료일) — 스택 레이아웃 */}
+          {/* Row 2: 일정 (상담일 / 운동시작일 / 기간 / 만료일) — 상담카드 데이터 읽기 전용 */}
           <div className="grid grid-cols-2 md:grid-cols-4 gap-x-3 gap-y-3 text-sm">
             <div>
               <Label className="block text-[11px] font-bold text-amber-700 uppercase tracking-wide mb-1">상담일</Label>
@@ -590,51 +590,15 @@ export const OtProgramForm = forwardRef<OtProgramFormRef, Props>(function OtProg
             </div>
             <div>
               <Label className="block text-[11px] font-bold text-amber-700 uppercase tracking-wide mb-1">운동시작일</Label>
-              <Input type="date" value={startDate} onChange={(e) => setStartDate(e.target.value)} className="h-8 text-sm" disabled={!canEdit} />
+              <Input value={fullCard?.exercise_start_date || startDate || '-'} disabled className="h-8 text-sm bg-gray-100" />
             </div>
             <div>
-              <Label className="block text-[11px] font-bold text-gray-500 uppercase tracking-wide mb-1">기간</Label>
-              <div className="flex gap-1">
-                {durationUnit === 'month' ? (
-                  <select
-                    value={durationValue}
-                    onChange={(e) => setDurationValue(e.target.value)}
-                    disabled={!canEdit}
-                    className="h-8 text-sm border rounded px-2 flex-1 min-w-0 bg-white disabled:bg-gray-100"
-                  >
-                    <option value="">선택</option>
-                    {Array.from({ length: 10 }, (_, i) => i + 1).map((n) => (
-                      <option key={n} value={n}>{n}개월</option>
-                    ))}
-                  </select>
-                ) : (
-                  <Input
-                    type="number"
-                    min={1}
-                    value={durationValue}
-                    onChange={(e) => setDurationValue(e.target.value)}
-                    disabled={!canEdit}
-                    placeholder="일수"
-                    className="h-8 text-sm flex-1 min-w-0"
-                  />
-                )}
-                <select
-                  value={durationUnit}
-                  onChange={(e) => {
-                    setDurationUnit(e.target.value as 'month' | 'day')
-                    setDurationValue('')
-                  }}
-                  disabled={!canEdit}
-                  className="h-8 text-sm border rounded px-1.5 w-[60px] shrink-0 bg-white disabled:bg-gray-100"
-                >
-                  <option value="month">개월</option>
-                  <option value="day">일</option>
-                </select>
-              </div>
+              <Label className="block text-[11px] font-bold text-gray-500 uppercase tracking-wide mb-1">등록상품</Label>
+              <Input value={fullCard?.registration_product || '-'} disabled className="h-8 text-sm bg-gray-100" />
             </div>
             <div>
               <Label className="block text-[11px] font-bold text-gray-500 uppercase tracking-wide mb-1">만료일</Label>
-              <Input type="date" value={endDate} onChange={(e) => setEndDate(e.target.value)} className="h-8 text-sm" disabled={!canEdit} />
+              <Input value={fullCard?.expiry_date || endDate || '-'} disabled className="h-8 text-sm bg-gray-100" />
             </div>
           </div>
 

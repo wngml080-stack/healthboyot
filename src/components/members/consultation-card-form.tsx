@@ -82,6 +82,8 @@ export function ConsultationCardForm({ member, card, onSaved, isStandalone, card
   const [ptSatisfaction, setPtSatisfaction] = useState(card?.pt_satisfaction ?? '')
   const [ptSatisfactionReason, setPtSatisfactionReason] = useState(card?.pt_satisfaction_reason ?? '')
   const [exercisePersonality, setExercisePersonality] = useState<string[]>(card?.exercise_personality ?? [])
+  const [memberName, setMemberName] = useState(card?.member_name || member.name || '')
+  const [memberPhone, setMemberPhone] = useState(card?.member_phone || member.phone || '')
 
   const toggleArray = useCallback((arr: string[], setArr: (v: string[]) => void, value: string) => {
     setArr(arr.includes(value) ? arr.filter((v) => v !== value) : [...arr, value])
@@ -93,6 +95,8 @@ export function ConsultationCardForm({ member, card, onSaved, isStandalone, card
     setSuccess(false)
 
     const values = {
+      member_name: memberName || null,
+      member_phone: memberPhone || null,
       fc_name: fcName || null,
       consultation_date: consultDate || null,
       registration_product: regProduct || null,
@@ -234,7 +238,7 @@ export function ConsultationCardForm({ member, card, onSaved, isStandalone, card
             <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
               <div className="flex items-center gap-1">
                 <Label className="text-sm whitespace-nowrap">이름:</Label>
-                <Input value={member.name || card?.member_name || ''} disabled className="h-7 text-sm bg-gray-100 text-gray-900 font-medium" />
+                <Input value={memberName} onChange={(e) => setMemberName(e.target.value)} className="h-7 text-sm font-medium" />
               </div>
               <div className="flex items-center gap-2">
                 <Label className="text-sm whitespace-nowrap">성별:</Label>
@@ -261,7 +265,7 @@ export function ConsultationCardForm({ member, card, onSaved, isStandalone, card
               </div>
               <div className="flex items-center gap-1">
                 <Label className="text-sm whitespace-nowrap">연락처:</Label>
-                <Input value={member.phone || card?.member_phone || ''} disabled className="h-7 text-sm bg-gray-100 text-gray-900 font-medium" />
+                <Input value={memberPhone} onChange={(e) => setMemberPhone(e.target.value)} className="h-7 text-sm font-medium" />
               </div>
               <div className="flex items-center gap-1">
                 <Label className="text-sm whitespace-nowrap">거주지역:</Label>
