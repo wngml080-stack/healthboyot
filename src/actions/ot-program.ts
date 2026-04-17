@@ -149,6 +149,30 @@ export async function upsertOtProgram(
     }
   }
 
+  // 세일즈 데이터를 세션에서 추출하여 assignment에 동기화
+  const sessionsArr = values.sessions as OtProgramSession[] | undefined
+  if (sessionsArr?.length) {
+    // 가장 최근 세션에서 세일즈 데이터 추출 (뒤에서부터 찾기)
+    const latestSales = [...sessionsArr].reverse().find((s) =>
+      s.expected_amount || s.expected_sessions || s.closing_probability || s.sales_status || s.is_sales_target || s.is_pt_conversion
+    )
+    if (latestSales) {
+      const assignmentUpdates: Record<string, unknown> = {}
+      if (latestSales.expected_amount) assignmentUpdates.expected_amount = latestSales.expected_amount
+      if (latestSales.expected_sessions) assignmentUpdates.expected_sessions = latestSales.expected_sessions
+      if (latestSales.closing_probability) assignmentUpdates.closing_probability = latestSales.closing_probability
+      if (latestSales.sales_status) assignmentUpdates.sales_status = latestSales.sales_status
+      if (latestSales.is_sales_target) assignmentUpdates.is_sales_target = true
+      if (latestSales.is_pt_conversion) assignmentUpdates.is_pt_conversion = true
+      if (latestSales.pt_sales_amount) assignmentUpdates.actual_sales = latestSales.pt_sales_amount
+      if (latestSales.sales_note) assignmentUpdates.notes = latestSales.sales_note
+
+      if (Object.keys(assignmentUpdates).length > 0) {
+        await supabase.from('ot_assignments').update(assignmentUpdates).eq('id', assignmentId)
+      }
+    }
+  }
+
   // 기존 프로그램이 있으면 업데이트
   const existing = await getOtProgram(assignmentId)
   if (existing) {
