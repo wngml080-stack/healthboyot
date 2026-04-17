@@ -260,20 +260,20 @@ export const OtProgramForm = forwardRef<OtProgramFormRef, Props>(function OtProg
   const [sharing, setSharing] = useState(false)
   const [signOpening, setSignOpening] = useState(false)
 
-  // 서명 완료 메시지 수신 → 세션에 반영 + 자동 저장
-  // sessionsRef로 최신 sessions를 참조해서 저장 시 정확한 데이터 전달
+  // 서명 완료 수신 (BroadcastChannel) → 세션에 반영 + 자동 저장
   const sessionsRef = useRef(sessions)
   sessionsRef.current = sessions
   const buildPayloadRef = useRef(buildSavePayload)
   buildPayloadRef.current = buildSavePayload
 
   useEffect(() => {
-    const handler = async (e: MessageEvent) => {
+    const channel = new BroadcastChannel('ot-signature')
+    channel.onmessage = async (e) => {
       if (e.data?.type !== 'signature-complete') return
       const { sessionIdx: sigIdx, signatureUrl, signerName: sName } = e.data
       if (typeof sigIdx !== 'number' || !signatureUrl) return
-      // 세션에 서명 데이터 반영
       const signedAt = new Date().toISOString()
+      // 세션에 서명 데이터 반영
       setSessions((prev) => prev.map((s, i) =>
         i === sigIdx ? { ...s, signature_url: signatureUrl, signer_name: sName, signed_at: signedAt } : s,
       ))
@@ -285,8 +285,7 @@ export const OtProgramForm = forwardRef<OtProgramFormRef, Props>(function OtProg
       await upsertOtProgram(a.id, a.member_id, { ...payload, sessions: currentSessions as unknown as OtProgramSession[] })
       onSaved?.()
     }
-    window.addEventListener('message', handler)
-    return () => window.removeEventListener('message', handler)
+    return () => channel.close()
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [a.id, a.member_id])
 

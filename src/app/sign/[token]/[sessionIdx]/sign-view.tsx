@@ -35,13 +35,13 @@ export function SignView({ token, sessionIdx, memberName, trainerName, session }
     if (!res.ok) setError(res.error ?? '저장 실패')
     else {
       setDone(true)
-      // 부모 창(프로그램 폼)에 서명 완료 알림
+      // 부모 창(프로그램 폼)에 서명 완료 알림 (BroadcastChannel)
       try {
-        if (window.opener) {
-          window.opener.postMessage({ type: 'signature-complete', sessionIdx, signatureUrl: signature, signerName: signerName.trim() }, '*')
-          // 2초 후 자동 닫기
-          setTimeout(() => window.close(), 2000)
-        }
+        const channel = new BroadcastChannel('ot-signature')
+        channel.postMessage({ type: 'signature-complete', sessionIdx, signatureUrl: signature, signerName: signerName.trim() })
+        channel.close()
+        // 2초 후 자동 닫기
+        setTimeout(() => window.close(), 2000)
       } catch {}
     }
   }
