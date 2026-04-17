@@ -161,10 +161,16 @@ export async function upsertOtProgram(
       if (latestSales.expected_amount) assignmentUpdates.expected_amount = latestSales.expected_amount
       if (latestSales.expected_sessions) assignmentUpdates.expected_sessions = latestSales.expected_sessions
       if (latestSales.closing_probability) assignmentUpdates.closing_probability = latestSales.closing_probability
-      if (latestSales.sales_status) assignmentUpdates.sales_status = latestSales.sales_status
+      if (latestSales.sales_status) {
+        assignmentUpdates.sales_status = latestSales.sales_status === 'PT전환' ? '등록완료' : latestSales.sales_status
+      }
       if (latestSales.is_sales_target) assignmentUpdates.is_sales_target = true
-      if (latestSales.is_pt_conversion) assignmentUpdates.is_pt_conversion = true
-      if (latestSales.pt_sales_amount) assignmentUpdates.actual_sales = latestSales.pt_sales_amount
+      // PT전환 상태이면 is_pt_conversion + actual_sales 동기화
+      if (latestSales.sales_status === 'PT전환' || latestSales.is_pt_conversion) {
+        assignmentUpdates.is_pt_conversion = true
+        if (latestSales.pt_sales_amount) assignmentUpdates.actual_sales = latestSales.pt_sales_amount
+        if (latestSales.expected_sessions) assignmentUpdates.expected_sessions = latestSales.expected_sessions
+      }
       if (latestSales.sales_note) assignmentUpdates.notes = latestSales.sales_note
 
       if (Object.keys(assignmentUpdates).length > 0) {
