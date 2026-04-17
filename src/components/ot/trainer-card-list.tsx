@@ -268,6 +268,30 @@ export function TrainerCardList({ assignments, trainers = [], trainerId, trainer
   const [isPtConversion, setIsPtConversion] = useState(false)
   const [ptSalesAmount, setPtSalesAmount] = useState(0)
   const [ptSalesCount, setPtSalesCount] = useState(0)
+
+  // 세션 상태변경 팝업
+  const [statusChangeTarget, setStatusChangeTarget] = useState<{ assignmentId: string; memberName: string; sessionNumber: number; scheduledAt?: string } | null>(null)
+  const [statusChangeLoading, setStatusChangeLoading] = useState(false)
+  const handleStatusChange = async (result: string) => {
+    if (!statusChangeTarget) return
+    setStatusChangeLoading(true)
+    try {
+      if (result === '수업완료') {
+        await upsertOtSession({
+          ot_assignment_id: statusChangeTarget.assignmentId,
+          session_number: statusChangeTarget.sessionNumber,
+          scheduled_at: statusChangeTarget.scheduledAt,
+          completed_at: new Date().toISOString(),
+        })
+      }
+      // 노쇼, 차감노쇼, 상담도 필요 시 여기에 추가
+      router.refresh()
+    } finally {
+      setStatusChangeLoading(false)
+      setStatusChangeTarget(null)
+    }
+  }
+
   const openSalesEdit = (a: OtAssignmentWithDetails) => {
     setSalesTarget(a)
     setSalesStatus((a.sales_status as SalesStatus) || 'OT진행중')
@@ -833,23 +857,16 @@ export function TrainerCardList({ assignments, trainers = [], trainerId, trainer
                                             <div
                                               key={s.num}
                                               className={`relative rounded-lg border-2 bg-white p-2 text-center space-y-1 ${border} ${(isPastDue || (isScheduled && !isDone)) ? 'cursor-pointer hover:shadow-md transition-shadow' : ''}`}
-                                              onClick={async (e) => {
+                                              onClick={(e) => {
                                                 e.stopPropagation()
                                                 if (isDone) return
                                                 if (!s.scheduled_at) return
-                                                const options = ['수업완료', '노쇼', '차감노쇼', '상담', '취소']
-                                                const choice = prompt(`${a.member.name} ${s.num}차 OT 상태 변경\n\n다음 중 하나를 입력하세요:\n수업완료 / 노쇼 / 차감노쇼 / 상담`)
-                                                if (!choice || !['수업완료', '노쇼', '차감노쇼', '상담'].includes(choice.trim())) return
-                                                const result = choice.trim()
-                                                if (result === '수업완료') {
-                                                  await upsertOtSession({
-                                                    ot_assignment_id: a.id,
-                                                    session_number: s.num,
-                                                    scheduled_at: s.scheduled_at ?? undefined,
-                                                    completed_at: new Date().toISOString(),
-                                                  })
-                                                }
-                                                router.refresh()
+                                                setStatusChangeTarget({
+                                                  assignmentId: a.id,
+                                                  memberName: a.member.name,
+                                                  sessionNumber: s.num,
+                                                  scheduledAt: s.scheduled_at ?? undefined,
+                                                })
                                               }}
                                             >
                                               {canDelete && (
@@ -2310,6 +2327,55 @@ export function TrainerCardList({ assignments, trainers = [], trainerId, trainer
             >
               {linkCardSaving ? '연결 중...' : '연결하기'}
             </Button>
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* 세션 상태변경 팝업 */}
+      <Dialog open={!!statusChangeTarget} onOpenChange={() => setStatusChangeTarget(null)}>
+        <DialogContent className="max-w-[320px] rounded-2xl p-0 overflow-hidden">
+          <DialogHeader className="px-5 pt-5 pb-3">
+            <DialogTitle className="text-base font-bold text-gray-900">
+              {statusChangeTarget?.memberName} {statusChangeTarget?.sessionNumber}차 OT
+            </DialogTitle>
+            <DialogDescription className="text-xs text-gray-500">상태를 선택해주세요</DialogDescription>
+          </DialogHeader>
+          <div className="px-5 pb-5 space-y-2">
+            <button
+              disabled={statusChangeLoading}
+              onClick={() => handleStatusChange('수업완료')}
+              className="w-full py-3 rounded-xl bg-emerald-500 hover:bg-emerald-600 text-white font-bold text-sm transition-colors disabled:opacity-50"
+            >
+              수업완료
+            </button>
+            <button
+              disabled={statusChangeLoading}
+              onClick={() => handleStatusChange('노쇼')}
+              className="w-full py-3 rounded-xl bg-rose-500 hover:bg-rose-600 text-white font-bold text-sm transition-colors disabled:opacity-50"
+            >
+              노쇼
+            </button>
+            <button
+              disabled={statusChangeLoading}
+              onClick={() => handleStatusChange('차감노쇼')}
+              className="w-full py-3 rounded-xl bg-orange-500 hover:bg-orange-600 text-white font-bold text-sm transition-colors disabled:opacity-50"
+            >
+              차감노쇼
+            </button>
+            <button
+              disabled={statusChangeLoading}
+              onClick={() => handleStatusChange('상담')}
+              className="w-full py-3 rounded-xl bg-blue-500 hover:bg-blue-600 text-white font-bold text-sm transition-colors disabled:opacity-50"
+            >
+              상담
+            </button>
+            <button
+              disabled={statusChangeLoading}
+              onClick={() => setStatusChangeTarget(null)}
+              className="w-full py-2.5 rounded-xl bg-gray-100 hover:bg-gray-200 text-gray-600 font-medium text-sm transition-colors"
+            >
+              취소
+            </button>
           </div>
         </DialogContent>
       </Dialog>

@@ -8,15 +8,7 @@ const nextConfig = {
   experimental: {
     optimizePackageImports: ['lucide-react', 'date-fns', '@supabase/supabase-js', 'xlsx'],
   },
-  // 정적 에셋 장기 캐싱
-  headers: async () => [
-    {
-      source: '/:path*',
-      headers: [
-        { key: 'X-DNS-Prefetch-Control', value: 'on' },
-      ],
-    },
-  ],
+  // 헤더는 vercel.json에서 관리
 };
 
 export default nextConfig;

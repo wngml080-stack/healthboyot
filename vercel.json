@@ -1,3 +1,26 @@
 {
-  "regions": ["icn1"]
+  "regions": ["icn1"],
+  "skewProtection": {
+    "maxAge": 86400
+  },
+  "headers": [
+    {
+      "source": "/_next/static/(.*)",
+      "headers": [
+        {
+          "key": "Cache-Control",
+          "value": "public, max-age=31536000, immutable"
+        }
+      ]
+    },
+    {
+      "source": "/(.*)",
+      "headers": [
+        {
+          "key": "X-DNS-Prefetch-Control",
+          "value": "on"
+        }
+      ]
+    }
+  ]
 }
