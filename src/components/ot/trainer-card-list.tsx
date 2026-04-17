@@ -505,7 +505,6 @@ export function TrainerCardList({ assignments, trainers = [], trainerId, trainer
     const done = a.sessions?.filter((s) => s.completed_at).length ?? 0
     if (a.status === '거부') return { label: '거부', color: 'bg-red-100 text-red-700' }
     if (a.status === '추후결정') return { label: '추후결정', color: 'bg-orange-100 text-orange-700' }
-    if (a.status === '완료') return { label: '완료', color: 'bg-green-100 text-green-700' }
     if (done >= 3) return { label: `${done}차완료`, color: 'bg-green-100 text-green-700' }
     if (done === 2) return { label: '2차완료', color: 'bg-indigo-100 text-indigo-700' }
     if (done === 1) return { label: '1차완료', color: 'bg-blue-100 text-blue-700' }
@@ -669,11 +668,6 @@ export function TrainerCardList({ assignments, trainers = [], trainerId, trainer
                           <Badge variant="outline" className={`text-[10px] px-1.5 ${progress.color}`}>
                             {progress.label}
                           </Badge>
-                          <button onClick={(e) => { e.stopPropagation(); openSalesEdit(a) }} className="cursor-pointer">
-                            <Badge variant="outline" className={`text-[10px] px-1.5 ${getSalesColor(a.sales_status || 'OT진행중')}`}>
-                              {SALES_STATUSES.find((s) => s.value === (a.sales_status || 'OT진행중'))?.label ?? a.sales_status}
-                            </Badge>
-                          </button>
                           {a.is_sales_target && (
                             <Badge className="text-[10px] px-1.5 bg-red-500 text-white border-red-500 font-bold">★ 매출대상</Badge>
                           )}
