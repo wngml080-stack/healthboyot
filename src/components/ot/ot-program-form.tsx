@@ -1479,24 +1479,7 @@ export const OtProgramForm = forwardRef<OtProgramFormRef, Props>(function OtProg
               </Button>
             </>
           )}
-          {isAdmin && approvalStatus === '제출완료' && (
-            <>
-              <Button onClick={handleApprove} disabled={saving} className="bg-green-600 hover:bg-green-700 text-white">
-                <CheckCircle className="h-4 w-4 mr-2" />승인
-              </Button>
-              {!showRejectInput ? (
-                <Button onClick={() => setShowRejectInput(true)} disabled={saving} variant="destructive">
-                  <XCircle className="h-4 w-4 mr-2" />반려
-                </Button>
-              ) : (
-                <div className="flex items-center gap-2">
-                  <Input value={rejectReason} onChange={(e) => setRejectReason(e.target.value)} placeholder="반려 사유" className="h-9 text-sm w-48" />
-                  <Button onClick={handleReject} disabled={saving || !rejectReason} variant="destructive" size="sm">확인</Button>
-                  <Button onClick={() => setShowRejectInput(false)} variant="ghost" size="sm">취소</Button>
-                </div>
-              )}
-            </>
-          )}
+          {/* 승인/반려는 OT 승인 페이지에서 관리 */}
         </div>
       )}
 

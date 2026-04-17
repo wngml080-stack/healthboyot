@@ -111,7 +111,7 @@ export function TrainerStats({ assignments, trainerName, programs }: Props) {
   }
 
   // 데이터 매핑
-  const { memberRows, dailyTotals, columns, summary, periodSummary, otOverview, inbodyRows, thisWeekTargets, nextWeekTargets } = useMemo(() => {
+  const { memberRows, dailyTotals, columns, summary, periodSummary, otOverview, inbodyRows, thisWeekTargets, resolvedTargets, nextWeekTargets } = useMemo(() => {
     const nowTime = Date.now()
     const programMap = new Map<string, OtProgram>()
     for (const p of programs) programMap.set(p.ot_assignment_id, p)
@@ -271,20 +271,23 @@ export function TrainerStats({ assignments, trainerName, programs }: Props) {
     const tws = goalWeekStart; const twe = addDays(tws, 6)
     const nws = addDays(goalWeekStart, 7); const nwe = addDays(nws, 6)
 
-    // 이번주 매출대상자
-    const thisTargets = assignments
-      .filter((a) => a.is_sales_target && a.status !== '거부')
+    // 이번주 매출대상자 (활성 vs 결과 분리)
+    const allSalesTargets = assignments.filter((a) => a.is_sales_target && a.status !== '거부')
+
+    // 활성 대상자: 아직 결과가 나지 않은 진행중인 대상자만
+    const thisTargets = allSalesTargets
+      .filter((a) => {
+        if (a.sales_status === '클로징실패' || a.sales_status === '등록완료') return false
+        if (a.is_pt_conversion) return false
+        if (a.status === '완료') return false
+        return true
+      })
       .map((a) => {
         const completedCount = a.sessions?.filter((s) => s.completed_at).length ?? 0
         const ts = a.sessions?.find((s) => s.scheduled_at && !s.completed_at && new Date(s.scheduled_at) >= tws && new Date(s.scheduled_at) <= twe)
-        // 상태 결정
         let statusLabel: string
         let statusColor: string
-        if (a.sales_status === '클로징실패') {
-          statusLabel = '클로징실패'; statusColor = 'bg-red-500 text-white'
-        } else if (a.sales_status === '등록완료' || a.is_pt_conversion) {
-          statusLabel = 'PT전환'; statusColor = 'bg-purple-600 text-white'
-        } else if (completedCount >= 3) {
+        if (completedCount >= 3) {
           statusLabel = '3차완료'; statusColor = 'bg-emerald-600 text-white'
         } else if (completedCount === 2) {
           statusLabel = '2차완료'; statusColor = 'bg-emerald-500 text-white'
@@ -293,25 +296,32 @@ export function TrainerStats({ assignments, trainerName, programs }: Props) {
         } else {
           statusLabel = '진행중'; statusColor = 'bg-green-500 text-white'
         }
-        // 다음주로 넘어가야 하는지: 클로징실패/PT전환이 아닌데, 아직 완료 상태가 아닌 경우
-        const isResolved = a.sales_status === '클로징실패' || a.sales_status === '등록완료' || a.is_pt_conversion || a.status === '완료'
         return {
           id: a.id, name: a.member.name,
           expectedAmount: toManwon(a.expected_amount ?? a.expected_sales ?? 0),
           actualSales: toManwon(a.actual_sales ?? 0),
-          session: ts, isCustom: false, statusLabel, statusColor, carryOver: !isResolved,
+          session: ts, isCustom: false, statusLabel, statusColor, carryOver: true,
         }
       })
 
-    // 다음주 매출대상자: 기존 다음주 스케줄 대상 + 이번주에서 넘어오는 대상
-    const carryOverIds = new Set(thisTargets.filter((t) => t.carryOver).map((t) => t.id))
+    // 결과가 난 대상자: PT전환, 등록완료, 클로징실패
+    const resolvedTargets = {
+      ptConversion: allSalesTargets.filter((a) => a.is_pt_conversion || a.sales_status === '등록완료').map((a) => ({
+        name: a.member.name,
+        expectedAmount: toManwon(a.expected_amount ?? a.expected_sales ?? 0),
+        actualSales: toManwon(a.actual_sales ?? 0),
+      })),
+      closingFailed: allSalesTargets.filter((a) => a.sales_status === '클로징실패').map((a) => a.member.name),
+    }
+
+    // 다음주 매출대상자: 활성 대상자 중 이월되는 대상
+    const activeIds = new Set(thisTargets.map((t) => t.id))
     const nextTargets = assignments
       .filter((a) => {
         if (a.status === '완료' || a.status === '거부') return false
         if (a.sales_status === '클로징실패' || a.sales_status === '등록완료') return false
         if (a.is_pt_conversion) return false
-        // 매출대상자이거나, 이번주에서 넘어오는 대상
-        return a.is_sales_target || carryOverIds.has(a.id)
+        return a.is_sales_target
       })
       .map((a) => {
         const ns = a.sessions?.find((s) => s.scheduled_at && !s.completed_at && new Date(s.scheduled_at) >= nws && new Date(s.scheduled_at) <= nwe)
@@ -319,7 +329,7 @@ export function TrainerStats({ assignments, trainerName, programs }: Props) {
           id: a.id, name: a.member.name,
           expectedAmount: toManwon(a.expected_amount ?? a.expected_sales ?? 0),
           session: ns, isCustom: false,
-          isCarryOver: carryOverIds.has(a.id),
+          isCarryOver: activeIds.has(a.id),
         }
       })
 
@@ -345,7 +355,7 @@ export function TrainerStats({ assignments, trainerName, programs }: Props) {
         nextWeekTargetCount: nextTargets.length,
         nextWeekScheduleConfirmed, nextWeekOtCount,
       },
-      inbodyRows: inbody, thisWeekTargets: thisTargets, nextWeekTargets: nextTargets,
+      inbodyRows: inbody, thisWeekTargets: thisTargets, resolvedTargets, nextWeekTargets: nextTargets,
     }
   }, [assignments, programs, year, month, daysInMonth, isCurrentMonth, todayDate, viewMode, selectedWeekStart, selectedWeekEnd, weekDays, goalWeekStart, now])
 
@@ -575,34 +585,61 @@ export function TrainerStats({ assignments, trainerName, programs }: Props) {
               {totalThisExpected > 0 && <Badge className="bg-orange-100 text-orange-700 text-[10px]">예상 총 {totalThisExpected.toLocaleString()}만</Badge>}
             </div>
           </CardHeader>
-          <CardContent className="px-4 pb-3">
-            {thisWeekTargets.length === 0 ? (
+          <CardContent className="px-4 pb-3 space-y-3">
+            {/* 진행중 대상자 */}
+            {thisWeekTargets.length === 0 && resolvedTargets.ptConversion.length === 0 && resolvedTargets.closingFailed.length === 0 ? (
               <p className="text-xs text-gray-400 text-center py-3">이번주 매출대상자가 없습니다</p>
             ) : (
-              <div className="space-y-2">
-                {thisWeekTargets.map((t) => (
-                  <div key={t.id} className="flex items-center justify-between bg-gray-50 rounded-lg px-3 py-2.5">
-                    <div className="flex items-center gap-2">
-                      <span className="text-sm font-bold text-gray-900">{t.name}</span>
-                      {t.session ? (
-                        <span className="text-[10px] text-blue-600">{t.session.session_number}차 · {format(new Date(t.session.scheduled_at!), 'M/d (EEE) HH:mm', { locale: ko })}</span>
-                      ) : (
-                        <span className="text-[10px] text-gray-400">스케줄 미정</span>
-                      )}
-                    </div>
-                    <div className="flex items-center gap-1.5">
-                      <Badge className={`text-[10px] ${t.statusColor}`}>{t.statusLabel}</Badge>
-                      {t.expectedAmount > 0 && (
-                        t.actualSales > 0 ? (
-                          <Badge className="bg-green-600 text-white text-[10px]">예상 {t.expectedAmount.toLocaleString()}만 → 등록 {t.actualSales.toLocaleString()}만</Badge>
-                        ) : (
-                          <Badge className="bg-blue-600 text-white text-[10px]">예상 {t.expectedAmount.toLocaleString()}만</Badge>
-                        )
-                      )}
-                    </div>
+              <>
+                {thisWeekTargets.length > 0 && (
+                  <div className="space-y-2">
+                    {thisWeekTargets.map((t) => (
+                      <div key={t.id} className="flex items-center justify-between bg-gray-50 rounded-lg px-3 py-2.5">
+                        <div className="flex items-center gap-2">
+                          <span className="text-sm font-bold text-gray-900">{t.name}</span>
+                          {t.session ? (
+                            <span className="text-[10px] text-blue-600">{t.session.session_number}차 · {format(new Date(t.session.scheduled_at!), 'M/d (EEE) HH:mm', { locale: ko })}</span>
+                          ) : (
+                            <span className="text-[10px] text-gray-400">스케줄 미정</span>
+                          )}
+                        </div>
+                        <div className="flex items-center gap-1.5">
+                          <Badge className={`text-[10px] ${t.statusColor}`}>{t.statusLabel}</Badge>
+                          {t.expectedAmount > 0 && <Badge className="bg-blue-600 text-white text-[10px]">예상 {t.expectedAmount.toLocaleString()}만</Badge>}
+                        </div>
+                      </div>
+                    ))}
                   </div>
-                ))}
-              </div>
+                )}
+
+                {/* 결과 요약 (PT전환/등록완료, 클로징실패) */}
+                {(resolvedTargets.ptConversion.length > 0 || resolvedTargets.closingFailed.length > 0) && (
+                  <div className="border-t border-gray-100 pt-2 space-y-1.5">
+                    <p className="text-[10px] font-bold text-gray-500">결과</p>
+                    {resolvedTargets.ptConversion.map((r, i) => (
+                      <div key={i} className="flex items-center justify-between bg-purple-50 rounded-lg px-3 py-2">
+                        <div className="flex items-center gap-2">
+                          <span className="text-sm font-bold text-gray-900">{r.name}</span>
+                          <Badge className="bg-purple-600 text-white text-[10px]">PT전환</Badge>
+                        </div>
+                        {r.actualSales > 0 ? (
+                          <Badge className="bg-green-600 text-white text-[10px]">예상 {r.expectedAmount.toLocaleString()}만 → 등록 {r.actualSales.toLocaleString()}만</Badge>
+                        ) : r.expectedAmount > 0 ? (
+                          <Badge className="bg-purple-100 text-purple-700 text-[10px]">예상 {r.expectedAmount.toLocaleString()}만</Badge>
+                        ) : null}
+                      </div>
+                    ))}
+                    {resolvedTargets.closingFailed.map((name, i) => (
+                      <div key={i} className="flex items-center justify-between bg-red-50 rounded-lg px-3 py-2">
+                        <div className="flex items-center gap-2">
+                          <span className="text-sm font-bold text-gray-900">{name}</span>
+                          <Badge className="bg-red-500 text-white text-[10px]">클로징실패</Badge>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </>
             )}
           </CardContent>
         </Card>
