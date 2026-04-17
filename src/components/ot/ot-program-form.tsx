@@ -8,8 +8,8 @@ import { Textarea } from '@/components/ui/textarea'
 import { Checkbox } from '@/components/ui/checkbox'
 import { Badge } from '@/components/ui/badge'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
-import { Save, Loader2, Send, CheckCircle, XCircle, Plus, ImagePlus, X, ChevronDown, ChevronUp, Download, Share2 } from 'lucide-react'
-import { upsertOtProgram, submitOtProgram, submitOtSession, unsubmitOtSession, approveOtProgram, rejectOtProgram } from '@/actions/ot-program'
+import { Save, Loader2, Send, CheckCircle, Plus, ImagePlus, X, ChevronDown, ChevronUp, Download, Share2 } from 'lucide-react'
+import { upsertOtProgram, submitOtSession, unsubmitOtSession } from '@/actions/ot-program'
 import { upsertOtSession } from '@/actions/ot'
 import { ensureShareToken } from '@/actions/ot-signing'
 import { SessionShareCard } from './session-share-card'
@@ -261,9 +261,6 @@ export const OtProgramForm = forwardRef<OtProgramFormRef, Props>(function OtProg
     },
   }))
 
-  // 반려
-  const [rejectReason, setRejectReason] = useState('')
-  const [showRejectInput, setShowRejectInput] = useState(false)
   const [uploading, setUploading] = useState(false)
 
   const captureRef = useRef<HTMLDivElement>(null)
@@ -518,20 +515,15 @@ export const OtProgramForm = forwardRef<OtProgramFormRef, Props>(function OtProg
     }
   }, [program?.consultation_data])
 
-  const handleSubmit = async () => {
-    await handleSave()
-    if (!program?.id) return
-    setSaving(true)
-    const result = await submitOtProgram(program.id)
-    setSaving(false)
-    if (result.error) setError(result.error)
-    else onSaved?.()
-  }
-
   const handleSubmitSession = async (sessionIdx: number) => {
     const otSession = a.sessions?.find((s) => s.session_number === sessionIdx + 1)
     if (!otSession?.completed_at) {
       alert(`${sessionIdx + 1}차 OT 수업이 완료되지 않았습니다.\n수업 완료 후 제출해주세요.`)
+      return
+    }
+    const sessionData = sessions[sessionIdx]
+    if (!sessionData?.signature_url) {
+      alert(`회원 서명이 필요합니다.\n서명을 먼저 받아주세요.`)
       return
     }
     setSaving(true)
@@ -570,25 +562,6 @@ export const OtProgramForm = forwardRef<OtProgramFormRef, Props>(function OtProg
       onSaved?.()
     }
   }
-
-  const handleApprove = async () => {
-    if (!program?.id) return
-    setSaving(true)
-    await approveOtProgram(program.id)
-    setSaving(false)
-    onSaved?.()
-  }
-
-  const handleReject = async () => {
-    if (!program?.id || !rejectReason) return
-    setSaving(true)
-    await rejectOtProgram(program.id, rejectReason)
-    setSaving(false)
-    setShowRejectInput(false)
-    onSaved?.()
-  }
-
-  const approvalStatus = program?.approval_status ?? '작성중'
 
   // 현재 활성 세션 (첫 번째 미완료 세션)
   const activeSessionIdx = sessions.findIndex((s) => !s.completed)
@@ -826,11 +799,12 @@ export const OtProgramForm = forwardRef<OtProgramFormRef, Props>(function OtProg
                   {canEdit && !isSessionLocked(session) && (session.approval_status === '작성중' || !session.approval_status || session.approval_status === '반려') && (
                     <Button
                       size="sm"
-                      className="h-7 text-xs bg-blue-600 hover:bg-blue-700 text-white"
+                      className={`h-7 text-xs font-bold ${session.signature_url ? 'bg-blue-600 hover:bg-blue-700 text-white' : 'bg-gray-300 text-gray-500 cursor-not-allowed'}`}
                       onClick={() => handleSubmitSession(idx)}
-                      disabled={saving}
+                      disabled={saving || !session.signature_url}
+                      title={!session.signature_url ? '회원 서명이 필요합니다' : ''}
                     >
-                      <Send className="h-3 w-3 mr-1" />{idx + 1}차 제출
+                      <Send className="h-3 w-3 mr-1" />{!session.signature_url ? '서명 필요' : `${idx + 1}차 제출`}
                     </Button>
                   )}
                   {canEdit && session.approval_status === '제출완료' && program?.id && (
