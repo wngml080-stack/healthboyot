@@ -808,7 +808,7 @@ export const OtProgramForm = forwardRef<OtProgramFormRef, Props>(function OtProg
                   {!isCompleted && canEdit && (() => {
                     const otSession = a.sessions?.find((s) => s.session_number === idx + 1)
                     if (!otSession?.scheduled_at) return null
-                    const currentStatus = session.result_category
+                    const currentStatus = (session as Record<string, unknown>).class_status as string | null | undefined
                     return (
                       <div className="flex flex-wrap items-center gap-1.5 bg-indigo-50 rounded-lg p-2">
                         <span className="text-[10px] font-bold text-indigo-700 mr-1">수업상태:</span>
@@ -825,12 +825,12 @@ export const OtProgramForm = forwardRef<OtProgramFormRef, Props>(function OtProg
                                 if (opt === '기타') {
                                   const reason = prompt('기타 사유를 입력하세요')
                                   if (!reason) return
-                                  updateSession(idx, 'result_category', opt)
+                                  updateSession(idx, 'class_status' as keyof OtProgramSession, opt)
                                   updateSession(idx, 'result_note', reason)
                                   return
                                 }
                                 // 즉시 세션 상태 반영
-                                updateSession(idx, 'result_category', isActive ? null : opt)
+                                updateSession(idx, 'class_status' as keyof OtProgramSession, isActive ? null : opt)
                                 if (opt === '수업완료' && !isActive) {
                                   await upsertOtSession({
                                     ot_assignment_id: a.id,
