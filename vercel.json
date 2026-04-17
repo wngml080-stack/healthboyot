@@ -1,8 +1,5 @@
 {
   "regions": ["icn1"],
-  "skewProtection": {
-    "maxAge": 86400
-  },
   "headers": [
     {
       "source": "/_next/static/(.*)",
