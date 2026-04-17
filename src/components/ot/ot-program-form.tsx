@@ -808,7 +808,7 @@ export const OtProgramForm = forwardRef<OtProgramFormRef, Props>(function OtProg
                   {!isCompleted && canEdit && (() => {
                     const otSession = a.sessions?.find((s) => s.session_number === idx + 1)
                     if (!otSession?.scheduled_at) return null
-                    const currentStatus = (session as Record<string, unknown>).class_status as string | null | undefined
+                    const currentStatus = (session as unknown as Record<string, unknown>).class_status as string | null | undefined
                     return (
                       <div className="flex flex-wrap items-center gap-1.5 bg-indigo-50 rounded-lg p-2">
                         <span className="text-[10px] font-bold text-indigo-700 mr-1">수업상태:</span>
