@@ -1561,66 +1561,6 @@ export function TrainerCardList({ assignments, trainers = [], trainerId, trainer
                 </div>
               )}
 
-              {/* 결과 분류 */}
-              <div className="border-t pt-4 space-y-2">
-                <Label className="font-bold">결과 분류</Label>
-                <div className="grid grid-cols-2 gap-2">
-                  {['매출대상', '등록완료', '클로징실패', '거부자'].map((r) => {
-                    const active = completeResult === r
-                    const colors: Record<string, string> = {
-                      '매출대상': active ? 'bg-blue-600 text-white border-blue-600' : 'bg-white text-blue-600 border-blue-200 hover:border-blue-400',
-                      '등록완료': active ? 'bg-green-600 text-white border-green-600' : 'bg-white text-green-600 border-green-200 hover:border-green-400',
-                      '클로징실패': active ? 'bg-orange-500 text-white border-orange-500' : 'bg-white text-orange-500 border-orange-200 hover:border-orange-400',
-                      '거부자': active ? 'bg-red-600 text-white border-red-600' : 'bg-white text-red-600 border-red-200 hover:border-red-400',
-                    }
-                    return (
-                      <button
-                        key={r}
-                        type="button"
-                        className={`py-2.5 rounded-lg border-2 text-sm font-bold transition-colors ${colors[r]}`}
-                        onClick={() => setCompleteResult(active ? '' : r)}
-                      >
-                        {r}
-                      </button>
-                    )
-                  })}
-                </div>
-
-                {/* 등록완료 시 실제 등록 금액 입력 */}
-                {completeResult === '등록완료' && (
-                  <div className="rounded-lg border border-green-200 bg-green-50/50 p-3 space-y-2">
-                    <Label className="text-xs font-bold text-green-700">실제 등록 금액</Label>
-                    <div className="flex items-center gap-2">
-                      <span className="text-xs text-gray-500">예상: {toManwon(completeTarget.assignment.expected_amount ?? completeTarget.assignment.expected_sales ?? 0).toLocaleString()}만</span>
-                      <span className="text-gray-300">→</span>
-                      <div className="flex items-center gap-1 flex-1">
-                        <Input
-                          type="number"
-                          inputMode="numeric"
-                          value={completeActualSales}
-                          onChange={(e) => setCompleteActualSales(e.target.value)}
-                          placeholder="실제 등록 금액"
-                          className="h-9 text-sm bg-white font-bold"
-                        />
-                        <span className="text-xs text-gray-500 shrink-0">만원</span>
-                      </div>
-                    </div>
-                  </div>
-                )}
-
-                {/* 클로징실패 시 사유 입력 */}
-                {completeResult === '클로징실패' && (
-                  <div className="rounded-lg border border-orange-200 bg-orange-50/50 p-3 space-y-1">
-                    <Label className="text-xs font-bold text-orange-700">실패 사유</Label>
-                    <Input
-                      value={completeFailReason}
-                      onChange={(e) => setCompleteFailReason(e.target.value)}
-                      placeholder="실패 원인을 입력하세요"
-                      className="h-9 text-sm bg-white"
-                    />
-                  </div>
-                )}
-              </div>
 
             </div>
           )}
