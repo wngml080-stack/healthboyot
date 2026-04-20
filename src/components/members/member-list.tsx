@@ -501,7 +501,7 @@ export function MemberList({ initialMembers, trainers = [] }: Props) {
                       className="hover:bg-gray-50 cursor-pointer"
                       onClick={() => setExpandedId(isExpanded ? null : m.id)}
                     >
-                      <TableCell className="text-center text-xs text-gray-900">{m.registered_at}</TableCell>
+                      <TableCell className="text-center text-xs text-gray-900">{m.registered_at && m.registered_at > '1900-01-01' ? m.registered_at : '미상'}</TableCell>
                       <TableCell className="text-center text-sm font-medium text-gray-900">
                         <span className={`inline-flex items-center rounded px-1 py-0.5 text-[9px] font-bold mr-1 ${m.is_renewal ? 'bg-purple-100 text-purple-600' : m.is_existing_member ? 'bg-orange-100 text-orange-600' : 'bg-green-100 text-green-600'}`}>
                           {m.is_renewal ? '리뉴' : m.is_existing_member ? '이전' : '신규'}

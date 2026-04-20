@@ -50,8 +50,10 @@ export function PendingOtList({ assignments, trainers = [] }: Props) {
     if (!selectedPtTrainer && !selectedPptTrainer) return
     setLoading(true)
     const isSpecial = (v: string) => v === 'later' || v === 'urgent' || v === 'not_requested'
+    const ptIsReal = selectedPtTrainer && !isSpecial(selectedPtTrainer)
+    const pptIsReal = selectedPptTrainer && !isSpecial(selectedPptTrainer)
     const updates: Record<string, string | null> = {
-      status: '배정완료',
+      status: (ptIsReal || pptIsReal) ? '배정완료' : '신청대기',
     }
     if (selectedPtTrainer) {
       updates.pt_trainer_id = isSpecial(selectedPtTrainer) ? null : selectedPtTrainer
@@ -93,7 +95,7 @@ export function PendingOtList({ assignments, trainers = [] }: Props) {
                 <p className="text-xs text-gray-500 mt-0.5 tabular-nums">
                   {a.member.phone ? a.member.phone.replace(/(\d{3})(\d{4})(\d{4})/, '$1-$2-$3') : '-'}
                   {a.member.registered_at && (
-                    <span className="ml-2 text-gray-400">· 등록 {new Date(a.member.registered_at).toLocaleDateString('ko', { year: '2-digit', month: '2-digit', day: '2-digit' }).replace(/\.\s*$/, '')}</span>
+                    <span className="ml-2 text-gray-400">· 등록 {a.member.registered_at > '1900-01-01' ? new Date(a.member.registered_at).toLocaleDateString('ko', { year: '2-digit', month: '2-digit', day: '2-digit' }).replace(/\.\s*$/, '') : '미상'}</span>
                   )}
                   {startDates[a.member_id] && (
                     <span className="ml-2 text-yellow-600 font-medium">· 시작 {new Date(startDates[a.member_id]! + 'T00:00:00').toLocaleDateString('ko', { year: '2-digit', month: '2-digit', day: '2-digit' }).replace(/\.\s*$/, '')}</span>
