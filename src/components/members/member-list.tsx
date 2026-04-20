@@ -50,38 +50,42 @@ function getProgressLabel(a?: OtAssignmentWithDetails | null): string {
   if (a.status === '신청대기') return '신청대기'
   if (a.status === '거부') return '거부'
   if (a.status === '추후결정') return '추후결정'
-
-  // 배정완료 세분화: 실제 트레이너가 배정된 것만 카운트 (추후배정/미신청/미배정은 제외)
-  if (a.status === '배정완료') {
-    const ptReal = !!a.pt_trainer_id && a.pt_assign_status !== 'later' && a.pt_assign_status !== 'not_requested'
-    const pptReal = !!a.ppt_trainer_id && a.ppt_assign_status !== 'later' && a.ppt_assign_status !== 'not_requested'
-    if (ptReal && pptReal) return 'PT,PPT배정'
-    if (ptReal) return 'PT배정완료'
-    if (pptReal) return 'PPT배정완료'
-    return '배정완료'
-  }
-
   if (a.notes?.includes('PT 전환')) return 'PT전환'
+
   const done = a.sessions?.filter((s) => s.completed_at).length ?? 0
   const scheduled = a.sessions?.filter((s) => s.scheduled_at && !s.completed_at).length ?? 0
+  const total = done + scheduled
 
+  // 세션이 하나도 없으면 대기
+  if (total === 0) {
+    // 배정완료 세분화
+    if (a.status === '배정완료') {
+      const ptReal = !!a.pt_trainer_id && a.pt_assign_status !== 'later' && a.pt_assign_status !== 'not_requested'
+      const pptReal = !!a.ppt_trainer_id && a.ppt_assign_status !== 'later' && a.ppt_assign_status !== 'not_requested'
+      if (ptReal && pptReal) return 'PT,PPT대기'
+      if (ptReal) return 'PT대기'
+      if (pptReal) return 'PPT대기'
+    }
+    return '대기'
+  }
+
+  // OT 진행 현황
   if (done >= 3 || a.status === '완료') return 'OT3차완료'
   if (done === 2 && scheduled > 0) return 'OT3차예정'
   if (done === 2) return 'OT2차완료'
   if (done === 1 && scheduled > 0) return 'OT2차예정'
   if (done === 1) return 'OT1차완료'
   if (done === 0 && scheduled > 0) return 'OT1차예정'
-  if (a.status === '진행중') return '진행중'
   return a.status
 }
 
 function getProgressColor(label: string): string {
   switch (label) {
     case '신청대기': return 'bg-yellow-400 text-black'
-    case '배정완료': return 'bg-sky-100 text-sky-700'
-    case 'PT배정완료': return 'bg-sky-200 text-sky-800'
-    case 'PPT배정완료': return 'bg-purple-200 text-purple-800'
-    case 'PT,PPT배정': return 'bg-sky-300 text-sky-900'
+    case '대기': return 'bg-gray-200 text-gray-600'
+    case 'PT대기': return 'bg-sky-100 text-sky-700'
+    case 'PPT대기': return 'bg-purple-100 text-purple-700'
+    case 'PT,PPT대기': return 'bg-sky-200 text-sky-800'
     case '진행중': return 'bg-blue-100 text-blue-700'
     case 'OT1차예정': return 'bg-amber-100 text-amber-700'
     case 'OT1차완료': return 'bg-blue-200 text-blue-800'
