@@ -51,12 +51,13 @@ function getProgressLabel(a?: OtAssignmentWithDetails | null): string {
   if (a.status === '거부') return '거부'
   if (a.status === '추후결정') return '추후결정'
 
-  // 배정완료 세분화
+  // 배정완료 세분화: 실제 트레이너가 배정된 것만 카운트 (추후배정/미신청/미배정은 제외)
   if (a.status === '배정완료') {
-    const hasPt = !!a.pt_trainer_id
-    const hasPpt = !!a.ppt_trainer_id
-    if (hasPt && hasPpt) return 'PT,PPT배정'
-    if (hasPt) return 'PT배정완료'
+    const ptReal = !!a.pt_trainer_id && a.pt_assign_status !== 'later' && a.pt_assign_status !== 'not_requested'
+    const pptReal = !!a.ppt_trainer_id && a.ppt_assign_status !== 'later' && a.ppt_assign_status !== 'not_requested'
+    if (ptReal && pptReal) return 'PT,PPT배정'
+    if (ptReal) return 'PT배정완료'
+    if (pptReal) return 'PPT배정완료'
     return '배정완료'
   }
 
@@ -79,6 +80,7 @@ function getProgressColor(label: string): string {
     case '신청대기': return 'bg-yellow-400 text-black'
     case '배정완료': return 'bg-sky-100 text-sky-700'
     case 'PT배정완료': return 'bg-sky-200 text-sky-800'
+    case 'PPT배정완료': return 'bg-purple-200 text-purple-800'
     case 'PT,PPT배정': return 'bg-sky-300 text-sky-900'
     case '진행중': return 'bg-blue-100 text-blue-700'
     case 'OT1차예정': return 'bg-amber-100 text-amber-700'
