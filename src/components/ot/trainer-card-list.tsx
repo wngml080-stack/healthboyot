@@ -532,6 +532,27 @@ export function TrainerCardList({ assignments, trainers = [], trainerId, trainer
   return (
     <>
       <div className="space-y-4">
+        {/* 회원추가 + 엑셀 */}
+        {trainerId && (
+          <div className="flex gap-2">
+            <Button
+              size="sm"
+              className="h-8 bg-blue-600 hover:bg-blue-700 text-white text-xs"
+              onClick={() => { setAddName(''); setAddPhone(''); setAddAssignDate(''); setAddDateUnknown(false); setAddCategory(''); setAddTrainingType(''); setAddDuration(''); setAddExerciseTime(''); setAddExerciseGoal(''); setAddNotes(''); setShowAddMember(true) }}
+            >
+              <UserPlus className="h-3.5 w-3.5 mr-1" />회원 추가
+            </Button>
+            <Button
+              size="sm"
+              variant="outline"
+              className="h-8 text-xs"
+              onClick={handleExcelDownload}
+            >
+              <Download className="h-3.5 w-3.5 mr-1" />엑셀
+            </Button>
+          </div>
+        )}
+
         {/* 회원 검색 + 기간/카테고리 필터 */}
         <div className="flex flex-col sm:flex-row gap-2 items-stretch">
           {/* 검색창 */}
@@ -600,23 +621,7 @@ export function TrainerCardList({ assignments, trainers = [], trainerId, trainer
 
         {/* 필터 + 회원추가 */}
         <div className="flex flex-wrap gap-2 items-center">
-          {trainerId && (<>
-            <Button
-              size="sm"
-              className="h-8 bg-blue-600 hover:bg-blue-700 text-white text-xs mr-1"
-              onClick={() => { setAddName(''); setAddPhone(''); setAddAssignDate(''); setAddDateUnknown(false); setAddCategory(''); setAddTrainingType(''); setAddDuration(''); setAddExerciseTime(''); setAddExerciseGoal(''); setAddNotes(''); setShowAddMember(true) }}
-            >
-              <UserPlus className="h-3.5 w-3.5 mr-1" />회원 추가
-            </Button>
-            <Button
-              size="sm"
-              variant="outline"
-              className="h-8 text-xs mr-2"
-              onClick={handleExcelDownload}
-            >
-              <Download className="h-3.5 w-3.5 mr-1" />엑셀
-            </Button>
-          </>
+          {false && (null
           )}
           {FILTERS.filter((f) => {
             if ((f === 'PT' || f === 'PPT') && (!trainerId || trainerId === 'unassigned')) return false
