@@ -519,7 +519,7 @@ export function MemberList({ initialMembers, trainers = [] }: Props) {
                       <TableCell className="text-center">
                         <OtCategoryBadge category={m.ot_category} />
                       </TableCell>
-                      <TableCell className="text-center text-xs text-gray-900">{m.start_date ? new Date(m.start_date).toLocaleDateString('ko', { month: '2-digit', day: '2-digit' }).replace(/\.\s*$/, '') : '-'}</TableCell>
+                      <TableCell className="text-center text-xs text-gray-900">{m.start_date ? new Date(m.start_date).toLocaleDateString('ko', { year: '2-digit', month: '2-digit', day: '2-digit' }).replace(/\.\s*$/, '') : '-'}</TableCell>
                       <TableCell className="text-center text-xs text-gray-900">{m.exercise_time ?? '-'}</TableCell>
                       <TableCell className="text-center text-xs" onClick={(e) => e.stopPropagation()}>
                         {m.assignment ? (() => {
