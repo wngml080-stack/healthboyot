@@ -165,7 +165,7 @@ export function MemberList({ initialMembers, trainers = [] }: Props) {
   }
 
   // 정렬
-  type SortKey = 'registered_at' | 'name' | 'ot_category' | 'exercise_time' | 'pt_trainer' | 'ppt_trainer' | 'progress'
+  type SortKey = 'registered_at' | 'name' | 'ot_category' | 'start_date' | 'exercise_time' | 'pt_trainer' | 'ppt_trainer' | 'progress'
   const [sortKey, setSortKey] = useState<SortKey>('registered_at')
   const [sortAsc, setSortAsc] = useState(false)
 
@@ -200,6 +200,7 @@ export function MemberList({ initialMembers, trainers = [] }: Props) {
         case 'registered_at': return m.registered_at ?? ''
         case 'name': return m.name
         case 'ot_category': return m.ot_category ?? ''
+        case 'start_date': return m.start_date ?? ''
         case 'exercise_time': return m.exercise_time ?? ''
         case 'pt_trainer': return m.assignment?.pt_trainer?.name ?? ''
         case 'ppt_trainer': return m.assignment?.ppt_trainer?.name ?? ''
@@ -473,9 +474,10 @@ export function MemberList({ initialMembers, trainers = [] }: Props) {
               <SortableHead label="등록일" sortKey="registered_at" currentKey={sortKey} asc={sortAsc} onSort={handleSort} width="w-[60px]" />
               <SortableHead label="이름" sortKey="name" currentKey={sortKey} asc={sortAsc} onSort={handleSort} width="w-[90px]" />
               <SortableHead label="종목" sortKey="ot_category" currentKey={sortKey} asc={sortAsc} onSort={handleSort} width="w-[50px]" />
+              <SortableHead label="시작일" sortKey="start_date" currentKey={sortKey} asc={sortAsc} onSort={handleSort} width="w-[60px]" />
               <SortableHead label="운동시간" sortKey="exercise_time" currentKey={sortKey} asc={sortAsc} onSort={handleSort} width="w-[70px]" />
-              <SortableHead label="PT담당" sortKey="pt_trainer" currentKey={sortKey} asc={sortAsc} onSort={handleSort} width="w-[65px]" />
-              <SortableHead label="PPT담당" sortKey="ppt_trainer" currentKey={sortKey} asc={sortAsc} onSort={handleSort} width="w-[65px]" />
+              <SortableHead label="PT" sortKey="pt_trainer" currentKey={sortKey} asc={sortAsc} onSort={handleSort} width="w-[50px]" />
+              <SortableHead label="PPT" sortKey="ppt_trainer" currentKey={sortKey} asc={sortAsc} onSort={handleSort} width="w-[50px]" />
               <SortableHead label="진행상태" sortKey="progress" currentKey={sortKey} asc={sortAsc} onSort={handleSort} width="w-[80px]" />
               <TableHead className="text-center text-gray-700 w-[30px]" />
             </TableRow>
@@ -515,6 +517,7 @@ export function MemberList({ initialMembers, trainers = [] }: Props) {
                       <TableCell className="text-center">
                         <OtCategoryBadge category={m.ot_category} />
                       </TableCell>
+                      <TableCell className="text-center text-xs text-gray-900">{m.start_date ? new Date(m.start_date).toLocaleDateString('ko', { month: '2-digit', day: '2-digit' }).replace(/\.\s*$/, '') : '-'}</TableCell>
                       <TableCell className="text-center text-xs text-gray-900">{m.exercise_time ?? '-'}</TableCell>
                       <TableCell className="text-center text-xs" onClick={(e) => e.stopPropagation()}>
                         {m.assignment ? (() => {

@@ -95,6 +95,9 @@ export function PendingOtList({ assignments, trainers = [] }: Props) {
                   {a.member.registered_at && (
                     <span className="ml-2 text-gray-400">· 등록 {new Date(a.member.registered_at).toLocaleDateString('ko', { year: '2-digit', month: '2-digit', day: '2-digit' }).replace(/\.\s*$/, '')}</span>
                   )}
+                  {startDates[a.member_id] && (
+                    <span className="ml-2 text-yellow-600 font-medium">· 시작 {new Date(startDates[a.member_id]! + 'T00:00:00').toLocaleDateString('ko', { year: '2-digit', month: '2-digit', day: '2-digit' }).replace(/\.\s*$/, '')}</span>
+                  )}
                 </p>
               </div>
               <div className="flex items-center gap-2">
