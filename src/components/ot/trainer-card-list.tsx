@@ -16,7 +16,7 @@ import {
   DialogTitle,
   DialogDescription,
 } from '@/components/ui/dialog'
-import { CheckCircle, User, AlertTriangle, BarChart3, CalendarDays, ClipboardList, Pencil, Plus, Undo2, UserPlus, Target, HeartPulse, Dumbbell, Phone } from 'lucide-react'
+import { CheckCircle, User, AlertTriangle, BarChart3, CalendarDays, ClipboardList, Pencil, Plus, Undo2, UserPlus, Target, HeartPulse, Dumbbell, Phone, Download } from 'lucide-react'
 import { upsertOtSession, updateOtAssignment, deleteOtSession } from '@/actions/ot'
 import { getOtProgram, getAssignmentExpandData } from '@/actions/ot-program'
 import { quickRegisterMember } from '@/actions/members'
@@ -381,6 +381,37 @@ export function TrainerCardList({ assignments, trainers = [], trainerId, trainer
     })
   }, [otOnlyAssignments, filter, trainerId, search, dateFrom, dateTo, categoryFilter])
 
+  const handleExcelDownload = async () => {
+    const { utils, writeFile } = await import('xlsx')
+    const rows = filteredMembers.map((a) => {
+      const done = a.sessions?.filter((s) => s.completed_at).length ?? 0
+      const scheduled = a.sessions?.filter((s) => s.scheduled_at && !s.completed_at).length ?? 0
+      let progress = '대기'
+      if (done >= 3) progress = 'OT3차완료'
+      else if (done === 2 && scheduled > 0) progress = 'OT3차예정'
+      else if (done === 2) progress = 'OT2차완료'
+      else if (done === 1 && scheduled > 0) progress = 'OT2차예정'
+      else if (done === 1) progress = 'OT1차완료'
+      else if (done === 0 && scheduled > 0) progress = 'OT1차예정'
+      return {
+        '이름': a.member.name,
+        '전화번호': a.member.phone ?? '',
+        '종목': a.member.ot_category ?? '',
+        '등록일': a.member.registered_at && a.member.registered_at > '1900-01-01' ? a.member.registered_at : '미상',
+        '운동시간': a.member.exercise_time ?? '',
+        '운동기간': a.member.duration_months ? String(a.member.duration_months) : '',
+        'PT담당': a.pt_trainer?.name ?? '',
+        'PPT담당': a.ppt_trainer?.name ?? '',
+        '진행상태': progress,
+        '상세정보': a.member.detail_info ?? '',
+        '특이사항': a.member.notes ?? '',
+      }
+    })
+    const wb = utils.book_new()
+    utils.book_append_sheet(wb, utils.json_to_sheet(rows), '회원목록')
+    writeFile(wb, `${trainerName ?? '전체'}_회원목록_${new Date().toISOString().split('T')[0]}.xlsx`)
+  }
+
   const getNextSessionNumber = (a: OtAssignmentWithDetails): number => {
     const completed = a.sessions?.filter((s) => s.completed_at).length ?? 0
     return completed + 1
@@ -569,14 +600,23 @@ export function TrainerCardList({ assignments, trainers = [], trainerId, trainer
 
         {/* 필터 + 회원추가 */}
         <div className="flex flex-wrap gap-2 items-center">
-          {trainerId && (
+          {trainerId && (<>
             <Button
               size="sm"
-              className="h-8 bg-blue-600 hover:bg-blue-700 text-white text-xs mr-2"
+              className="h-8 bg-blue-600 hover:bg-blue-700 text-white text-xs mr-1"
               onClick={() => { setAddName(''); setAddPhone(''); setAddAssignDate(''); setAddDateUnknown(false); setAddCategory(''); setAddTrainingType(''); setAddDuration(''); setAddExerciseTime(''); setAddExerciseGoal(''); setAddNotes(''); setShowAddMember(true) }}
             >
               <UserPlus className="h-3.5 w-3.5 mr-1" />회원 추가
             </Button>
+            <Button
+              size="sm"
+              variant="outline"
+              className="h-8 text-xs mr-2"
+              onClick={handleExcelDownload}
+            >
+              <Download className="h-3.5 w-3.5 mr-1" />엑셀
+            </Button>
+          </>
           )}
           {FILTERS.filter((f) => {
             if ((f === 'PT' || f === 'PPT') && (!trainerId || trainerId === 'unassigned')) return false
@@ -1993,7 +2033,7 @@ export function TrainerCardList({ assignments, trainers = [], trainerId, trainer
 
       {/* 상담카드 상세 보기 다이얼로그 */}
       <Dialog open={!!cardDetailTarget} onOpenChange={(o) => { if (!o) setCardDetailTarget(null) }}>
-        <DialogContent className="w-[95vw] max-w-[95vw] sm:max-w-3xl max-h-[92vh] overflow-y-auto p-0 gap-0 bg-white">
+        <DialogContent className="w-[100vw] max-w-[100vw] sm:max-w-4xl max-h-[95vh] overflow-y-auto p-0 sm:p-0 gap-0 bg-white rounded-none sm:rounded-lg">
           {cardDetailTarget && (() => {
             const c = cardDetailTarget
             const phone = c.member_phone?.replace(/(\d{3})(\d{4})(\d{4})/, '$1-$2-$3')
@@ -2054,19 +2094,19 @@ export function TrainerCardList({ assignments, trainers = [], trainerId, trainer
             return (
               <>
                 {/* 히어로 헤더 */}
-                <DialogHeader className={`px-6 pt-6 pb-5 bg-gradient-to-br ${genderColor} text-white`}>
-                  <div className="flex items-center gap-4">
-                    <div className="w-14 h-14 rounded-full bg-white/20 backdrop-blur flex items-center justify-center text-2xl font-black shrink-0">
+                <DialogHeader className={`px-6 sm:px-8 pt-8 pb-6 bg-gradient-to-br ${genderColor} text-white`}>
+                  <div className="flex items-center gap-5">
+                    <div className="w-16 h-16 rounded-full bg-white/20 backdrop-blur flex items-center justify-center text-3xl font-black shrink-0">
                       {initial}
                     </div>
                     <div className="min-w-0 flex-1">
-                      <DialogTitle className="text-xl font-bold text-white drop-shadow-sm">{c.member_name ?? '-'}</DialogTitle>
-                      <DialogDescription className="text-white/90 mt-0.5 flex flex-wrap gap-x-2 gap-y-0.5 text-xs">
+                      <DialogTitle className="text-2xl font-bold text-white drop-shadow-sm">{c.member_name ?? '-'}</DialogTitle>
+                      <DialogDescription className="text-white/90 mt-1 flex flex-wrap gap-x-3 gap-y-0.5 text-sm">
                         {c.member_gender && <span>{c.member_gender}</span>}
                         {c.age && <><span>·</span><span>{c.age}</span></>}
                         {phone && <><span>·</span>
                           <a href={`tel:${c.member_phone}`} className="inline-flex items-center gap-1 hover:underline">
-                            <Phone className="h-3 w-3" />{phone}
+                            <Phone className="h-3.5 w-3.5" />{phone}
                           </a>
                         </>}
                       </DialogDescription>
