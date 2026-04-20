@@ -470,8 +470,8 @@ export function MemberList({ initialMembers, trainers = [] }: Props) {
         <Table className="min-w-[700px]">
           <TableHeader>
             <TableRow className="bg-gray-50">
-              <SortableHead label="등록일" sortKey="registered_at" currentKey={sortKey} asc={sortAsc} onSort={handleSort} width="w-[80px]" />
-              <SortableHead label="이름" sortKey="name" currentKey={sortKey} asc={sortAsc} onSort={handleSort} width="w-[50px]" />
+              <SortableHead label="등록일" sortKey="registered_at" currentKey={sortKey} asc={sortAsc} onSort={handleSort} width="w-[60px]" />
+              <SortableHead label="이름" sortKey="name" currentKey={sortKey} asc={sortAsc} onSort={handleSort} width="w-[90px]" />
               <SortableHead label="종목" sortKey="ot_category" currentKey={sortKey} asc={sortAsc} onSort={handleSort} width="w-[50px]" />
               <SortableHead label="운동시간" sortKey="exercise_time" currentKey={sortKey} asc={sortAsc} onSort={handleSort} width="w-[70px]" />
               <SortableHead label="PT담당" sortKey="pt_trainer" currentKey={sortKey} asc={sortAsc} onSort={handleSort} width="w-[65px]" />
@@ -504,12 +504,10 @@ export function MemberList({ initialMembers, trainers = [] }: Props) {
                         <span className={`inline-flex items-center rounded px-1 py-0.5 text-[9px] font-bold mr-1 ${m.is_renewal ? 'bg-purple-100 text-purple-600' : m.is_existing_member ? 'bg-orange-100 text-orange-600' : 'bg-green-100 text-green-600'}`}>
                           {m.is_renewal ? '리뉴' : m.is_existing_member ? '이전' : '신규'}
                         </span>
-                        {m.registration_source === '수기' && (
-                          <span className="inline-flex items-center rounded px-1 py-0.5 text-[9px] font-bold mr-1 bg-amber-100 text-amber-700 border border-amber-300">
-                            {m.creator_name ? `${m.creator_name} 수기` : '수기'}
-                          </span>
-                        )}
                         {m.name}
+                        {m.registration_source === '수기' && (
+                          <span className="text-[9px] font-bold text-amber-700">수기</span>
+                        )}
                         {duplicateIds.has(m.id) && (
                           <span className="ml-1 inline-flex items-center rounded px-1 py-0.5 text-[9px] font-bold bg-red-100 text-red-600">중복</span>
                         )}

@@ -25,10 +25,16 @@ export interface TrainerScheduleSlot {
 
 export async function getTrainerScheduleSlots(trainerId: string): Promise<TrainerScheduleSlot[]> {
   const supabase = await createClient()
+  // 오늘 기준 ±2주만 조회 (충돌 검사용이라 과거 전체가 불필요)
+  const now = new Date()
+  const from = new Date(now.getFullYear(), now.getMonth(), now.getDate() - 14).toISOString().slice(0, 10)
+  const to = new Date(now.getFullYear(), now.getMonth(), now.getDate() + 14).toISOString().slice(0, 10)
   const { data, error } = await supabase
     .from('trainer_schedules')
     .select('member_name, schedule_type, scheduled_date, start_time')
     .eq('trainer_id', trainerId)
+    .gte('scheduled_date', from)
+    .lte('scheduled_date', to)
 
   if (error) return []
   return (data ?? []) as TrainerScheduleSlot[]

@@ -403,15 +403,19 @@ export async function changeTrainer(
   if (error) return { error: error.message }
 
   // 2. 로그 기록
-  await supabase.from('change_logs').insert({
-    target_type: 'ot_assignment',
-    target_id: assignmentId,
-    action: field === 'pt_trainer_id' ? 'PT 담당 변경' : 'PPT 담당 변경',
-    old_value: oldTrainerName,
-    new_value: newTrainerName,
-    note: `${memberName} 회원 — 히스토리 포함 이동`,
-    changed_by: session?.user?.id ?? null,
-  })
+  try {
+    await supabase.from('change_logs').insert({
+      target_type: 'ot_assignment',
+      target_id: assignmentId,
+      action: field === 'pt_trainer_id' ? 'PT 담당 변경' : 'PPT 담당 변경',
+      old_value: oldTrainerName,
+      new_value: newTrainerName,
+      note: `${memberName} 회원 — 히스토리 포함 이동`,
+      changed_by: session?.user?.id ?? null,
+    })
+  } catch (err) {
+    console.error('changeTrainer: change_logs insert 실패', err)
+  }
 
   return { success: true }
 }

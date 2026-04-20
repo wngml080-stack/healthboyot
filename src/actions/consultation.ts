@@ -196,6 +196,7 @@ export async function updatePublicCard(cardId: string, values: Record<string, un
     .single()
 
   if (!existing) return { error: '상담카드를 찾을 수 없습니다' }
+  if (existing.status !== '미연결') return { error: '이미 연결된 상담카드는 수정할 수 없습니다' }
 
   const { error } = await supabase
     .from('consultation_cards')

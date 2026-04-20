@@ -18,7 +18,7 @@ import {
 } from '@/components/ui/dialog'
 import { CheckCircle, User, AlertTriangle, BarChart3, CalendarDays, ClipboardList, Pencil, Plus, Undo2, UserPlus, Target, HeartPulse, Dumbbell, Phone } from 'lucide-react'
 import { upsertOtSession, updateOtAssignment, deleteOtSession } from '@/actions/ot'
-import { getOtProgram } from '@/actions/ot-program'
+import { getOtProgram, getAssignmentExpandData } from '@/actions/ot-program'
 import { quickRegisterMember } from '@/actions/members'
 import { createClient } from '@/lib/supabase/client'
 import dynamic from 'next/dynamic'
@@ -47,9 +47,6 @@ const SALES_STATUSES: { value: SalesStatus; label: string; color: string }[] = [
   { value: '클로징실패', label: '클로징실패', color: 'bg-red-100 text-red-700' },
 ]
 const PROBABILITY_OPTIONS = [20, 40, 60, 80, 100]
-
-const getSalesColor = (status: string) =>
-  SALES_STATUSES.find((s) => s.value === status)?.color ?? 'bg-gray-100 text-gray-700'
 
 const TIME_SLOTS = [
   '06:00','06:30','07:00','07:30','08:00','08:30','09:00','09:30',
@@ -111,7 +108,6 @@ export function TrainerCardList({ assignments, trainers = [], trainerId, trainer
   const loadExpandedData = async (memberId: string, assignmentId: string) => {
     if (expandedData[assignmentId]) return
     setExpandedData((p) => ({ ...p, [assignmentId]: 'loading' }))
-    const { getAssignmentExpandData } = await import('@/actions/ot-program')
     const { card, program } = await getAssignmentExpandData(memberId, assignmentId)
     setExpandedData((p) => ({ ...p, [assignmentId]: { card, program } }))
   }
@@ -130,7 +126,7 @@ export function TrainerCardList({ assignments, trainers = [], trainerId, trainer
   const [completeLoading, setCompleteLoading] = useState(false)
   const [completeResult, setCompleteResult] = useState<string>('')
   const [completeFailReason, setCompleteFailReason] = useState('')
-  const [completeActualSales, setCompleteActualSales] = useState<string>('')
+  const [completeActualSales] = useState<string>('')
   const [completeProgramData, setCompleteProgramData] = useState<OtProgram | null>(null)
   const [completeProgramLoading, setCompleteProgramLoading] = useState(false)
   const programFormRef = useRef<OtProgramFormRef>(null)
@@ -270,20 +266,6 @@ export function TrainerCardList({ assignments, trainers = [], trainerId, trainer
   const [ptSalesAmount, setPtSalesAmount] = useState(0)
   const [ptSalesCount, setPtSalesCount] = useState(0)
 
-  const openSalesEdit = (a: OtAssignmentWithDetails) => {
-    setSalesTarget(a)
-    setSalesStatus((a.sales_status as SalesStatus) || 'OT진행중')
-    setExpectedAmount(a.expected_amount || 0)
-    setExpectedSessions(a.expected_sessions || 0)
-    setClosingProb(a.closing_probability || 0)
-    setFailReason(a.closing_fail_reason || '')
-    setSalesNote(a.sales_note || '')
-    setPtSalesAmount(a.actual_sales ?? 0)
-    setPtSalesCount(0)
-    setIsSalesTarget(a.is_sales_target || false)
-    setIsPtConversion(a.is_pt_conversion || false)
-  }
-
   const handleSalesSave = async () => {
     if (!salesTarget) return
     setSalesLoading(true)
@@ -414,11 +396,16 @@ export function TrainerCardList({ assignments, trainers = [], trainerId, trainer
     setNextTime('')
     setCompleteResult('')
     setCompleteFailReason('')
-    // OT 프로그램 데이터 불러오기
-    setCompleteProgramLoading(true)
-    const prog = await getOtProgram(a.id)
-    setCompleteProgramData(prog)
-    setCompleteProgramLoading(false)
+    // OT 프로그램 데이터 — 캐시 우선, 없으면 fetch
+    const cached = expandedData[a.id]
+    if (cached && cached !== 'loading' && cached.program) {
+      setCompleteProgramData(cached.program)
+    } else {
+      setCompleteProgramLoading(true)
+      const prog = await getOtProgram(a.id)
+      setCompleteProgramData(prog)
+      setCompleteProgramLoading(false)
+    }
   }
 
   const handleCompleteSubmit = async () => {

@@ -101,8 +101,8 @@ export const OtProgramForm = forwardRef<OtProgramFormRef, Props>(function OtProg
   const [targetHR] = useState(program?.target_heart_rate?.toString() ?? '')
   const [startDate, setStartDate] = useState(program?.member_start_date ?? a.member.start_date ?? '')
   const [endDate, setEndDate] = useState(program?.member_end_date ?? '')
-  const [durationValue, setDurationValue] = useState<string>('')
-  const [durationUnit, setDurationUnit] = useState<'month' | 'day'>('month')
+  const [durationValue] = useState<string>('')
+  const [durationUnit] = useState<'month' | 'day'>('month')
 
   // 상담카드 데이터 — program에 있으면 사용, 없으면 빈 값 (서버에서 자동 채움)
   const [consultation, setConsultation] = useState<OtProgramConsultationData>(

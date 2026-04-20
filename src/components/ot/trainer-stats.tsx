@@ -5,15 +5,18 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
-import { ChevronLeft, ChevronRight, Target, CheckCircle2, Circle, Trash2, Plus, Camera, X } from 'lucide-react'
+import { Label } from '@/components/ui/label'
+import { ChevronLeft, ChevronRight, Target, CheckCircle2, Circle, Trash2, Plus, Camera, X, Send, ClipboardCheck } from 'lucide-react'
 import { format, startOfWeek, endOfWeek, addDays, addWeeks } from 'date-fns'
 import { ko } from 'date-fns/locale'
-import type { OtAssignmentWithDetails, OtProgram } from '@/types'
+import type { OtAssignmentWithDetails, OtProgram, OtRegistration } from '@/types'
 
 interface Props {
   assignments: OtAssignmentWithDetails[]
   trainerName: string
   programs: (OtProgram & { member_name?: string })[]
+  registrations?: OtRegistration[]
+  trainerId?: string
 }
 
 interface CellData { sessionNumber: number; completed: boolean; pastDue: boolean; approved: boolean; time?: string }
@@ -57,7 +60,7 @@ function useCustomTargets(key: string) {
   }
 }
 
-export function TrainerStats({ assignments, trainerName, programs }: Props) {
+export function TrainerStats({ assignments, trainerName, programs, registrations: initialRegistrations = [], trainerId }: Props) {
   const now = new Date()
   const captureRef = useRef<HTMLDivElement>(null)
   const [capturing, setCapturing] = useState(false)
@@ -768,6 +771,9 @@ export function TrainerStats({ assignments, trainerName, programs }: Props) {
         </Card>
       </div>
 
+      {/* ⑦ 회원권 등록 OT 인정건수 */}
+      <RegistrationSection registrations={initialRegistrations} trainerId={trainerId} trainerName={trainerName} />
+
       {/* ⑥ 차주 목표달성을 위한 To Do List */}
       <Card>
         <CardHeader className="pb-2">
@@ -842,6 +848,138 @@ export function TrainerStats({ assignments, trainerName, programs }: Props) {
   )
 }
 
+
+// eslint-disable-next-line @typescript-eslint/no-unused-vars
+function RegistrationSection({ registrations: initial, trainerId, trainerName }: { registrations: OtRegistration[]; trainerId?: string; trainerName: string }) {
+  const [registrations, setRegistrations] = useState(initial)
+  const [showForm, setShowForm] = useState(false)
+  const [memberName, setMemberName] = useState('')
+  const [membershipType, setMembershipType] = useState('')
+  const [amount, setAmount] = useState('')
+  const [credit, setCredit] = useState('1')
+  const [saving, setSaving] = useState(false)
+
+  const approved = registrations.filter((r) => r.approval_status === '승인')
+  const pending = registrations.filter((r) => r.approval_status === '제출완료')
+  const totalCredit = approved.reduce((s, r) => s + r.ot_credit, 0)
+  const totalAmount = approved.reduce((s, r) => s + r.registration_amount, 0)
+
+  const handleSubmit = async () => {
+    if (!memberName.trim() || !membershipType.trim()) return
+    setSaving(true)
+    const { submitOtRegistration } = await import('@/actions/ot-registration')
+    const result = await submitOtRegistration({
+      member_name: memberName.trim(),
+      membership_type: membershipType.trim(),
+      registration_amount: Number(amount) || 0,
+      ot_credit: Number(credit) || 1,
+    })
+    setSaving(false)
+    if ('error' in result && result.error) {
+      alert('제출 실패: ' + result.error)
+      return
+    }
+    if ('data' in result && result.data) {
+      setRegistrations((prev) => [result.data as OtRegistration, ...prev])
+    }
+    setMemberName('')
+    setMembershipType('')
+    setAmount('')
+    setCredit('1')
+    setShowForm(false)
+  }
+
+  return (
+    <Card>
+      <CardHeader className="pb-2">
+        <div className="flex items-center justify-between">
+          <CardTitle className="text-base text-gray-900 flex items-center gap-2">
+            <ClipboardCheck className="h-4 w-4 text-emerald-500" />
+            회원권 등록 OT 인정건수
+          </CardTitle>
+          <div className="flex items-center gap-2">
+            <Badge className="bg-emerald-100 text-emerald-700 text-xs">승인 {totalCredit}건</Badge>
+            {pending.length > 0 && <Badge className="bg-yellow-100 text-yellow-700 text-xs">대기 {pending.length}건</Badge>}
+            <Button size="sm" className="h-7 bg-emerald-500 hover:bg-emerald-600 text-white text-xs" onClick={() => setShowForm(!showForm)}>
+              <Plus className="h-3 w-3 mr-1" />등록
+            </Button>
+          </div>
+        </div>
+      </CardHeader>
+      <CardContent className="space-y-3">
+        {/* 입력 폼 */}
+        {showForm && (
+          <div className="rounded-lg border border-emerald-200 bg-emerald-50/50 p-3 space-y-3">
+            <div className="grid grid-cols-2 gap-2">
+              <div className="space-y-1">
+                <Label className="text-[11px] font-bold text-gray-600">이름</Label>
+                <Input value={memberName} onChange={(e) => setMemberName(e.target.value)} placeholder="회원 이름" className="h-8 text-sm bg-white" />
+              </div>
+              <div className="space-y-1">
+                <Label className="text-[11px] font-bold text-gray-600">등록 회원권</Label>
+                <Input value={membershipType} onChange={(e) => setMembershipType(e.target.value)} placeholder="예: 헬스3개월" className="h-8 text-sm bg-white" />
+              </div>
+            </div>
+            <div className="grid grid-cols-2 gap-2">
+              <div className="space-y-1">
+                <Label className="text-[11px] font-bold text-gray-600">등록 금액 (원)</Label>
+                <Input type="number" value={amount} onChange={(e) => setAmount(e.target.value)} placeholder="0" className="h-8 text-sm bg-white" />
+              </div>
+              <div className="space-y-1">
+                <Label className="text-[11px] font-bold text-gray-600">인정 건수</Label>
+                <Input type="number" value={credit} onChange={(e) => setCredit(e.target.value)} placeholder="1" className="h-8 text-sm bg-white" />
+              </div>
+            </div>
+            <div className="flex gap-2 justify-end">
+              <Button size="sm" variant="outline" className="h-8 text-xs bg-white" onClick={() => setShowForm(false)}>취소</Button>
+              <Button size="sm" className="h-8 text-xs bg-emerald-600 hover:bg-emerald-700 text-white" onClick={handleSubmit} disabled={saving || !memberName.trim() || !membershipType.trim()}>
+                <Send className="h-3 w-3 mr-1" />{saving ? '제출 중...' : '제출'}
+              </Button>
+            </div>
+          </div>
+        )}
+
+        {/* 요약 */}
+        {approved.length > 0 && (
+          <div className="grid grid-cols-2 gap-2">
+            <div className="rounded-lg bg-emerald-50 p-2.5 text-center">
+              <p className="text-lg font-bold text-emerald-700">{totalCredit}</p>
+              <p className="text-[10px] text-emerald-600">승인 인정건수</p>
+            </div>
+            <div className="rounded-lg bg-blue-50 p-2.5 text-center">
+              <p className="text-lg font-bold text-blue-700">{totalAmount.toLocaleString()}<span className="text-xs">원</span></p>
+              <p className="text-[10px] text-blue-600">등록 매출</p>
+            </div>
+          </div>
+        )}
+
+        {/* 목록 */}
+        {registrations.length === 0 ? (
+          <p className="text-xs text-gray-400 text-center py-3">등록된 인정건수가 없습니다. 위 &quot;등록&quot; 버튼으로 추가해주세요.</p>
+        ) : (
+          <div className="space-y-1.5">
+            {registrations.map((r) => {
+              const statusColor = r.approval_status === '승인' ? 'bg-green-500' : r.approval_status === '반려' ? 'bg-red-500' : 'bg-yellow-500'
+              return (
+                <div key={r.id} className={`flex items-center justify-between rounded-lg px-3 py-2 ${r.approval_status === '승인' ? 'bg-green-50' : r.approval_status === '반려' ? 'bg-red-50' : 'bg-yellow-50'}`}>
+                  <div className="flex items-center gap-2 min-w-0">
+                    <Badge className={`${statusColor} text-white text-[9px] shrink-0`}>{r.approval_status}</Badge>
+                    <span className="text-sm font-bold text-gray-900 truncate">{r.member_name}</span>
+                    <span className="text-[11px] text-gray-500 truncate">{r.membership_type}</span>
+                  </div>
+                  <div className="flex items-center gap-2 shrink-0">
+                    <span className="text-xs text-gray-600">{r.registration_amount.toLocaleString()}원</span>
+                    <Badge className="bg-gray-200 text-gray-700 text-[10px]">{r.ot_credit}건</Badge>
+                  </div>
+                </div>
+              )
+            })}
+          </div>
+        )}
+      </CardContent>
+    </Card>
+  )
+}
 
 function StatPill({ label, value, color }: { label: string; value: number | string; color: string }) {
   return (

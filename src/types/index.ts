@@ -269,6 +269,29 @@ export interface OtProgram {
   updated_at: string
 }
 
+// ── OT 인정건수 (회원권 등록) ──
+export type OtRegistrationApprovalStatus = '제출완료' | '승인' | '반려'
+
+export interface OtRegistration {
+  id: string
+  trainer_id: string
+  member_name: string
+  membership_type: string
+  registration_amount: number
+  ot_credit: number
+  approval_status: OtRegistrationApprovalStatus
+  submitted_at: string
+  approved_at: string | null
+  approved_by: string | null
+  rejection_reason: string | null
+  created_at: string
+  updated_at: string
+}
+
+export interface OtRegistrationWithTrainer extends OtRegistration {
+  trainer: Pick<Profile, 'id' | 'name'> | null
+}
+
 // ── JOIN 결과 타입 ──
 export interface OtAssignmentWithDetails extends OtAssignment {
   member: Member

@@ -419,9 +419,19 @@ export async function getPendingOtPrograms(): Promise<(OtProgram & { member_name
 export async function getAllOtPrograms(options?: { includeAll?: boolean }): Promise<(OtProgram & { member_name?: string })[]> {
   const supabase = await createClient()
 
+  // 목록/통계용: 무거운 JSON 컬럼 제외 (consultation_data, inbody_data, images, session_1~3)
+  const lightSelect = `
+    id, ot_assignment_id, member_id, trainer_name, sessions, approval_status,
+    athletic_goal, total_sets_per_day, recommended_days_per_week,
+    exercise_duration_min, target_heart_rate, member_start_date, member_end_date,
+    submitted_at, approved_at, approved_by, rejection_reason, share_token,
+    created_at, updated_at, created_by,
+    member:members!inner(name)
+  `
+
   let query = supabase
     .from('ot_programs')
-    .select('*, member:members!inner(name)')
+    .select(lightSelect)
 
   if (!options?.includeAll) {
     query = query.in('approval_status', ['제출완료', '승인', '반려'])

@@ -1,6 +1,7 @@
 import { Suspense } from 'react'
 import { getCurrentProfile } from '@/actions/auth'
 import { getAllOtPrograms } from '@/actions/ot-program'
+import { getOtRegistrations } from '@/actions/ot-registration'
 import { PageTitle } from '@/components/shared/page-title'
 import { ApprovalList } from '@/components/approvals/approval-list'
 import { redirect } from 'next/navigation'
@@ -23,13 +24,20 @@ async function ApprovalsContent() {
   }
 
   const isAdmin = ['admin', '관리자'].includes(profile.role)
-  const allPrograms = await getAllOtPrograms()
+  const [allPrograms, allRegistrations] = await Promise.all([
+    getAllOtPrograms(),
+    getOtRegistrations(),
+  ])
 
   const programs = isAdmin
     ? allPrograms
     : allPrograms.filter((p) => p.trainer_name === profile.name)
 
-  return <ApprovalList programs={programs} profile={profile} />
+  const registrations = isAdmin
+    ? allRegistrations
+    : allRegistrations.filter((r) => r.trainer_id === profile.id)
+
+  return <ApprovalList programs={programs} profile={profile} registrations={registrations} />
 }
 
 function ApprovalsSkeleton() {

@@ -4,12 +4,22 @@ import { getTrainerFolders } from '@/actions/trainer-folders'
 import { getStaffList } from '@/actions/staff'
 import { getCurrentProfile } from '@/actions/auth'
 import { getAllOtPrograms } from '@/actions/ot-program'
+import { getOtRegistrationsByTrainer } from '@/actions/ot-registration'
 import { getTrainerScheduleSlots } from '@/actions/schedule'
-import { TrainerCardList } from '@/components/ot/trainer-card-list'
-import { TrainerFolderGrid } from '@/components/ot/trainer-folder-grid'
+import dynamic from 'next/dynamic'
 import { TrainerSubNav } from '@/components/ot/trainer-sub-nav'
-import { TrainerStats } from '@/components/ot/trainer-stats'
-import { WeeklyCalendar } from '@/components/ot/weekly-calendar'
+const TrainerCardList = dynamic(() => import('@/components/ot/trainer-card-list').then((m) => m.TrainerCardList), {
+  loading: () => <div className="py-10 text-center text-sm text-gray-500">회원 목록 로드 중...</div>,
+})
+const TrainerFolderGrid = dynamic(() => import('@/components/ot/trainer-folder-grid').then((m) => m.TrainerFolderGrid), {
+  loading: () => <div className="py-10 text-center text-sm text-gray-500">폴더 로드 중...</div>,
+})
+const TrainerStats = dynamic(() => import('@/components/ot/trainer-stats').then((m) => m.TrainerStats), {
+  loading: () => <div className="py-10 text-center text-sm text-gray-500">통계 로드 중...</div>,
+})
+const WeeklyCalendar = dynamic(() => import('@/components/ot/weekly-calendar').then((m) => m.WeeklyCalendar), {
+  loading: () => <div className="py-10 text-center text-sm text-gray-500">캘린더 로드 중...</div>,
+})
 import { PageTitle } from '@/components/shared/page-title'
 import { NotificationBell } from '@/components/ot/notification-bell'
 import { ArrowLeft } from 'lucide-react'
@@ -91,15 +101,21 @@ async function TrainerDetailView({ trainerId, tab }: { trainerId: string; tab: s
   let profile: Awaited<ReturnType<typeof getCurrentProfile>> = null
   let allPrograms: Awaited<ReturnType<typeof getAllOtPrograms>> = []
   let scheduleSlots: Awaited<ReturnType<typeof getTrainerScheduleSlots>> = []
+  let trainerRegistrations: Awaited<ReturnType<typeof getOtRegistrationsByTrainer>> = []
 
   try {
     const results = await Promise.all([
       getOtAssignments({ trainerId }),
       getCurrentProfile(),
       getStaffList(),
-      getAllOtPrograms(tab === 'stats' ? { includeAll: true } : undefined),
+      tab === 'stats'
+        ? getAllOtPrograms({ includeAll: true })
+        : Promise.resolve([]),
       trainerId !== 'unassigned'
         ? getTrainerScheduleSlots(trainerId)
+        : Promise.resolve([]),
+      tab === 'stats' && trainerId !== 'unassigned'
+        ? getOtRegistrationsByTrainer(trainerId)
         : Promise.resolve([]),
     ])
     trainerAssignments = results[0]
@@ -107,6 +123,7 @@ async function TrainerDetailView({ trainerId, tab }: { trainerId: string; tab: s
     staffList = results[2]
     allPrograms = results[3]
     scheduleSlots = results[4]
+    trainerRegistrations = results[5]
   } catch (err) {
     console.error('[OtPage] Error loading trainer data:', err)
     return (
@@ -180,7 +197,7 @@ async function TrainerDetailView({ trainerId, tab }: { trainerId: string; tab: s
           )}
 
           {tab === 'stats' && (
-            <TrainerStats assignments={trainerAssignments} trainerName={trainerName} programs={trainerPrograms} />
+            <TrainerStats assignments={trainerAssignments} trainerName={trainerName} programs={trainerPrograms} registrations={trainerRegistrations} trainerId={trainerId} />
           )}
         </div>
       </div>

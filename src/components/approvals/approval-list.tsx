@@ -19,11 +19,12 @@ const OtProgramForm = dynamic(() => import('@/components/ot/ot-program-form').th
   ssr: false,
   loading: () => <div className="py-10 text-center text-sm text-gray-500">프로그램 로드 중...</div>,
 }) as unknown as typeof import('@/components/ot/ot-program-form').OtProgramForm
-import type { OtProgram, OtProgramSession, OtAssignmentWithDetails, Profile, ConsultationCard } from '@/types'
+import type { OtProgram, OtProgramSession, OtAssignmentWithDetails, Profile, ConsultationCard, OtRegistrationWithTrainer } from '@/types'
 
 interface Props {
   programs: (OtProgram & { member_name?: string })[]
   profile: Profile
+  registrations?: OtRegistrationWithTrainer[]
 }
 
 const STATUS_BADGE: Record<string, string> = {
@@ -32,7 +33,7 @@ const STATUS_BADGE: Record<string, string> = {
   '반려': 'bg-red-500 text-white',
 }
 
-export function ApprovalList({ programs: initialPrograms, profile }: Props) {
+export function ApprovalList({ programs: initialPrograms, profile, registrations: initialRegistrations = [] }: Props) {
   const router = useRouter()
   const isAdmin = ['admin', '관리자'].includes(profile.role)
   const [programs, setPrograms] = useState(initialPrograms)
@@ -40,6 +41,32 @@ export function ApprovalList({ programs: initialPrograms, profile }: Props) {
   const [loading, setLoading] = useState(false)
   const [rejectId, setRejectId] = useState<string | null>(null)
   const [rejectReason, setRejectReason] = useState('')
+
+  // 인정건수 승인
+  const [regs, setRegs] = useState(initialRegistrations)
+  const [regRejectId, setRegRejectId] = useState<string | null>(null)
+  const [regRejectReason, setRegRejectReason] = useState('')
+  const pendingRegs = regs.filter((r) => r.approval_status === '제출완료')
+  const processedRegs = regs.filter((r) => r.approval_status !== '제출완료')
+
+  const handleRegApprove = async (id: string) => {
+    setRegs((prev) => prev.map((r) => r.id === id ? { ...r, approval_status: '승인' as const, approved_at: new Date().toISOString() } : r))
+    const { approveOtRegistration } = await import('@/actions/ot-registration')
+    await approveOtRegistration(id)
+    router.refresh()
+  }
+
+  const handleRegReject = async () => {
+    if (!regRejectId || !regRejectReason) return
+    const id = regRejectId
+    const reason = regRejectReason
+    setRegs((prev) => prev.map((r) => r.id === id ? { ...r, approval_status: '반려' as const, rejection_reason: reason } : r))
+    setRegRejectId(null)
+    setRegRejectReason('')
+    const { rejectOtRegistration } = await import('@/actions/ot-registration')
+    await rejectOtRegistration(id, reason)
+    router.refresh()
+  }
 
   // 세션별 피드백 + 펼침 (다중 펼침 지원)
   const [sessionFeedbacks, setSessionFeedbacks] = useState<Record<number, string>>({})
@@ -216,6 +243,66 @@ export function ApprovalList({ programs: initialPrograms, profile }: Props) {
                 </CardContent>
               </Card>
             ))}
+          </div>
+        </div>
+      )}
+
+      {/* 회원권 등록 OT 인정건수 */}
+      {(pendingRegs.length > 0 || processedRegs.length > 0) && (
+        <div>
+          <h3 className="text-lg font-bold text-white mb-3 flex items-center gap-2">
+            회원권 등록 OT 인정건수
+            {pendingRegs.length > 0 && <Badge className="bg-yellow-500 text-white">대기 {pendingRegs.length}</Badge>}
+            <Badge className="bg-green-500 text-white">승인 {regs.filter((r) => r.approval_status === '승인').reduce((s, r) => s + r.ot_credit, 0)}건</Badge>
+          </h3>
+          <div className="grid gap-2">
+            {pendingRegs.map((r) => (
+              <Card key={r.id} className="bg-white border-l-4 border-l-emerald-400 border-y border-r border-gray-200 shadow-sm">
+                <CardContent className="py-3 px-4 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                  <div className="flex-1 min-w-0">
+                    <div className="flex items-center gap-2 flex-wrap mb-1">
+                      <Badge className="bg-yellow-100 text-yellow-800 border border-yellow-300 text-[10px]">제출완료</Badge>
+                      <p className="font-bold text-gray-900">{r.member_name}</p>
+                      <span className="text-xs text-gray-500">{r.trainer?.name ?? '-'}</span>
+                    </div>
+                    <div className="flex items-center gap-2 text-[11px] flex-wrap">
+                      <span className="bg-gray-100 text-gray-700 px-2 py-0.5 rounded-full">{r.membership_type}</span>
+                      <span className="bg-blue-50 text-blue-700 px-2 py-0.5 rounded-full">{r.registration_amount.toLocaleString()}원</span>
+                      <span className="bg-emerald-50 text-emerald-700 px-2 py-0.5 rounded-full font-bold">{r.ot_credit}건</span>
+                    </div>
+                  </div>
+                  {isAdmin && (
+                    <div className="flex gap-2 shrink-0">
+                      <Button size="sm" className="bg-green-600 hover:bg-green-700 text-white h-8 text-xs" onClick={() => handleRegApprove(r.id)}>
+                        <CheckCircle className="h-3.5 w-3.5 mr-1" />승인
+                      </Button>
+                      <Button size="sm" className="bg-red-600 hover:bg-red-700 text-white h-8 text-xs" onClick={() => { setRegRejectId(r.id); setRegRejectReason('') }}>
+                        <XCircle className="h-3.5 w-3.5 mr-1" />반려
+                      </Button>
+                    </div>
+                  )}
+                </CardContent>
+              </Card>
+            ))}
+            {processedRegs.length > 0 && (
+              <details className="mt-1">
+                <summary className="text-xs text-gray-400 cursor-pointer hover:text-gray-300">처리완료 {processedRegs.length}건 보기</summary>
+                <div className="grid gap-1.5 mt-2">
+                  {processedRegs.map((r) => (
+                    <Card key={r.id} className="bg-white border-gray-200 shadow-sm">
+                      <CardContent className="py-2 px-4 flex items-center justify-between gap-2">
+                        <div className="flex items-center gap-2 flex-wrap min-w-0">
+                          <Badge className={r.approval_status === '승인' ? 'bg-green-500 text-white' : 'bg-red-500 text-white'}>{r.approval_status}</Badge>
+                          <span className="font-bold text-gray-900 text-sm">{r.member_name}</span>
+                          <span className="text-xs text-gray-500">{r.trainer?.name} · {r.membership_type} · {r.registration_amount.toLocaleString()}원 · {r.ot_credit}건</span>
+                          {r.rejection_reason && <span className="text-xs text-red-500">({r.rejection_reason})</span>}
+                        </div>
+                      </CardContent>
+                    </Card>
+                  ))}
+                </div>
+              </details>
+            )}
           </div>
         </div>
       )}
@@ -599,6 +686,21 @@ export function ApprovalList({ programs: initialPrograms, profile }: Props) {
           <div className="flex justify-end gap-2">
             <Button variant="outline" className="bg-white text-gray-700 border-gray-300 hover:bg-gray-50" onClick={() => setRejectId(null)}>취소</Button>
             <Button className="bg-red-600 hover:bg-red-700 text-white" onClick={handleReject} disabled={!rejectReason}>반려</Button>
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* 인정건수 반려 다이얼로그 */}
+      <Dialog open={!!regRejectId} onOpenChange={() => setRegRejectId(null)}>
+        <DialogContent className="max-w-sm">
+          <DialogHeader>
+            <DialogTitle>인정건수 반려</DialogTitle>
+            <DialogDescription>반려 사유를 입력해주세요</DialogDescription>
+          </DialogHeader>
+          <Input value={regRejectReason} onChange={(e) => setRegRejectReason(e.target.value)} placeholder="반려 사유" />
+          <div className="flex justify-end gap-2">
+            <Button variant="outline" className="bg-white text-gray-700 border-gray-300 hover:bg-gray-50" onClick={() => setRegRejectId(null)}>취소</Button>
+            <Button className="bg-red-600 hover:bg-red-700 text-white" onClick={handleRegReject} disabled={!regRejectReason}>반려</Button>
           </div>
         </DialogContent>
       </Dialog>
