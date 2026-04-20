@@ -101,7 +101,7 @@ export function MemberTimeline({ assignment }: Props) {
                   {event.description && (
                     <p className="text-xs text-gray-600 mt-1 whitespace-pre-wrap break-words">{event.description}</p>
                   )}
-                  <p className="text-[11px] text-gray-400 mt-1">
+                  <p className="text-xs text-gray-400 mt-1">
                     {format(new Date(event.date), 'yyyy.M.d', { locale: ko })}
                   </p>
                 </div>

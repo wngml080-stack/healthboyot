@@ -477,7 +477,7 @@ export function TrainerStats({ assignments, trainerName, programs, registrations
       <Card className="overflow-hidden">
         <CardContent className="p-0">
           <div className="overflow-x-auto">
-            <table className="w-full border-collapse text-[9px]">
+            <table className="w-full border-collapse text-[10px]">
               <thead>
                 <tr className="bg-gray-900 text-white">
                   <th className="sticky left-0 z-10 bg-gray-900 px-1 py-1 text-center font-bold whitespace-nowrap w-[90px] min-w-[90px]">회원명</th>
@@ -510,7 +510,7 @@ export function TrainerStats({ assignments, trainerName, programs, registrations
                         <td key={ci} className={`px-0 py-1.5 text-center ${col.isToday ? 'bg-yellow-50' : ''}`}>
                           {viewMode === 'weekly' ? (
                             <div className={`inline-flex flex-col items-center justify-center rounded-sm px-1 py-0.5 ${bg}`}>
-                              <span className="text-[9px] font-bold leading-none">{cell.time ?? ''}</span>
+                              <span className="text-[10px] font-bold leading-none">{cell.time ?? ''}</span>
                               <span className="text-[8px] leading-none opacity-80">{cell.sessionNumber}차</span>
                             </div>
                           ) : (
@@ -533,7 +533,7 @@ export function TrainerStats({ assignments, trainerName, programs, registrations
               </tbody>
             </table>
           </div>
-          <div className="flex flex-wrap items-center gap-3 px-2 py-1.5 bg-gray-50 border-t border-gray-200 text-[9px] text-gray-600">
+          <div className="flex flex-wrap items-center gap-3 px-2 py-1.5 bg-gray-50 border-t border-gray-200 text-[10px] text-gray-600">
             <span className="flex items-center gap-1"><span className="w-2.5 h-2.5 rounded-sm bg-emerald-500" /> 완료</span>
             <span className="flex items-center gap-1"><span className="w-2.5 h-2.5 rounded-sm bg-amber-500" /> 완료+승인</span>
             <span className="flex items-center gap-1"><span className="w-2.5 h-2.5 rounded-sm bg-blue-500" /> 예정</span>
@@ -819,7 +819,7 @@ export function TrainerStats({ assignments, trainerName, programs, registrations
                   <div key={dk} className={`rounded-lg border p-2 ${isToday ? 'border-yellow-400 bg-yellow-50/50' : 'border-gray-200'}`}>
                     <div className="flex items-center justify-between mb-1.5">
                       <span className={`text-[10px] font-bold ${isToday ? 'text-yellow-700' : 'text-gray-600'}`}>{DAY_LABELS[i]} ({format(dayDate, 'M/d')}){isToday && <span className="ml-1 text-yellow-500">TODAY</span>}</span>
-                      {dayItems.length > 0 && <span className="text-[9px] text-gray-400">{doneCount}/{dayItems.length}</span>}
+                      {dayItems.length > 0 && <span className="text-[10px] text-gray-400">{doneCount}/{dayItems.length}</span>}
                     </div>
                     <div className="space-y-1">
                       {dayItems.map((g) => (
@@ -873,6 +873,7 @@ function RegistrationSection({ registrations: initial, trainerId, trainerName }:
       membership_type: membershipType.trim(),
       registration_amount: Number(amount) || 0,
       ot_credit: Number(credit) || 1,
+      folder_trainer_id: trainerId || undefined,
     })
     setSaving(false)
     if ('error' in result && result.error) {
@@ -912,21 +913,21 @@ function RegistrationSection({ registrations: initial, trainerId, trainerName }:
           <div className="rounded-lg border border-emerald-200 bg-emerald-50/50 p-3 space-y-3">
             <div className="grid grid-cols-2 gap-2">
               <div className="space-y-1">
-                <Label className="text-[11px] font-bold text-gray-600">이름</Label>
+                <Label className="text-xs font-bold text-gray-600">이름</Label>
                 <Input value={memberName} onChange={(e) => setMemberName(e.target.value)} placeholder="회원 이름" className="h-8 text-sm bg-white" />
               </div>
               <div className="space-y-1">
-                <Label className="text-[11px] font-bold text-gray-600">등록 회원권</Label>
+                <Label className="text-xs font-bold text-gray-600">등록 회원권</Label>
                 <Input value={membershipType} onChange={(e) => setMembershipType(e.target.value)} placeholder="예: 헬스3개월" className="h-8 text-sm bg-white" />
               </div>
             </div>
             <div className="grid grid-cols-2 gap-2">
               <div className="space-y-1">
-                <Label className="text-[11px] font-bold text-gray-600">등록 금액 (원)</Label>
+                <Label className="text-xs font-bold text-gray-600">등록 금액 (원)</Label>
                 <Input type="number" value={amount} onChange={(e) => setAmount(e.target.value)} placeholder="0" className="h-8 text-sm bg-white" />
               </div>
               <div className="space-y-1">
-                <Label className="text-[11px] font-bold text-gray-600">인정 건수</Label>
+                <Label className="text-xs font-bold text-gray-600">인정 건수</Label>
                 <Input type="number" value={credit} onChange={(e) => setCredit(e.target.value)} placeholder="1" className="h-8 text-sm bg-white" />
               </div>
             </div>
@@ -963,9 +964,9 @@ function RegistrationSection({ registrations: initial, trainerId, trainerName }:
               return (
                 <div key={r.id} className={`flex items-center justify-between rounded-lg px-3 py-2 ${r.approval_status === '승인' ? 'bg-green-50' : r.approval_status === '반려' ? 'bg-red-50' : 'bg-yellow-50'}`}>
                   <div className="flex items-center gap-2 min-w-0">
-                    <Badge className={`${statusColor} text-white text-[9px] shrink-0`}>{r.approval_status}</Badge>
+                    <Badge className={`${statusColor} text-white text-[10px] shrink-0`}>{r.approval_status}</Badge>
                     <span className="text-sm font-bold text-gray-900 truncate">{r.member_name}</span>
-                    <span className="text-[11px] text-gray-500 truncate">{r.membership_type}</span>
+                    <span className="text-xs text-gray-500 truncate">{r.membership_type}</span>
                   </div>
                   <div className="flex items-center gap-2 shrink-0">
                     <span className="text-xs text-gray-600">{r.registration_amount.toLocaleString()}원</span>

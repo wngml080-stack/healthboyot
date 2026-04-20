@@ -225,19 +225,19 @@ export function ApprovalList({ programs: initialPrograms, profile, registrations
                   <div className="grid grid-cols-4 gap-2 text-xs">
                     <div className="text-center">
                       <p className="text-base font-bold text-blue-600">{t.total}</p>
-                      <p className="text-gray-500 text-[11px]">OT 수</p>
+                      <p className="text-gray-500 text-xs">OT 수</p>
                     </div>
                     <div className="text-center">
                       <p className="text-base font-bold text-yellow-600">{t.pending}</p>
-                      <p className="text-gray-500 text-[11px]">대기</p>
+                      <p className="text-gray-500 text-xs">대기</p>
                     </div>
                     <div className="text-center">
                       <p className="text-base font-bold text-green-600">{t.approved}</p>
-                      <p className="text-gray-500 text-[11px]">승인</p>
+                      <p className="text-gray-500 text-xs">승인</p>
                     </div>
                     <div className="text-center">
                       <p className="text-base font-bold text-purple-600">{t.inbody}</p>
-                      <p className="text-gray-500 text-[11px]">인바디</p>
+                      <p className="text-gray-500 text-xs">인바디</p>
                     </div>
                   </div>
                 </CardContent>
@@ -265,7 +265,7 @@ export function ApprovalList({ programs: initialPrograms, profile, registrations
                       <p className="font-bold text-gray-900">{r.member_name}</p>
                       <span className="text-xs text-gray-500">{r.trainer?.name ?? '-'}</span>
                     </div>
-                    <div className="flex items-center gap-2 text-[11px] flex-wrap">
+                    <div className="flex items-center gap-2 text-xs flex-wrap">
                       <span className="bg-gray-100 text-gray-700 px-2 py-0.5 rounded-full">{r.membership_type}</span>
                       <span className="bg-blue-50 text-blue-700 px-2 py-0.5 rounded-full">{r.registration_amount.toLocaleString()}원</span>
                       <span className="bg-emerald-50 text-emerald-700 px-2 py-0.5 rounded-full font-bold">{r.ot_credit}건</span>
@@ -332,7 +332,7 @@ export function ApprovalList({ programs: initialPrograms, profile, registrations
                         <p className="font-bold text-gray-900 text-base">{prog.member_name}</p>
                         <Badge className="bg-yellow-100 text-yellow-800 border border-yellow-300 text-[10px]">제출완료</Badge>
                       </div>
-                      <div className="flex items-center gap-1.5 flex-wrap text-[11px]">
+                      <div className="flex items-center gap-1.5 flex-wrap text-xs">
                         <span className="inline-flex items-center px-2 py-0.5 rounded-full bg-gray-100 text-gray-700 font-medium">
                           담당 {prog.trainer_name ?? '-'}
                         </span>
@@ -494,7 +494,7 @@ export function ApprovalList({ programs: initialPrograms, profile, registrations
                                   {session.is_pt_conversion && <Badge className="bg-purple-600 text-white text-[10px]">PT전환</Badge>}
                                 </div>
                               </div>
-                              <div className="grid grid-cols-2 sm:grid-cols-4 gap-1.5 text-[11px]">
+                              <div className="grid grid-cols-2 sm:grid-cols-4 gap-1.5 text-xs">
                                 {session.expected_amount != null && (
                                   <div className="bg-white rounded px-2 py-1">
                                     <span className="text-gray-500">예상 매출</span>
@@ -521,10 +521,10 @@ export function ApprovalList({ programs: initialPrograms, profile, registrations
                                 )}
                               </div>
                               {session.sales_note && (
-                                <p className="text-[11px] text-gray-700"><span className="font-bold">메모:</span> {session.sales_note}</p>
+                                <p className="text-xs text-gray-700"><span className="font-bold">메모:</span> {session.sales_note}</p>
                               )}
                               {session.closing_fail_reason && (
-                                <p className="text-[11px] text-red-700"><span className="font-bold">실패 사유:</span> {session.closing_fail_reason}</p>
+                                <p className="text-xs text-red-700"><span className="font-bold">실패 사유:</span> {session.closing_fail_reason}</p>
                               )}
                             </div>
                           )}

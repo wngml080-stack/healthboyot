@@ -682,7 +682,7 @@ export function TrainerCardList({ assignments, trainers = [], trainerId, trainer
                         <div className="flex items-center gap-2 flex-wrap">
                           <span className="font-bold text-gray-900">{a.member.name}</span>
                           {a.member.registration_source === '수기' && (
-                            <span className="inline-flex items-center rounded px-1 py-0.5 text-[9px] font-bold bg-amber-100 text-amber-700 border border-amber-300">수기</span>
+                            <span className="inline-flex items-center rounded px-1 py-0.5 text-[10px] font-bold bg-amber-100 text-amber-700 border border-amber-300">수기</span>
                           )}
                           {trainerId && trainerId !== 'unassigned' && (() => {
                             const isPt = a.pt_trainer_id === trainerId
@@ -803,7 +803,7 @@ export function TrainerCardList({ assignments, trainers = [], trainerId, trainer
                                 <>
                                   {/* OT 진행 현황 */}
                                   {otProgress.length > 0 && (
-                                    <div className="rounded-xl border border-indigo-200 bg-indigo-50/40 p-4 space-y-3">
+                                    <div className="rounded-lg border border-indigo-200 bg-indigo-50/40 p-4 space-y-3">
                                       <div className="flex items-center justify-between flex-wrap gap-2">
                                         <p className="text-sm font-bold text-indigo-900">🏋️ OT 진행 현황</p>
                                         <span className="text-xs font-bold text-indigo-700 bg-white px-2 py-0.5 rounded-full border border-indigo-200">
@@ -889,7 +889,7 @@ export function TrainerCardList({ assignments, trainers = [], trainerId, trainer
                                               <div className="flex items-center justify-between gap-1">
                                                 <span className="text-xs font-bold text-gray-800">{s.num}차 OT</span>
                                                 {s.inbody && (
-                                                  <span className="text-[9px] bg-purple-100 text-purple-700 px-1 py-0.5 rounded">📊</span>
+                                                  <span className="text-[10px] bg-purple-100 text-purple-700 px-1 py-0.5 rounded">📊</span>
                                                 )}
                                               </div>
                                               <div className="flex flex-col gap-0.5 items-stretch">
@@ -919,7 +919,7 @@ export function TrainerCardList({ assignments, trainers = [], trainerId, trainer
                                   )}
 
                                   {/* 상담카드 요약 */}
-                                  <div className="rounded-xl border border-amber-200 bg-amber-50/40 p-4 space-y-2">
+                                  <div className="rounded-lg border border-amber-200 bg-amber-50/40 p-4 space-y-2">
                                     <div className="flex items-center justify-between flex-wrap gap-2">
                                       <p className="text-sm font-bold text-amber-900">📋 상담카드 요약</p>
                                       <div className="flex items-center gap-1.5">
@@ -974,7 +974,7 @@ export function TrainerCardList({ assignments, trainers = [], trainerId, trainer
                                     const isSalesTarget = a.is_sales_target || programSessions.some((s) => s.is_sales_target)
                                     const isPtConversion = a.is_pt_conversion || programSessions.some((s) => s.is_pt_conversion)
                                     return (
-                                  <div className="rounded-xl border border-blue-200 bg-blue-50/40 p-4 space-y-3">
+                                  <div className="rounded-lg border border-blue-200 bg-blue-50/40 p-4 space-y-3">
                                     <div className="flex items-center justify-between flex-wrap gap-2">
                                       <p className="text-sm font-bold text-blue-900">🛣️ 세일즈 · 등록 여정</p>
                                       <div className="flex items-center gap-1.5 flex-wrap">
@@ -1011,7 +1011,7 @@ export function TrainerCardList({ assignments, trainers = [], trainerId, trainer
                                             <span className="absolute -left-[21px] top-1 h-3 w-3 rounded-full bg-blue-500 border-2 border-white" />
                                             <div className="flex items-center gap-2 flex-wrap">
                                               <span className="text-sm font-bold text-gray-900">{j.label}</span>
-                                              {j.date && <span className="text-[11px] text-gray-500">{j.date}</span>}
+                                              {j.date && <span className="text-xs text-gray-500">{j.date}</span>}
                                               {j.status && <Badge className={`${statusBadgeColor(j.status)} text-[10px]`}>{j.status}</Badge>}
                                             </div>
                                             {j.detail && <p className="text-xs text-gray-700 mt-0.5">{j.detail}</p>}
@@ -1045,7 +1045,7 @@ export function TrainerCardList({ assignments, trainers = [], trainerId, trainer
                                       .filter((f) => f.text && f.text.trim())
                                     if (feedbacks.length === 0) return null
                                     return (
-                                      <div className="rounded-xl border-2 border-blue-300 bg-blue-50/60 p-4 space-y-2">
+                                      <div className="rounded-lg border-2 border-blue-300 bg-blue-50/60 p-4 space-y-2">
                                         <p className="text-sm font-bold text-blue-800">📋 관리자 피드백</p>
                                         <div className="space-y-2">
                                           {feedbacks.map((f) => (
@@ -1097,7 +1097,7 @@ export function TrainerCardList({ assignments, trainers = [], trainerId, trainer
                                 }
 
                                 return (
-                                  <div key={num} className={`rounded-xl border-2 p-4 space-y-3 ${
+                                  <div key={num} className={`rounded-lg border-2 p-4 space-y-3 ${
                                     isDone && !isEditingCompleted ? 'bg-green-50 border-green-400'
                                     : isScheduled ? 'bg-blue-50 border-blue-400'
                                     : 'bg-white border-gray-300'
@@ -1179,7 +1179,7 @@ export function TrainerCardList({ assignments, trainers = [], trainerId, trainer
                                           </div>
                                           {/* 10분 단위 수동 입력 (10분 단위로 step) */}
                                           <div className="flex items-center gap-2 mt-2">
-                                            <span className="text-[11px] text-gray-500 shrink-0">직접 입력</span>
+                                            <span className="text-xs text-gray-500 shrink-0">직접 입력</span>
                                             <Input
                                               type="time"
                                               step={600}
@@ -1189,7 +1189,7 @@ export function TrainerCardList({ assignments, trainers = [], trainerId, trainer
                                             />
                                           </div>
                                           {a.member.exercise_time && (
-                                            <p className="text-[11px] text-blue-600 mt-1">회원 희망: {a.member.exercise_time}</p>
+                                            <p className="text-xs text-blue-600 mt-1">회원 희망: {a.member.exercise_time}</p>
                                           )}
                                         </div>
 
@@ -1306,7 +1306,7 @@ export function TrainerCardList({ assignments, trainers = [], trainerId, trainer
                             {a.status !== '거부' && (
                               <button
                                 type="button"
-                                className="mt-3 w-full rounded-xl border-2 border-dashed border-gray-300 py-3 text-sm font-medium text-gray-500 hover:border-yellow-400 hover:text-yellow-600 transition-colors flex items-center justify-center gap-1"
+                                className="mt-3 w-full rounded-lg border-2 border-dashed border-gray-300 py-3 text-sm font-medium text-gray-500 hover:border-yellow-400 hover:text-yellow-600 transition-colors flex items-center justify-center gap-1"
                                 onClick={() => {
                                   const maxSession = Math.max(3, ...(a.sessions?.map(s => s.session_number) ?? [0]))
                                   const newNum = maxSession + 1
@@ -2052,7 +2052,7 @@ export function TrainerCardList({ assignments, trainers = [], trainerId, trainer
               if (!value) return null
               return (
                 <div className={full ? 'sm:col-span-2' : ''}>
-                  <p className="text-[11px] font-bold text-gray-400 uppercase tracking-wider mb-0.5">{label}</p>
+                  <p className="text-xs font-bold text-gray-400 uppercase tracking-wider mb-0.5">{label}</p>
                   <p className="text-sm text-gray-900 whitespace-pre-wrap break-words">{value}</p>
                 </div>
               )
@@ -2061,7 +2061,7 @@ export function TrainerCardList({ assignments, trainers = [], trainerId, trainer
               if (!values?.length) return null
               return (
                 <div className={full ? 'sm:col-span-2' : ''}>
-                  <p className="text-[11px] font-bold text-gray-400 uppercase tracking-wider mb-1">{label}</p>
+                  <p className="text-xs font-bold text-gray-400 uppercase tracking-wider mb-1">{label}</p>
                   <div className="flex flex-wrap gap-1.5">
                     {values.map((v, i) => (
                       <span key={i} className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${color}`}>
@@ -2318,7 +2318,7 @@ export function TrainerCardList({ assignments, trainers = [], trainerId, trainer
                         >
                           <span className="flex items-center gap-2">
                             <span className="font-medium">{c.member_name ?? '-'}</span>
-                            <Badge className="bg-green-500 text-white text-[9px]">연락처 일치</Badge>
+                            <Badge className="bg-green-500 text-white text-[10px]">연락처 일치</Badge>
                           </span>
                           <span className="text-gray-400 text-xs">{c.member_phone ? c.member_phone.replace(/(\d{3})(\d{4})(\d{4})/, '$1-$2-$3') : '-'}</span>
                         </button>

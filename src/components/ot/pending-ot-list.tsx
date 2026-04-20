@@ -78,7 +78,7 @@ export function PendingOtList({ assignments, trainers = [] }: Props) {
         const isAssigning = assigningId === a.id
 
         return (
-          <div key={a.id} className="rounded-md border border-gray-200 overflow-hidden">
+          <div key={a.id} className="rounded-lg border border-gray-200 overflow-hidden">
             {/* 요약 행 */}
             <button
               onClick={() => setExpandedId(isExpanded ? null : a.id)}
@@ -88,7 +88,7 @@ export function PendingOtList({ assignments, trainers = [] }: Props) {
                 <div className="flex items-center gap-2">
                   <p className="font-medium text-sm text-gray-900">{a.member.name}</p>
                   {a.member.registration_source === '수기' && (
-                    <span className="inline-flex items-center rounded px-1 py-0.5 text-[9px] font-bold bg-amber-100 text-amber-700 border border-amber-300">수기</span>
+                    <span className="inline-flex items-center rounded px-1 py-0.5 text-[10px] font-bold bg-amber-100 text-amber-700 border border-amber-300">수기</span>
                   )}
                   <OtCategoryBadge category={a.member.ot_category ?? a.ot_category} />
                 </div>

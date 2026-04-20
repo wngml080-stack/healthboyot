@@ -14,7 +14,7 @@ import {
 import { Plus, Link2, Search, ClipboardList, Trash2, MessageSquare, Copy } from 'lucide-react'
 import { createStandaloneCard, linkCardToMember, getConsultationCardById, deleteConsultationCard } from '@/actions/consultation'
 import { sendConsultationLinkSms } from '@/actions/sms'
-import { checkPhoneDuplicate } from '@/actions/members'
+
 import { ConsultationCardForm } from '@/components/members/consultation-card-form'
 import type { ConsultationCard, Member, Profile } from '@/types'
 
@@ -72,16 +72,8 @@ export function ConsultationList({ cards: initialCards, members, staffList = [] 
 
     setCreating(true)
 
-    // 중복 체크: 이미 등록된 회원인지
-    const existingMember = await checkPhoneDuplicate(phone)
-    if (existingMember) {
-      setCreating(false)
-      alert(`이미 생성된 회원입니다: ${existingMember.name} (${existingMember.phone})`)
-      return
-    }
-
     // 중복 체크: 이미 상담카드가 있는지
-    const existingCard = cards.find((c) => c.member_phone === phone)
+    const existingCard = cards.find((c) => c.member_phone?.replace(/[^0-9]/g, '') === phone)
     if (existingCard) {
       setCreating(false)
       alert(`이미 상담카드가 존재합니다: ${existingCard.member_name} (${existingCard.member_phone})`)
@@ -98,6 +90,8 @@ export function ConsultationList({ cards: initialCards, members, staffList = [] 
       setNewCardId(result.data.id)
       const card = await getConsultationCardById(result.data.id)
       setNewCardData(card)
+      // 로컬 리스트에 즉시 추가
+      if (card) setCards((prev) => [card, ...prev])
       router.refresh()
     }
   }

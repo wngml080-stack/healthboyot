@@ -4,20 +4,25 @@ import { createClient } from '@/lib/supabase/server'
 import type { OtRegistration, OtRegistrationWithTrainer } from '@/types'
 
 // 트레이너가 인정건수 제출
+// folder_trainer_id: 해당 트레이너 폴더의 주인 (관리자가 대신 등록해도 폴더 주인에게 귀속)
 export async function submitOtRegistration(values: {
   member_name: string
   membership_type: string
   registration_amount: number
   ot_credit: number
+  folder_trainer_id?: string
 }) {
   const supabase = await createClient()
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) return { error: '로그인 필요' }
 
+  // 폴더 트레이너 ID가 지정되면 해당 트레이너에게 귀속, 아니면 본인
+  const trainerId = values.folder_trainer_id || user.id
+
   const { data, error } = await supabase
     .from('ot_registrations')
     .insert({
-      trainer_id: user.id,
+      trainer_id: trainerId,
       member_name: values.member_name,
       membership_type: values.membership_type,
       registration_amount: values.registration_amount,

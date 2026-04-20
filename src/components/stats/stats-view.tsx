@@ -98,50 +98,92 @@ export function StatsView({ stats, target }: Props) {
         </div>
       </div>
 
-      {/* 목표 달성율 */}
-      {target && (
-        <Card className="border-yellow-400">
-          <CardContent className="pt-6">
-            <div className="flex items-center justify-between mb-3">
-              <div className="flex items-center gap-2">
-                <Target className="h-5 w-5 text-yellow-500" />
-                <p className="text-sm font-medium text-gray-900">당월 목표매출</p>
-              </div>
-              <p className="text-sm text-gray-500">목표 {fmtMoney(target.target_amount)}원</p>
-            </div>
-            <div className="w-full h-4 bg-gray-200 rounded-full overflow-hidden">
-              <div
-                className={`h-full rounded-full transition-all ${achieveRate >= 100 ? 'bg-green-500' : achieveRate >= 70 ? 'bg-yellow-400' : 'bg-red-400'}`}
-                style={{ width: `${Math.min(achieveRate, 100)}%` }}
-              />
-            </div>
-            <div className="flex justify-between mt-2">
-              <p className="text-sm text-gray-900 font-bold">{fmtMoney(stats.totalSales)}원</p>
-              <p className={`text-sm font-bold ${achieveRate >= 100 ? 'text-green-600' : achieveRate >= 70 ? 'text-yellow-600' : 'text-red-600'}`}>
-                {achieveRate}% 달성
-              </p>
+      {/* OT 현황 + 목표 달성율 나란히 */}
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+        <Card>
+          <CardHeader className="pb-2"><CardTitle className="text-base text-gray-900">[ 신규 ] OT 현황</CardTitle></CardHeader>
+          <CardContent className="space-y-2">
+            <StatusRow label="진행중" value={stats.otStatus.inProgress} color="bg-green-100 text-green-700" />
+            <StatusRow label="거부자" value={stats.otStatus.rejected} color="bg-orange-100 text-orange-700" />
+            <StatusRow label="등록완료" value={stats.otStatus.registered} color="bg-blue-100 text-blue-700" />
+            <StatusRow label="스케줄미확정" value={stats.otStatus.scheduleUndecided} color="bg-yellow-100 text-yellow-700" />
+            <StatusRow label="연락두절" value={stats.otStatus.noContact} color="bg-gray-100 text-gray-700" />
+            <StatusRow label="클로싱실패" value={stats.otStatus.closingFailed} color="bg-red-100 text-red-700" />
+            <div className="border-t border-gray-200 pt-2 mt-2 space-y-2">
+              <StatusRow label="매출대상자" value={stats.salesSummary.진행인원} color="bg-blue-50 text-blue-700" />
+              <StatusRow label="PT전환" value={stats.salesSummary.등록인원} color="bg-purple-50 text-purple-700" />
+              <StatusRow label="클로징율" value={`${stats.salesSummary.클로징율}%`} color="bg-yellow-50 text-yellow-700" isText />
             </div>
           </CardContent>
         </Card>
-      )}
 
-      {/* OT 현황 */}
-      <Card>
-        <CardHeader className="pb-2"><CardTitle className="text-base text-gray-900">[ 신규 ] OT 현황</CardTitle></CardHeader>
-        <CardContent className="space-y-2">
-          <StatusRow label="진행중" value={stats.otStatus.inProgress} color="bg-green-100 text-green-700" />
-          <StatusRow label="거부자" value={stats.otStatus.rejected} color="bg-orange-100 text-orange-700" />
-          <StatusRow label="등록완료" value={stats.otStatus.registered} color="bg-blue-100 text-blue-700" />
-          <StatusRow label="스케줄미확정" value={stats.otStatus.scheduleUndecided} color="bg-yellow-100 text-yellow-700" />
-          <StatusRow label="연락두절" value={stats.otStatus.noContact} color="bg-gray-100 text-gray-700" />
-          <StatusRow label="클로싱실패" value={stats.otStatus.closingFailed} color="bg-red-100 text-red-700" />
-          <div className="border-t border-gray-200 pt-2 mt-2 space-y-2">
-            <StatusRow label="매출대상자" value={stats.salesSummary.진행인원} color="bg-blue-50 text-blue-700" />
-            <StatusRow label="PT전환" value={stats.salesSummary.등록인원} color="bg-purple-50 text-purple-700" />
-            <StatusRow label="클로징율" value={`${stats.salesSummary.클로징율}%`} color="bg-yellow-50 text-yellow-700" isText />
-          </div>
-        </CardContent>
-      </Card>
+        {/* 목표 달성율 (오른쪽) */}
+        <Card className="border-yellow-400">
+          <CardHeader className="pb-2">
+            <div className="flex items-center justify-between">
+              <CardTitle className="text-base text-gray-900">당월 목표 달성율</CardTitle>
+              <Button variant="outline" size="sm" onClick={() => setShowTarget(true)} className="h-7 text-xs bg-white text-gray-700 border-gray-300">
+                <Settings className="h-3 w-3 mr-1" />설정
+              </Button>
+            </div>
+          </CardHeader>
+          <CardContent className="space-y-4">
+            {target ? (
+              <>
+                <div>
+                  <div className="flex items-center justify-between mb-2">
+                    <div className="flex items-center gap-2">
+                      <Target className="h-5 w-5 text-yellow-500" />
+                      <p className="text-sm font-medium text-gray-900">전체 목표</p>
+                    </div>
+                    <p className="text-sm text-gray-500">목표 {fmtMoney(target.target_amount)}원</p>
+                  </div>
+                  <div className="w-full h-4 bg-gray-200 rounded-full overflow-hidden">
+                    <div
+                      className={`h-full rounded-full transition-all ${achieveRate >= 100 ? 'bg-green-500' : achieveRate >= 70 ? 'bg-yellow-400' : 'bg-red-400'}`}
+                      style={{ width: `${Math.min(achieveRate, 100)}%` }}
+                    />
+                  </div>
+                  <div className="flex justify-between mt-1">
+                    <p className="text-sm text-gray-900 font-bold">{fmtMoney(stats.totalSales)}원</p>
+                    <p className={`text-sm font-bold ${achieveRate >= 100 ? 'text-green-600' : achieveRate >= 70 ? 'text-yellow-600' : 'text-red-600'}`}>
+                      {achieveRate}%
+                    </p>
+                  </div>
+                </div>
+                <div className="space-y-2 border-t pt-3">
+                  {[
+                    { label: '1주차', target: target.week1_target },
+                    { label: '2주차', target: target.week2_target },
+                    { label: '3주차', target: target.week3_target },
+                    { label: '4주차', target: target.week4_target },
+                  ].map((w, i) => {
+                    const actual = stats.weeklyData[i]?.actualSales ?? 0
+                    const rate = w.target > 0 ? Math.round((actual / w.target) * 100) : 0
+                    return (
+                      <div key={w.label} className="flex items-center gap-3">
+                        <span className="text-xs font-bold text-gray-600 w-12 shrink-0">{w.label}</span>
+                        <div className="flex-1 h-3 bg-gray-100 rounded-full overflow-hidden">
+                          <div className={`h-full rounded-full ${rate >= 100 ? 'bg-green-500' : rate >= 50 ? 'bg-yellow-400' : 'bg-gray-300'}`} style={{ width: `${Math.min(rate, 100)}%` }} />
+                        </div>
+                        <span className="text-xs text-gray-500 w-24 text-right">{fmtMoney(actual)} / {fmtMoney(w.target)}</span>
+                      </div>
+                    )
+                  })}
+                </div>
+              </>
+            ) : (
+              <div className="text-center py-6">
+                <Target className="h-8 w-8 text-gray-300 mx-auto mb-2" />
+                <p className="text-sm text-gray-500">목표가 설정되지 않았습니다</p>
+                <Button size="sm" className="mt-3 bg-yellow-400 text-black hover:bg-yellow-500" onClick={() => setShowTarget(true)}>
+                  목표 설정하기
+                </Button>
+              </div>
+            )}
+          </CardContent>
+        </Card>
+      </div>
 
       {/* 당월 목표매출 — 재구성 */}
       <Card>
@@ -185,43 +227,6 @@ export function StatsView({ stats, target }: Props) {
                   {stats.weeklyData.map((w) => <TableCell key={`a${w.week}`} className="text-center text-sm text-green-700">{fmtMan(w.actualSales)}</TableCell>)}
                   <TableCell className="text-center font-bold text-green-700">{fmtMan(stats.weeklyData.reduce((s, w) => s + w.actualSales, 0))}</TableCell>
                 </TableRow>
-              </TableBody>
-            </Table>
-          </div>
-        </CardContent>
-      </Card>
-
-      {/* 트레이너별 매출 — 재구성 */}
-      <Card>
-        <CardHeader className="pb-2"><CardTitle className="text-base text-gray-900">트레이너별 매출</CardTitle></CardHeader>
-        <CardContent>
-          <div className="rounded-md border border-gray-200 bg-white overflow-x-auto">
-            <Table>
-              <TableHeader><TableRow className="bg-gray-50">
-                <TableHead className="text-center text-gray-700">이름</TableHead>
-                <TableHead className="text-center text-gray-700">OT배정</TableHead>
-                <TableHead className="text-center text-gray-700">플로팅</TableHead>
-                <TableHead className="text-center text-gray-700">총인원</TableHead>
-                <TableHead className="text-center text-gray-700">PT전환자</TableHead>
-                <TableHead className="text-center text-gray-700">등록인원</TableHead>
-                <TableHead className="text-center text-gray-700">클로징율</TableHead>
-                <TableHead className="text-center text-gray-700">등록매출</TableHead>
-              </TableRow></TableHeader>
-              <TableBody>
-                {stats.trainerStats.length === 0 ? (
-                  <TableRow><TableCell colSpan={8} className="text-center text-gray-400 py-4">데이터 없음</TableCell></TableRow>
-                ) : stats.trainerStats.map((t) => (
-                  <TableRow key={t.name}>
-                    <TableCell className="text-center font-medium text-gray-900">{t.name}</TableCell>
-                    <TableCell className="text-center text-sm text-gray-900">{t.배정인원 ?? 0}</TableCell>
-                    <TableCell className="text-center text-sm text-gray-900">{t.플로팅 ?? 0}</TableCell>
-                    <TableCell className="text-center text-sm font-bold text-gray-900">{t.총인원 ?? 0}</TableCell>
-                    <TableCell className="text-center text-sm text-purple-700">{t.PT전환자 ?? 0}</TableCell>
-                    <TableCell className="text-center text-sm text-gray-900">{t.등록인원}</TableCell>
-                    <TableCell className="text-center text-sm text-gray-900">{t.클로징율}%</TableCell>
-                    <TableCell className="text-center text-sm font-bold text-green-700">{fmtMoney(t.newSales)}</TableCell>
-                  </TableRow>
-                ))}
               </TableBody>
             </Table>
           </div>

@@ -66,6 +66,15 @@ export async function upsertConsultationCard(
   const supabase = await createClient()
   const { data: { user } } = await supabase.auth.getUser()
 
+  // 회원 정보 동기화 — 상담카드에서 이름/번호/성별 변경 시 members 테이블도 업데이트
+  const memberUpdate: Record<string, unknown> = {}
+  if (values.member_name) memberUpdate.name = values.member_name
+  if (values.member_phone) memberUpdate.phone = values.member_phone
+  if (values.member_gender) memberUpdate.gender = values.member_gender
+  if (Object.keys(memberUpdate).length > 0) {
+    await supabase.from('members').update({ ...memberUpdate, updated_at: new Date().toISOString() }).eq('id', memberId)
+  }
+
   const existing = await getConsultationCard(memberId)
 
   if (existing) {

@@ -1095,7 +1095,7 @@ export function WeeklyCalendar({ assignments, trainerId, profile }: Props) {
                 return (
                   <button
                     key={t}
-                    className={`rounded-md border-2 py-1.5 text-[11px] font-bold transition-colors ${createType === t ? `${c} border-current` : 'bg-white border-gray-200 text-gray-400'}`}
+                    className={`rounded-md border-2 py-1.5 text-xs font-bold transition-colors ${createType === t ? `${c} border-current` : 'bg-white border-gray-200 text-gray-400'}`}
                     onClick={() => { setCreateType(t as typeof createType); setCreateName(''); setCreateOtSessionId('') }}
                   >
                     {t}
@@ -1438,7 +1438,7 @@ export function WeeklyCalendar({ assignments, trainerId, profile }: Props) {
                           : 'bg-gray-50 border-gray-200'
                         }`}>
                           <p className={`text-xs font-bold ${isDone ? 'text-green-700' : isScheduled ? 'text-blue-700' : 'text-gray-400'}`}>{num}차</p>
-                          <p className={`text-[11px] mt-0.5 ${isDone ? 'text-green-600' : isScheduled ? 'text-blue-600' : 'text-gray-400'}`}>
+                          <p className={`text-xs mt-0.5 ${isDone ? 'text-green-600' : isScheduled ? 'text-blue-600' : 'text-gray-400'}`}>
                             {isDone ? '완료' : isScheduled ? formatKstShort(session!.scheduled_at!) : '미정'}
                           </p>
                         </div>
@@ -1571,7 +1571,7 @@ export function WeeklyCalendar({ assignments, trainerId, profile }: Props) {
                       </div>
                       {/* 10분 단위 직접 입력 */}
                       <div className="flex items-center gap-2 mt-2">
-                        <span className="text-[11px] text-gray-500 shrink-0">직접 입력</span>
+                        <span className="text-xs text-gray-500 shrink-0">직접 입력</span>
                         <Input
                           type="time"
                           step={600}
@@ -1654,7 +1654,7 @@ export function WeeklyCalendar({ assignments, trainerId, profile }: Props) {
                   </div>
                   {/* 10분 단위 직접 입력 */}
                   <div className="flex items-center gap-2 mt-2">
-                    <span className="text-[11px] text-gray-500 shrink-0">직접 입력</span>
+                    <span className="text-xs text-gray-500 shrink-0">직접 입력</span>
                     <Input
                       type="time"
                       step={600}
@@ -1752,7 +1752,7 @@ export function WeeklyCalendar({ assignments, trainerId, profile }: Props) {
                     ))}
                   </div>
                   <div className="flex items-center gap-2 mt-2">
-                    <span className="text-[11px] text-gray-500 shrink-0">직접 입력</span>
+                    <span className="text-xs text-gray-500 shrink-0">직접 입력</span>
                     <Input
                       type="time"
                       step={600}

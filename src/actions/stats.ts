@@ -27,8 +27,9 @@ export async function getStats(): Promise<StatsData> {
     .select(`
       id, status, created_at, week_number,
       actual_sales, expected_sales, sales_status, contact_status,
-      is_sales_target, is_pt_conversion, pt_trainer_id,
+      is_sales_target, is_pt_conversion, pt_trainer_id, ppt_trainer_id,
       pt_trainer:profiles!ot_assignments_pt_trainer_id_fkey(name),
+      ppt_trainer:profiles!ot_assignments_ppt_trainer_id_fkey(name),
       sessions:ot_sessions(completed_at)
     `)
     .limit(1000)
@@ -77,8 +78,10 @@ export async function getStats(): Promise<StatsData> {
       if (a.is_pt_conversion) w.ptConversionCount++
     }
 
-    // 트레이너별
-    const tName = (a.pt_trainer as unknown as { name: string } | null)?.name ?? '미배정'
+    // 트레이너별 (PT 우선, 없으면 PPT → 폴더 기준)
+    const tName = (a.pt_trainer as unknown as { name: string } | null)?.name
+      ?? (a as unknown as { ppt_trainer?: { name: string } | null }).ppt_trainer?.name
+      ?? '미배정'
     const e = trainerMap.get(tName) ?? { assigned: 0, floating: 0, total: 0, pt: 0, reg: 0, sales: 0 }
     e.total++
     if (a.pt_trainer_id) e.assigned++; else e.floating++
@@ -92,13 +95,14 @@ export async function getStats(): Promise<StatsData> {
     if (isCompleted) dayCounts[dayIdx].sales += actualSales
   }
 
-  const tc = salesTargetCount || assignments.length
+  // 클로징율: 완료 / (전체 - 거부) — 거부자는 분모에서 제외
+  const activeTotal = assignments.filter((a) => a.status !== '거부').length
 
   return {
     newSales, renewSales: 0, totalSales: newSales,
     weeklyData: weeklyAcc.map((w, i) => ({ week: i + 1, ...w })),
     otStatus,
-    salesSummary: { 진행인원: tc, 등록인원: ptCount, 클로징율: tc > 0 ? Math.round((completedCount / tc) * 100) : 0, 객단가: completedCount > 0 ? Math.round(newSales / completedCount) : 0 },
+    salesSummary: { 진행인원: salesTargetCount, 등록인원: ptCount, 클로징율: activeTotal > 0 ? Math.round((completedCount / activeTotal) * 100) : 0, 객단가: completedCount > 0 ? Math.round(newSales / completedCount) : 0 },
     routeSales: [],
     trainerStats: Array.from(trainerMap.entries()).map(([name, v]) => ({
       name, newSales: v.sales, renewSales: 0, totalSales: v.sales,

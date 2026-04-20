@@ -473,7 +473,7 @@ export function MemberList({ initialMembers, trainers = [] }: Props) {
       </div>
 
       {/* 테이블 */}
-      <div className="rounded-md border border-gray-200 bg-white overflow-x-auto -mx-4 sm:mx-0">
+      <div className="rounded-lg border border-gray-200 bg-white overflow-x-auto -mx-4 sm:mx-0">
         <Table className="min-w-[700px]">
           <TableHeader>
             <TableRow className="bg-gray-50">
@@ -509,7 +509,7 @@ export function MemberList({ initialMembers, trainers = [] }: Props) {
                     >
                       <TableCell className="text-center text-xs text-gray-900">{m.registered_at && m.registered_at > '1900-01-01' ? m.registered_at : '미상'}</TableCell>
                       <TableCell className="text-center text-sm font-medium text-gray-900">
-                        <span className={`inline-flex items-center rounded px-1 py-0.5 text-[9px] font-bold mr-1 ${m.is_renewal ? 'bg-purple-100 text-purple-600' : m.is_existing_member ? 'bg-orange-100 text-orange-600' : 'bg-green-100 text-green-600'}`}>
+                        <span className={`inline-flex items-center rounded px-1 py-0.5 text-[10px] font-bold mr-1 ${m.is_renewal ? 'bg-purple-100 text-purple-600' : m.is_existing_member ? 'bg-orange-100 text-orange-600' : 'bg-green-100 text-green-600'}`}>
                           {m.is_renewal ? '리뉴' : m.is_existing_member ? '이전' : '신규'}
                         </span>
                         {m.name}
@@ -517,7 +517,7 @@ export function MemberList({ initialMembers, trainers = [] }: Props) {
                           <span className="text-[10px] font-medium text-gray-400 ml-0.5">(수기)</span>
                         )}
                         {duplicateIds.has(m.id) && (
-                          <span className="ml-1 inline-flex items-center rounded px-1 py-0.5 text-[9px] font-bold bg-red-100 text-red-600">중복</span>
+                          <span className="ml-1 inline-flex items-center rounded px-1 py-0.5 text-[10px] font-bold bg-red-100 text-red-600">중복</span>
                         )}
                       </TableCell>
                       <TableCell className="text-center">

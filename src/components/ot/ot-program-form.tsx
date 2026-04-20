@@ -557,11 +557,11 @@ export const OtProgramForm = forwardRef<OtProgramFormRef, Props>(function OtProg
           {/* Row 1: 회원 기본 (스택 레이아웃) */}
           <div className="grid grid-cols-2 md:grid-cols-4 gap-x-3 gap-y-3 text-sm">
             <div>
-              <Label className="block text-[11px] font-bold text-gray-500 uppercase tracking-wide mb-1">회원이름</Label>
+              <Label className="block text-xs font-bold text-gray-500 uppercase tracking-wide mb-1">회원이름</Label>
               <Input value={a.member.name} disabled className="h-8 text-sm bg-gray-100" />
             </div>
             <div>
-              <Label className="block text-[11px] font-bold text-gray-500 uppercase tracking-wide mb-1">성별</Label>
+              <Label className="block text-xs font-bold text-gray-500 uppercase tracking-wide mb-1">성별</Label>
               {(() => {
                 const gender = a.member.gender || fullCard?.member_gender || null
                 return (
@@ -577,11 +577,11 @@ export const OtProgramForm = forwardRef<OtProgramFormRef, Props>(function OtProg
               })()}
             </div>
             <div>
-              <Label className="block text-[11px] font-bold text-gray-500 uppercase tracking-wide mb-1">나이</Label>
+              <Label className="block text-xs font-bold text-gray-500 uppercase tracking-wide mb-1">나이</Label>
               <Input value={fullCard?.age ?? '-'} disabled className="h-8 text-sm bg-gray-100" />
             </div>
             <div>
-              <Label className="block text-[11px] font-bold text-gray-500 uppercase tracking-wide mb-1">연락처</Label>
+              <Label className="block text-xs font-bold text-gray-500 uppercase tracking-wide mb-1">연락처</Label>
               <Input value={fullCard?.member_phone ?? a.member.phone ?? '-'} disabled className="h-8 text-sm bg-gray-100" />
             </div>
           </div>
@@ -589,19 +589,19 @@ export const OtProgramForm = forwardRef<OtProgramFormRef, Props>(function OtProg
           {/* Row 2: 일정 (상담일 / 운동시작일 / 기간 / 만료일) — 상담카드 데이터 읽기 전용 */}
           <div className="grid grid-cols-2 md:grid-cols-4 gap-x-3 gap-y-3 text-sm">
             <div>
-              <Label className="block text-[11px] font-bold text-amber-700 uppercase tracking-wide mb-1">상담일</Label>
+              <Label className="block text-xs font-bold text-amber-700 uppercase tracking-wide mb-1">상담일</Label>
               <Input value={fullCard?.consultation_date ?? '-'} disabled className="h-8 text-sm bg-gray-100" />
             </div>
             <div>
-              <Label className="block text-[11px] font-bold text-amber-700 uppercase tracking-wide mb-1">운동시작일</Label>
+              <Label className="block text-xs font-bold text-amber-700 uppercase tracking-wide mb-1">운동시작일</Label>
               <Input value={fullCard?.exercise_start_date || startDate || '-'} disabled className="h-8 text-sm bg-gray-100" />
             </div>
             <div>
-              <Label className="block text-[11px] font-bold text-gray-500 uppercase tracking-wide mb-1">등록상품</Label>
+              <Label className="block text-xs font-bold text-gray-500 uppercase tracking-wide mb-1">등록상품</Label>
               <Input value={fullCard?.registration_product || '-'} disabled className="h-8 text-sm bg-gray-100" />
             </div>
             <div>
-              <Label className="block text-[11px] font-bold text-gray-500 uppercase tracking-wide mb-1">만료일</Label>
+              <Label className="block text-xs font-bold text-gray-500 uppercase tracking-wide mb-1">만료일</Label>
               <Input value={fullCard?.expiry_date || endDate || '-'} disabled className="h-8 text-sm bg-gray-100" />
             </div>
           </div>
@@ -609,22 +609,22 @@ export const OtProgramForm = forwardRef<OtProgramFormRef, Props>(function OtProg
           {/* Row 3: 담당자 (FC = 상담 담당자) — 스택 레이아웃 */}
           <div className="grid grid-cols-1 sm:grid-cols-3 gap-x-3 gap-y-3 text-sm">
             <div>
-              <Label className="block text-[11px] font-bold text-orange-600 uppercase tracking-wide mb-1">FC</Label>
+              <Label className="block text-xs font-bold text-orange-600 uppercase tracking-wide mb-1">FC</Label>
               <Input value={fullCard?.fc_name ?? a.member.creator_name ?? '-'} disabled className="h-8 text-sm bg-gray-100" />
             </div>
             <div>
-              <Label className="block text-[11px] font-bold text-blue-600 uppercase tracking-wide mb-1">PT</Label>
+              <Label className="block text-xs font-bold text-blue-600 uppercase tracking-wide mb-1">PT</Label>
               <Input value={a.pt_trainer?.name ?? '미배정'} disabled className="h-8 text-sm bg-gray-100" />
             </div>
             <div>
-              <Label className="block text-[11px] font-bold text-purple-600 uppercase tracking-wide mb-1">PPT</Label>
+              <Label className="block text-xs font-bold text-purple-600 uppercase tracking-wide mb-1">PPT</Label>
               <Input value={a.ppt_trainer?.name ?? '미배정'} disabled className="h-8 text-sm bg-gray-100" />
             </div>
           </div>
 
           {/* Row 4: 운동목적 (상담카드 자동 프리필, 편집 가능) — 스택 레이아웃 */}
           <div>
-            <Label className="block text-[11px] font-bold text-gray-500 uppercase tracking-wide mb-1">운동목적</Label>
+            <Label className="block text-xs font-bold text-gray-500 uppercase tracking-wide mb-1">운동목적</Label>
             <Input
               value={athleticGoal}
               onChange={(e) => setAthleticGoal(e.target.value)}
@@ -889,7 +889,7 @@ export const OtProgramForm = forwardRef<OtProgramFormRef, Props>(function OtProg
 
                         <div className="grid grid-cols-2 gap-2">
                           <div className="space-y-1">
-                            <Label className="text-[11px] font-bold text-gray-600">필요 횟수</Label>
+                            <Label className="text-xs font-bold text-gray-600">필요 횟수</Label>
                             <Input
                               value={detail.sessions_needed ?? ''}
                               onChange={(e) => patchDetail({ sessions_needed: e.target.value })}
@@ -899,7 +899,7 @@ export const OtProgramForm = forwardRef<OtProgramFormRef, Props>(function OtProg
                             />
                           </div>
                           <div className="space-y-1">
-                            <Label className="text-[11px] font-bold text-gray-600">기간</Label>
+                            <Label className="text-xs font-bold text-gray-600">기간</Label>
                             <Input
                               value={detail.duration ?? ''}
                               onChange={(e) => patchDetail({ duration: e.target.value })}
@@ -912,7 +912,7 @@ export const OtProgramForm = forwardRef<OtProgramFormRef, Props>(function OtProg
 
                         <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
                           <div className="space-y-1">
-                            <Label className="text-[11px] font-bold text-gray-600">현재 몸상태</Label>
+                            <Label className="text-xs font-bold text-gray-600">현재 몸상태</Label>
                             <Textarea
                               value={detail.current_state ?? ''}
                               onChange={(e) => patchDetail({ current_state: e.target.value })}
@@ -922,7 +922,7 @@ export const OtProgramForm = forwardRef<OtProgramFormRef, Props>(function OtProg
                             />
                           </div>
                           <div className="space-y-1">
-                            <Label className="text-[11px] font-bold text-gray-600">목표 몸상태</Label>
+                            <Label className="text-xs font-bold text-gray-600">목표 몸상태</Label>
                             <Textarea
                               value={detail.target_state ?? ''}
                               onChange={(e) => patchDetail({ target_state: e.target.value })}
@@ -935,17 +935,17 @@ export const OtProgramForm = forwardRef<OtProgramFormRef, Props>(function OtProg
 
                         <div className="space-y-2">
                           <div className="flex items-center justify-between">
-                            <Label className="text-[11px] font-bold text-gray-600">주차별 로드맵</Label>
+                            <Label className="text-xs font-bold text-gray-600">주차별 로드맵</Label>
                             {!planDisabled && (
                               <button
                                 type="button"
                                 onClick={() => patchRoadmap([...roadmap, { week: `${roadmap.length + 1}주차`, content: '' }])}
-                                className="text-[11px] font-bold text-indigo-600 hover:text-indigo-800"
+                                className="text-xs font-bold text-indigo-600 hover:text-indigo-800"
                               >+ 주차 추가</button>
                             )}
                           </div>
                           {roadmap.length === 0 ? (
-                            <p className="text-[11px] text-gray-400">주차를 추가해 운동/목표 흐름을 적어주세요.</p>
+                            <p className="text-xs text-gray-400">주차를 추가해 운동/목표 흐름을 적어주세요.</p>
                           ) : (
                             <div className="space-y-2">
                               {roadmap.map((item, rIdx) => (
@@ -981,7 +981,7 @@ export const OtProgramForm = forwardRef<OtProgramFormRef, Props>(function OtProg
                         </div>
 
                         <div className="space-y-1">
-                          <Label className="text-[11px] font-bold text-gray-600">특이사항</Label>
+                          <Label className="text-xs font-bold text-gray-600">특이사항</Label>
                           <Textarea
                             value={detail.notes ?? ''}
                             onChange={(e) => patchDetail({ notes: e.target.value })}
@@ -993,7 +993,7 @@ export const OtProgramForm = forwardRef<OtProgramFormRef, Props>(function OtProg
 
                         {/* 레거시 plan 문자열이 있을 경우 참고용 */}
                         {session.plan && (
-                          <details className="text-[11px] text-gray-500">
+                          <details className="text-xs text-gray-500">
                             <summary className="cursor-pointer">이전 계획서 메모 보기</summary>
                             <pre className="mt-1 whitespace-pre-wrap bg-white rounded p-2 border border-gray-200">{session.plan}</pre>
                           </details>
@@ -1019,7 +1019,7 @@ export const OtProgramForm = forwardRef<OtProgramFormRef, Props>(function OtProg
 
                         {/* 상태: PT전환 / 클로징실패 / 스케줄미확정 */}
                         <div className="space-y-1">
-                          <Label className="text-[11px] font-bold text-gray-600">상태</Label>
+                          <Label className="text-xs font-bold text-gray-600">상태</Label>
                           <div className="grid grid-cols-3 gap-1.5">
                             {(['PT전환', '클로징실패', '스케줄미확정'] as const).map((st) => {
                               const active = session.sales_status === st
@@ -1049,7 +1049,7 @@ export const OtProgramForm = forwardRef<OtProgramFormRef, Props>(function OtProg
                         {/* PT전환 시 회수/금액 입력 */}
                         {isPtConversion && (
                           <div className="rounded-lg border border-purple-200 bg-purple-50/50 p-3 space-y-2">
-                            <Label className="text-[11px] font-bold text-purple-700">PT 등록 정보</Label>
+                            <Label className="text-xs font-bold text-purple-700">PT 등록 정보</Label>
                             <div className="grid grid-cols-2 gap-2">
                               <div className="space-y-1">
                                 <Label className="text-[10px] text-gray-500">등록 회수</Label>
@@ -1072,7 +1072,7 @@ export const OtProgramForm = forwardRef<OtProgramFormRef, Props>(function OtProg
                         {/* 클로징실패 사유 */}
                         {session.sales_status === '클로징실패' && (
                           <div className="rounded-lg border border-red-200 bg-red-50/50 p-3 space-y-1">
-                            <Label className="text-[11px] font-bold text-red-600">실패 사유</Label>
+                            <Label className="text-xs font-bold text-red-600">실패 사유</Label>
                             <Textarea value={session.closing_fail_reason ?? ''} onChange={(e) => updateSession(idx, 'closing_fail_reason', e.target.value)} className="text-sm min-h-[50px] bg-white" placeholder="실패 원인을 적어주세요" disabled={salesDisabled} />
                           </div>
                         )}
@@ -1082,29 +1082,29 @@ export const OtProgramForm = forwardRef<OtProgramFormRef, Props>(function OtProg
                           <>
                             <div className="grid grid-cols-2 gap-2">
                               <div className="space-y-1">
-                                <Label className="text-[11px] font-bold text-gray-600">예상 매출</Label>
+                                <Label className="text-xs font-bold text-gray-600">예상 매출</Label>
                                 <div className="flex items-center gap-1">
                                   <Input type="number" inputMode="numeric" value={session.expected_amount ?? ''} onChange={(e) => updateSession(idx, 'expected_amount', e.target.value === '' ? null : Number(e.target.value))} className="h-8 text-sm bg-white" disabled={salesDisabled} />
-                                  <span className="text-[11px] text-gray-500">만원</span>
+                                  <span className="text-xs text-gray-500">만원</span>
                                 </div>
                               </div>
                               <div className="space-y-1">
-                                <Label className="text-[11px] font-bold text-gray-600">예상 회수</Label>
+                                <Label className="text-xs font-bold text-gray-600">예상 회수</Label>
                                 <div className="flex items-center gap-1">
                                   <Input type="number" inputMode="numeric" value={session.expected_sessions ?? ''} onChange={(e) => updateSession(idx, 'expected_sessions', e.target.value === '' ? null : Number(e.target.value))} className="h-8 text-sm bg-white" disabled={salesDisabled} />
-                                  <span className="text-[11px] text-gray-500">회</span>
+                                  <span className="text-xs text-gray-500">회</span>
                                 </div>
                               </div>
                             </div>
 
                             <div className="space-y-1">
-                              <Label className="text-[11px] font-bold text-gray-600">클로징 확률</Label>
+                              <Label className="text-xs font-bold text-gray-600">클로징 확률</Label>
                               <div className="flex gap-1.5">
                                 {PROB_OPTIONS.map((p) => {
                                   const active = session.closing_probability === p
                                   return (
                                     <button key={p} type="button" disabled={salesDisabled}
-                                      className={`flex-1 h-8 rounded-md border text-[11px] font-bold transition-colors ${active ? 'bg-emerald-600 text-white border-emerald-600' : 'bg-white text-gray-600 border-gray-200 hover:border-emerald-400'} disabled:opacity-50`}
+                                      className={`flex-1 h-8 rounded-md border text-xs font-bold transition-colors ${active ? 'bg-emerald-600 text-white border-emerald-600' : 'bg-white text-gray-600 border-gray-200 hover:border-emerald-400'} disabled:opacity-50`}
                                       onClick={() => updateSession(idx, 'closing_probability', active ? null : p)}
                                     >{p}%</button>
                                   )
@@ -1115,7 +1115,7 @@ export const OtProgramForm = forwardRef<OtProgramFormRef, Props>(function OtProg
                         )}
 
                         <div className="space-y-1">
-                          <Label className="text-[11px] font-bold text-gray-600">세일즈 메모</Label>
+                          <Label className="text-xs font-bold text-gray-600">세일즈 메모</Label>
                           <Textarea value={session.sales_note ?? ''} onChange={(e) => updateSession(idx, 'sales_note', e.target.value)} className="text-sm min-h-[60px] bg-white" placeholder="다음 액션, 팔로업 일정, 특이사항 등" disabled={salesDisabled} />
                         </div>
                       </div>
@@ -1140,7 +1140,7 @@ export const OtProgramForm = forwardRef<OtProgramFormRef, Props>(function OtProg
                         className="h-5 w-5"
                       />
                       <span className="text-sm font-bold text-purple-700">인바디 측정</span>
-                      <span className="text-[11px] text-gray-500">· 이미지는 언제든 추가 가능</span>
+                      <span className="text-xs text-gray-500">· 이미지는 언제든 추가 가능</span>
                     </label>
                     <div className="flex gap-2 flex-wrap">
                       {(session.inbody_images ?? []).map((img, imgIdx) => (
@@ -1270,7 +1270,7 @@ export const OtProgramForm = forwardRef<OtProgramFormRef, Props>(function OtProg
                         <div className="flex items-center justify-between">
                           <Label className="text-xs font-bold">비포 / 애프터 이미지</Label>
                           {canEdit && !isCompleted && (
-                            <label className="text-[11px] font-bold text-blue-600 hover:text-blue-800 cursor-pointer">
+                            <label className="text-xs font-bold text-blue-600 hover:text-blue-800 cursor-pointer">
                               + 이미지 추가
                               <input type="file" accept="image/*" multiple className="hidden" onChange={(e) => e.target.files && handleImageUpload(idx, e.target.files)} disabled={uploading} />
                             </label>
@@ -1278,20 +1278,20 @@ export const OtProgramForm = forwardRef<OtProgramFormRef, Props>(function OtProg
                         </div>
 
                         {all.length === 0 ? (
-                          <p className="text-[11px] text-gray-400">업로드된 이미지가 없습니다. 우측 상단 &quot;+ 이미지 추가&quot;로 사진을 올리고 BEFORE/AFTER 를 지정해주세요.</p>
+                          <p className="text-xs text-gray-400">업로드된 이미지가 없습니다. 우측 상단 &quot;+ 이미지 추가&quot;로 사진을 올리고 BEFORE/AFTER 를 지정해주세요.</p>
                         ) : (
                           <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
                             <div className="rounded-lg border border-blue-200 bg-blue-50/40 p-2 space-y-2">
-                              <p className="text-[11px] font-bold text-blue-700">BEFORE ({before.length})</p>
+                              <p className="text-xs font-bold text-blue-700">BEFORE ({before.length})</p>
                               <div className="flex gap-2 flex-wrap">
-                                {before.length === 0 && <p className="text-[11px] text-gray-400">-</p>}
+                                {before.length === 0 && <p className="text-xs text-gray-400">-</p>}
                                 {before.map(renderImage)}
                               </div>
                             </div>
                             <div className="rounded-lg border border-green-200 bg-green-50/40 p-2 space-y-2">
-                              <p className="text-[11px] font-bold text-green-700">AFTER ({after.length})</p>
+                              <p className="text-xs font-bold text-green-700">AFTER ({after.length})</p>
                               <div className="flex gap-2 flex-wrap">
-                                {after.length === 0 && <p className="text-[11px] text-gray-400">-</p>}
+                                {after.length === 0 && <p className="text-xs text-gray-400">-</p>}
                                 {after.map(renderImage)}
                               </div>
                             </div>
@@ -1300,7 +1300,7 @@ export const OtProgramForm = forwardRef<OtProgramFormRef, Props>(function OtProg
 
                         {unlabeled.length > 0 && (
                           <div className="rounded-lg border border-gray-200 bg-gray-50/60 p-2 space-y-2">
-                            <p className="text-[11px] font-bold text-gray-600">미분류 ({unlabeled.length}) · BEFORE/AFTER 를 지정해주세요</p>
+                            <p className="text-xs font-bold text-gray-600">미분류 ({unlabeled.length}) · BEFORE/AFTER 를 지정해주세요</p>
                             <div className="flex gap-2 flex-wrap">
                               {unlabeled.map(renderImage)}
                             </div>
@@ -1316,7 +1316,7 @@ export const OtProgramForm = forwardRef<OtProgramFormRef, Props>(function OtProg
                       <div className="flex items-center justify-between">
                         <p className="text-sm font-bold text-green-700">✍️ 회원 서명 완료 {session.signer_name ? `· ${session.signer_name}` : ''}</p>
                         {session.signed_at && (
-                          <p className="text-[11px] text-green-700">{new Date(session.signed_at).toLocaleString('ko')}</p>
+                          <p className="text-xs text-green-700">{new Date(session.signed_at).toLocaleString('ko')}</p>
                         )}
                       </div>
                       <div className="bg-white rounded border border-green-200 p-2">
@@ -1331,7 +1331,7 @@ export const OtProgramForm = forwardRef<OtProgramFormRef, Props>(function OtProg
 
                   {/* 세션별 저장 / 완료 처리 버튼 — 완료 플로우에서 해당 차수일 때만 노출 */}
                   {onCompleteSession && completingSessionIdx === idx && (
-                    <div className="rounded-xl border border-gray-200 bg-gray-50 p-3 space-y-2">
+                    <div className="rounded-lg border border-gray-200 bg-gray-50 p-3 space-y-2">
                       {!session.signature_url && (
                         <p className="text-xs text-red-600 bg-red-50 border border-red-200 rounded p-2">
                           ⚠️ 회원 서명이 필요합니다. <span className="font-bold">현장 서명</span> 버튼으로 먼저 서명을 받아주세요.

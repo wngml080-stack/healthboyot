@@ -185,7 +185,7 @@ export function TrainerFolderGrid({ folders, allStaff, currentUserRole, currentU
               onClick={() => handleFolderClick(folder)}
               className="block text-left w-full"
             >
-              <div className="rounded-xl border border-gray-200 bg-white shadow-sm hover:shadow-xl hover:border-yellow-400 hover:-translate-y-1 transition-all overflow-hidden">
+              <div className="rounded-lg border border-gray-200 bg-white shadow-sm hover:shadow-xl hover:border-yellow-400 hover:-translate-y-1 transition-all overflow-hidden">
                 {/* 직무별 색상 바 (두꺼운 상단 라인) */}
                 <div className={cn('h-2', folder.color)} />
                 <div className="p-5">
@@ -223,7 +223,7 @@ export function TrainerFolderGrid({ folders, allStaff, currentUserRole, currentU
             onClick={() => setShowAdd(true)}
             className="group block text-left w-full"
           >
-            <div className="rounded-xl border-2 border-dashed border-gray-600 hover:border-yellow-400 bg-transparent hover:bg-white/5 transition-all overflow-hidden h-full min-h-[200px] flex items-center justify-center">
+            <div className="rounded-lg border-2 border-dashed border-gray-600 hover:border-yellow-400 bg-transparent hover:bg-white/5 transition-all overflow-hidden h-full min-h-[200px] flex items-center justify-center">
               <div className="text-center">
                 <div className="flex h-12 w-12 items-center justify-center rounded-full bg-white/10 text-gray-400 group-hover:bg-yellow-400 group-hover:text-black transition-colors mx-auto">
                   <Plus className="h-6 w-6" />
@@ -367,7 +367,7 @@ function StatItem({ value, label, color }: { value: number; label: string; color
   return (
     <div className="text-center">
       <p className={cn('text-xl font-bold', color)}>{value}</p>
-      <p className="text-[11px] text-gray-500">{label}</p>
+      <p className="text-xs text-gray-500">{label}</p>
     </div>
   )
 }
