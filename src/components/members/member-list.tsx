@@ -506,7 +506,7 @@ export function MemberList({ initialMembers, trainers = [] }: Props) {
                         </span>
                         {m.name}
                         {m.registration_source === '수기' && (
-                          <span className="text-[9px] font-bold text-amber-700">수기</span>
+                          <span className="text-[10px] font-medium text-gray-400 ml-0.5">(수기)</span>
                         )}
                         {duplicateIds.has(m.id) && (
                           <span className="ml-1 inline-flex items-center rounded px-1 py-0.5 text-[9px] font-bold bg-red-100 text-red-600">중복</span>
