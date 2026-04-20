@@ -97,8 +97,10 @@ export function PendingOtList({ assignments, trainers = [] }: Props) {
                   {a.member.registered_at && (
                     <span className="ml-2 text-gray-400">· 등록 {a.member.registered_at > '1900-01-01' ? new Date(a.member.registered_at).toLocaleDateString('ko', { year: '2-digit', month: '2-digit', day: '2-digit' }).replace(/\.\s*$/, '') : '미상'}</span>
                   )}
-                  {startDates[a.member_id] && (
-                    <span className="ml-2 text-yellow-600 font-medium">· 시작 {new Date(startDates[a.member_id]! + 'T00:00:00').toLocaleDateString('ko', { year: '2-digit', month: '2-digit', day: '2-digit' }).replace(/\.\s*$/, '')}</span>
+                  {startDates[a.member_id] !== undefined && (
+                    <span className={`ml-2 font-medium ${startDates[a.member_id] ? 'text-yellow-600' : 'text-gray-400'}`}>
+                      · 시작 {startDates[a.member_id] ? new Date(startDates[a.member_id]! + 'T00:00:00').toLocaleDateString('ko', { year: '2-digit', month: '2-digit', day: '2-digit' }).replace(/\.\s*$/, '') : '미기재'}
+                    </span>
                   )}
                 </p>
               </div>
