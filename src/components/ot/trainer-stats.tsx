@@ -101,10 +101,26 @@ export function TrainerStats({ assignments, trainerName, programs, registrations
     if (!captureRef.current) return
     setCapturing(true)
     try {
+      const el = captureRef.current
       const html2canvas = (await import('html2canvas')).default
-      captureRef.current.style.padding = '24px'
-      const canvas = await html2canvas(captureRef.current, { scale: 2, backgroundColor: '#1a1a2e', useCORS: true })
-      captureRef.current.style.padding = ''
+
+      // 캡처 전: sticky/overflow 제거 (글자 밀림 방지)
+      const stickyCells = el.querySelectorAll<HTMLElement>('.sticky')
+      const overflowEls = el.querySelectorAll<HTMLElement>('.overflow-x-auto')
+      stickyCells.forEach((c) => { c.dataset.pos = c.style.position; c.style.position = 'relative' })
+      overflowEls.forEach((c) => { c.dataset.ov = c.style.overflow; c.style.overflow = 'visible' })
+
+      // 인터랙티브 요소 숨기기
+      const hideEls = el.querySelectorAll<HTMLElement>('input, .capture-hide')
+      hideEls.forEach((e) => { e.dataset.vis = e.style.visibility; e.style.visibility = 'hidden' })
+
+      const canvas = await html2canvas(el, { scale: 2, backgroundColor: '#1a1a2e', useCORS: true, logging: false })
+
+      // 복원
+      stickyCells.forEach((c) => { c.style.position = c.dataset.pos || ''; delete c.dataset.pos })
+      overflowEls.forEach((c) => { c.style.overflow = c.dataset.ov || ''; delete c.dataset.ov })
+      hideEls.forEach((e) => { e.style.visibility = e.dataset.vis || ''; delete e.dataset.vis })
+
       const link = document.createElement('a')
       link.download = `${trainerName}_통계표_${viewMode === 'monthly' ? `${year}년${month}월` : format(selectedWeekStart, 'yyyy-MM-dd')}.png`
       link.href = canvas.toDataURL('image/png')
@@ -403,7 +419,7 @@ export function TrainerStats({ assignments, trainerName, programs, registrations
           </div>
         </div>
         <div className="flex items-center gap-2">
-          <Button size="sm" variant="outline" className="h-7 text-xs bg-white/10 border-white/20 text-white hover:bg-white/20" onClick={handleCapture} disabled={capturing}>
+          <Button size="sm" variant="outline" className="capture-hide h-7 text-xs bg-white/10 border-white/20 text-white hover:bg-white/20" onClick={handleCapture} disabled={capturing}>
             <Camera className="h-3 w-3 mr-1" />{capturing ? '저장 중...' : '이미지 저장'}
           </Button>
           <button onClick={prevPeriod} className="p-1.5 rounded-lg hover:bg-white/10 text-white"><ChevronLeft className="h-4 w-4" /></button>

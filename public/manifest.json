@@ -1,6 +1,6 @@
 {
   "name": "헬스보이짐 OT시스템",
-  "short_name": "헬스보이짐",
+  "short_name": "OT시스템",
   "description": "헬스보이짐 당산역점 OT 배정 및 관리 시스템",
   "start_url": "/ot",
   "display": "standalone",
@@ -12,25 +12,13 @@
       "src": "/api/icon?size=192",
       "sizes": "192x192",
       "type": "image/png",
-      "purpose": "any"
+      "purpose": "any maskable"
     },
     {
       "src": "/api/icon?size=512",
       "sizes": "512x512",
       "type": "image/png",
-      "purpose": "any"
-    },
-    {
-      "src": "/api/icon?size=192&maskable=1",
-      "sizes": "192x192",
-      "type": "image/png",
-      "purpose": "maskable"
-    },
-    {
-      "src": "/api/icon?size=512&maskable=1",
-      "sizes": "512x512",
-      "type": "image/png",
-      "purpose": "maskable"
+      "purpose": "any maskable"
     }
   ]
 }

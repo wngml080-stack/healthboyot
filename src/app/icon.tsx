@@ -10,7 +10,7 @@ export default function Icon() {
         style={{
           width: 64,
           height: 64,
-          borderRadius: '50%',
+          borderRadius: 12,
           background: '#1a1a1a',
           display: 'flex',
           alignItems: 'center',
@@ -19,13 +19,11 @@ export default function Icon() {
       >
         <span
           style={{
-            fontSize: 42,
+            fontSize: 36,
             fontWeight: 900,
             fontStyle: 'italic',
             color: '#facc15',
             transform: 'skewX(-12deg)',
-            marginTop: -2,
-            textShadow: '1px 0 0 #facc15, -1px 0 0 #facc15, 2px 0 0 #facc15, -2px 0 0 #facc15',
           }}
         >
           H
