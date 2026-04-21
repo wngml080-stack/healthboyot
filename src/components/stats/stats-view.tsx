@@ -91,6 +91,33 @@ export function StatsView({ stats, target }: Props) {
         </Button>
       </div>
 
+      {/* OT 현황 */}
+      <Card className="bg-white border-gray-200">
+        <CardHeader className="pb-2 px-4 pt-4">
+          <div className="flex items-center justify-between">
+            <CardTitle className="text-sm font-bold text-gray-900">OT 현황</CardTitle>
+            <span className="text-xs text-gray-400">{new Date().getFullYear()}년 {new Date().getMonth() + 1}월</span>
+          </div>
+        </CardHeader>
+        <CardContent className="px-4 pb-4 space-y-3">
+          <div className="grid grid-cols-2 gap-2">
+            <StatBox label="총 인원" value={stats.otStatus.inProgress + stats.otStatus.rejected + stats.otStatus.registered} bg="bg-gray-50" text="text-gray-900" />
+            <StatBox label="진행중" value={stats.otStatus.inProgress} bg="bg-green-50" text="text-green-700" />
+            <StatBox label="등록완료" value={stats.otStatus.registered} bg="bg-blue-50" text="text-blue-700" />
+            <StatBox label="거부자" value={stats.otStatus.rejected} bg="bg-orange-50" text="text-orange-700" />
+          </div>
+          <div className="border-t border-gray-100" />
+          <div className="grid grid-cols-2 gap-2">
+            <StatBox label="연락두절" value={stats.otStatus.noContact} bg="bg-gray-50" text="text-gray-600" />
+            <StatBox label="클로싱실패" value={stats.otStatus.closingFailed} bg="bg-red-50" text="text-red-600" />
+            <StatBox label="스케줄미확정" value={stats.otStatus.scheduleUndecided} bg="bg-yellow-50" text="text-yellow-700" />
+            <StatBox label="매출대상자" value={stats.salesSummary.진행인원} bg="bg-blue-50" text="text-blue-700" />
+            <StatBox label="PT전환" value={stats.salesSummary.등록인원} bg="bg-purple-50" text="text-purple-700" />
+            <StatBox label="클로징율" value={`${stats.salesSummary.클로징율}%`} bg="bg-pink-50" text="text-pink-700" />
+          </div>
+        </CardContent>
+      </Card>
+
       {/* 당월 목표매출 */}
       <Card className="bg-white border-gray-200">
         <CardHeader className="pb-2 px-4 pt-4">
@@ -213,11 +240,11 @@ export function StatsView({ stats, target }: Props) {
   )
 }
 
-function StatusRow({ label, value, color, isText }: { label: string; value: number | string; color: string; isText?: boolean }) {
+function StatBox({ label, value, bg, text }: { label: string; value: number | string; bg: string; text: string }) {
   return (
-    <div className="flex items-center justify-between py-0.5">
-      <span className={`inline-flex items-center rounded px-2 py-0.5 text-[10px] font-bold ${color}`}>{label}</span>
-      <span className="text-sm font-bold text-gray-900">{isText ? value : value}</span>
+    <div className={`flex items-center justify-between rounded-lg px-3 py-2.5 ${bg}`}>
+      <span className={`text-xs font-medium ${text}`}>{label}</span>
+      <span className={`text-base font-bold ${text}`}>{value}</span>
     </div>
   )
 }
