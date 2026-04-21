@@ -224,8 +224,8 @@ export async function getAdminDashboard(period: 'weekly' | 'monthly' = 'monthly'
     orderMap.set(t.id, (t as unknown as { folder_order?: number }).folder_order ?? 999)
   }
 
+  // 트레이너 폴더가 있는 역할만 표시 (admin, fc 제외하지 않음 - 폴더 있으면 모두 표시)
   const trainers = Array.from(trainerMap.values())
-    .filter((t) => t.totalMembers > 0 || t.registrationCredits > 0 || t.pendingCredits > 0)
     .sort((a, b) => (orderMap.get(a.id) ?? 999) - (orderMap.get(b.id) ?? 999))
 
   const totals = {
