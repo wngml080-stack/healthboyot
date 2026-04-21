@@ -218,31 +218,6 @@ export function AdminDashboard({ data: initialData, initialPeriod }: Props) {
 
         return (
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
-            {/* OT 현황 카드 */}
-            <Card className="bg-white border-gray-200 border-2 border-yellow-400">
-              <CardContent className="pt-4 pb-3 px-4">
-                <div className="flex items-center justify-between mb-3">
-                  <h3 className="font-bold text-gray-900">OT 현황</h3>
-                  <Badge className={`text-xs ${totals.closingRate >= 50 ? 'bg-green-500 text-white' : totals.closingRate >= 30 ? 'bg-yellow-500 text-white' : 'bg-gray-400 text-white'}`}>
-                    클로징 {totals.closingRate}%
-                  </Badge>
-                </div>
-                <div className="grid grid-cols-4 gap-2 text-center">
-                  <MiniStat label="배정" value={totals.totalMembers} color="text-gray-900" />
-                  <MiniStat label="진행" value={totals.activeMembers} color="text-blue-600" />
-                  <MiniStat label="완료" value={totals.completedMembers} color="text-green-600" />
-                  <MiniStat label="거부" value={totals.rejectedMembers} color="text-red-500" />
-                  <MiniStat label="OT수업" value={totals.otSessionsThisPeriod} color="text-blue-700" />
-                  <MiniStat label="PT전환" value={totals.ptConversions} color="text-purple-700" />
-                  <MiniStat label="인바디" value={totals.inbodyCount} color="text-purple-600" />
-                  <MiniStat label="OT이외 인정" value={totals.registrationCredits} color="text-emerald-700" />
-                </div>
-                <div className="mt-2 pt-2 border-t border-gray-100 text-center">
-                  <span className="text-xs text-gray-500">등록금액</span>
-                  <p className="text-sm font-bold text-green-700">{totals.registrationAmount.toLocaleString()}원</p>
-                </div>
-              </CardContent>
-            </Card>
             {trainers.map((t) => {
               const rank = rankMap.get(t.id)
               return (
@@ -285,6 +260,32 @@ export function AdminDashboard({ data: initialData, initialPeriod }: Props) {
           </div>
         )
       })()}
+
+      {/* OT 현황 요약 */}
+      <Card className="bg-white border-2 border-yellow-400">
+        <CardContent className="pt-4 pb-3 px-4">
+          <div className="flex items-center justify-between mb-3">
+            <h3 className="font-bold text-gray-900">OT 현황 합계</h3>
+            <Badge className={`text-xs ${totals.closingRate >= 50 ? 'bg-green-500 text-white' : totals.closingRate >= 30 ? 'bg-yellow-500 text-white' : 'bg-gray-400 text-white'}`}>
+              클로징 {totals.closingRate}%
+            </Badge>
+          </div>
+          <div className="grid grid-cols-4 sm:grid-cols-8 gap-3 text-center">
+            <MiniStat label="배정" value={totals.totalMembers} color="text-gray-900" />
+            <MiniStat label="진행" value={totals.activeMembers} color="text-blue-600" />
+            <MiniStat label="완료" value={totals.completedMembers} color="text-green-600" />
+            <MiniStat label="거부" value={totals.rejectedMembers} color="text-red-500" />
+            <MiniStat label="OT수업" value={totals.otSessionsThisPeriod} color="text-blue-700" />
+            <MiniStat label="PT전환" value={totals.ptConversions} color="text-purple-700" />
+            <MiniStat label="인바디" value={totals.inbodyCount} color="text-purple-600" />
+            <MiniStat label="OT이외 인정" value={totals.registrationCredits} color="text-emerald-700" />
+          </div>
+          <div className="mt-2 pt-2 border-t border-gray-100 text-center">
+            <span className="text-xs text-gray-500">등록금액</span>
+            <p className="text-sm font-bold text-green-700">{totals.registrationAmount.toLocaleString()}원</p>
+          </div>
+        </CardContent>
+      </Card>
     </div>
   )
 }
