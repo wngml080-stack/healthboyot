@@ -209,10 +209,15 @@ export async function getAdminDashboard(period: 'weekly' | 'monthly' = 'monthly'
     t.closingRate = t.activeMembers > 0 ? Math.round((t.ptConversions / t.activeMembers) * 100) : 0
   }
 
-  // 기간 내 세션 완료 카운트 — periodSessionCountByAssignment 사용
+  // 기간 내 세션 완료 카운트 — 폴더 있는 트레이너의 배정만
+  const folderTrainerIds = new Set(allTrainers.map(t => t.id))
   let session1Done = 0, session2Done = 0, session3Done = 0
   let totalNoContact = 0, totalClosingFailed = 0, totalScheduleUndecided = 0
+  let periodAssignedCount = 0
   for (const a of assignments) {
+    const folderId = a.pt_trainer_id || a.ppt_trainer_id
+    if (!folderId || !folderTrainerIds.has(folderId)) continue
+    periodAssignedCount++
     const periodDone = periodSessionCountByAssignment.get(a.id) ?? 0
     if (periodDone === 1) session1Done++
     else if (periodDone === 2) session2Done++
@@ -221,7 +226,7 @@ export async function getAdminDashboard(period: 'weekly' | 'monthly' = 'monthly'
     if (a.sales_status === '클로징실패') totalClosingFailed++
     if (a.sales_status === '스케줄미확정') totalScheduleUndecided++
   }
-  const periodAssigned = assignments.length
+  const periodAssigned = periodAssignedCount
 
   // folder_order 매핑
   const orderMap = new Map<string, number>()
