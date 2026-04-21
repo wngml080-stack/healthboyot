@@ -708,8 +708,7 @@ export const OtProgramForm = forwardRef<OtProgramFormRef, Props>(function OtProg
                   {canEdit && !isSessionLocked(session) && (
                     <Button
                       size="sm"
-                      variant="outline"
-                      className="h-7 text-xs font-bold border-gray-300 text-gray-700 hover:bg-gray-100"
+                      className="h-7 text-xs font-bold bg-green-600 hover:bg-green-700 text-white"
                       onClick={handleSave}
                       disabled={saving}
                     >

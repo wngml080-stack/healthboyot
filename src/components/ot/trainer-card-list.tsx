@@ -105,6 +105,28 @@ export function TrainerCardList({ assignments, trainers = [], trainerId, trainer
   const [expandedId, setExpandedId] = useState<string | null>(null)
   const [expandedData, setExpandedData] = useState<Record<string, { card: import('@/types').ConsultationCard | null; program: OtProgram | null } | 'loading'>>({})
 
+  // 피드백 데이터 (assignment_id → [{session, feedback}])
+  const [feedbackMap, setFeedbackMap] = useState<Record<string, { session: number; feedback: string }[]>>({})
+  const [feedbackPopup, setFeedbackPopup] = useState<{ title: string; feedback: string } | null>(null)
+
+  useEffect(() => {
+    if (!trainerId) return
+    const supabase = createClient()
+    supabase.from('ot_programs').select('ot_assignment_id, sessions').then(({ data }) => {
+      if (!data) return
+      const map: Record<string, { session: number; feedback: string }[]> = {}
+      for (const p of data) {
+        const sessions = p.sessions as { admin_feedback?: string | null }[] | null
+        if (!sessions) continue
+        const feedbacks = sessions
+          .map((s, i) => ({ session: i + 1, feedback: s.admin_feedback ?? '' }))
+          .filter((f) => f.feedback)
+        if (feedbacks.length > 0) map[p.ot_assignment_id] = feedbacks
+      }
+      setFeedbackMap(map)
+    })
+  }, [trainerId])
+
   const loadExpandedData = async (memberId: string, assignmentId: string) => {
     if (expandedData[assignmentId]) return
     setExpandedData((p) => ({ ...p, [assignmentId]: 'loading' }))
@@ -712,6 +734,15 @@ export function TrainerCardList({ assignments, trainers = [], trainerId, trainer
                           )}
                         </div>
                         <div className="text-right text-xs text-gray-500 flex items-center justify-end gap-1.5">
+                          {feedbackMap[a.id] && feedbackMap[a.id].map((fb) => (
+                            <button
+                              key={fb.session}
+                              className="inline-flex items-center rounded px-1.5 py-0.5 text-[10px] font-bold bg-blue-500 text-white hover:bg-blue-600 transition-colors"
+                              onClick={(e) => { e.stopPropagation(); setFeedbackPopup({ title: `${fb.session}차 OT 피드백`, feedback: fb.feedback }) }}
+                            >
+                              {fb.session}차 피드백
+                            </button>
+                          ))}
                           {a.created_at && (Date.now() - new Date(a.created_at).getTime()) < 3 * 24 * 60 * 60 * 1000 && (
                             <span className="inline-flex items-center rounded px-1.5 py-0.5 text-[10px] font-bold bg-red-500 text-white">New</span>
                           )}
@@ -1891,6 +1922,19 @@ export function TrainerCardList({ assignments, trainers = [], trainerId, trainer
             >
               {salesLoading ? '저장 중...' : '저장'}
             </Button>
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* 피드백 팝업 */}
+      <Dialog open={!!feedbackPopup} onOpenChange={() => setFeedbackPopup(null)}>
+        <DialogContent className="max-w-sm">
+          <DialogHeader>
+            <DialogTitle className="text-base">{feedbackPopup?.title}</DialogTitle>
+            <DialogDescription>관리자 피드백</DialogDescription>
+          </DialogHeader>
+          <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
+            <p className="text-sm text-gray-800 whitespace-pre-wrap">{feedbackPopup?.feedback}</p>
           </div>
         </DialogContent>
       </Dialog>
