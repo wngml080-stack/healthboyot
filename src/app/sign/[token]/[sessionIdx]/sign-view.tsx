@@ -81,26 +81,28 @@ export function SignView({ token, sessionIdx, memberName, trainerName, session }
                 const after = records.filter((r) => r.label === 'after')
                 if (before.length === 0 && after.length === 0) return null
                 return (
-                  <div className="space-y-2">
+                  <div className="space-y-3">
                     <p className="text-sm font-bold text-gray-700">📷 비포 / 애프터</p>
-                    <div className="grid grid-cols-2 gap-3">
-                      {before.length > 0 && (
-                        <div className="space-y-1">
-                          <p className="text-xs font-bold text-blue-600">BEFORE</p>
+                    {before.length > 0 && (
+                      <div className="space-y-1">
+                        <p className="text-xs font-bold text-blue-600">BEFORE</p>
+                        <div className="grid grid-cols-2 gap-2">
                           {before.map((r, i) => (
                             <img key={i} src={r.url} alt={`before ${i + 1}`} className="w-full rounded-lg border cursor-pointer hover:opacity-80 transition-opacity" onClick={() => setZoomImg(r.url)} />
                           ))}
                         </div>
-                      )}
-                      {after.length > 0 && (
-                        <div className="space-y-1">
-                          <p className="text-xs font-bold text-green-600">AFTER</p>
+                      </div>
+                    )}
+                    {after.length > 0 && (
+                      <div className="space-y-1">
+                        <p className="text-xs font-bold text-green-600">AFTER</p>
+                        <div className="grid grid-cols-2 gap-2">
                           {after.map((r, i) => (
                             <img key={i} src={r.url} alt={`after ${i + 1}`} className="w-full rounded-lg border cursor-pointer hover:opacity-80 transition-opacity" onClick={() => setZoomImg(r.url)} />
                           ))}
                         </div>
-                      )}
-                    </div>
+                      </div>
+                    )}
                   </div>
                 )
               })()}
