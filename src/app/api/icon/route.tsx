@@ -22,14 +22,13 @@ export async function GET(req: NextRequest) {
       >
         <span
           style={{
-            fontSize: size * 0.6,
+            fontSize: size * 0.65,
             fontWeight: 900,
             fontStyle: 'italic',
             color: '#facc15',
             transform: 'skewX(-12deg)',
             marginTop: -size * 0.02,
-            textShadow: '2px 0 0 #facc15, -2px 0 0 #facc15',
-            letterSpacing: '-0.02em',
+            textShadow: '3px 0 0 #facc15, -3px 0 0 #facc15, 1px 1px 0 #facc15, -1px -1px 0 #facc15',
           }}
         >
           H
