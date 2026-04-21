@@ -705,6 +705,17 @@ export const OtProgramForm = forwardRef<OtProgramFormRef, Props>(function OtProg
                   {idx === activeSessionIdx && !isCompleted && <Badge className="bg-blue-500 text-white text-xs">현재</Badge>}
                 </CardTitle>
                 <div className="flex flex-wrap items-center gap-2">
+                  {canEdit && !isSessionLocked(session) && (
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      className="h-7 text-xs font-bold border-gray-300 text-gray-700 hover:bg-gray-100"
+                      onClick={handleSave}
+                      disabled={saving}
+                    >
+                      {saving ? '저장중...' : `${idx + 1}차 저장`}
+                    </Button>
+                  )}
                   <Button
                     size="sm"
                     className="h-7 text-xs bg-yellow-400 hover:bg-yellow-500 text-gray-900 font-bold border border-yellow-500"
