@@ -261,30 +261,6 @@ export function AdminDashboard({ data: initialData, initialPeriod }: Props) {
         )
       })()}
 
-      {/* 트레이너별 회원 비중 */}
-      <Card className="bg-white border-gray-200">
-        <CardHeader className="pb-2 px-4 pt-4">
-          <CardTitle className="text-sm font-bold text-gray-900">트레이너별 회원 비중</CardTitle>
-        </CardHeader>
-        <CardContent className="px-4 pb-4">
-          <div className="space-y-2">
-            {trainers.filter(t => t.totalMembers > 0).sort((a, b) => b.totalMembers - a.totalMembers).map((t) => {
-              const pct = totals.totalMembers > 0 ? Math.round((t.totalMembers / totals.totalMembers) * 100) : 0
-              const colors = ['bg-blue-400', 'bg-yellow-400', 'bg-green-400', 'bg-purple-400', 'bg-pink-400', 'bg-indigo-400', 'bg-orange-400', 'bg-teal-400']
-              const colorIdx = trainers.indexOf(t) % colors.length
-              return (
-                <div key={t.id} className="flex items-center gap-3">
-                  <span className="w-16 text-xs font-bold text-gray-700 shrink-0 truncate">{t.name}</span>
-                  <div className="flex-1 h-5 bg-gray-100 rounded-full overflow-hidden">
-                    <div className={`h-full rounded-full ${colors[colorIdx]}`} style={{ width: `${pct}%` }} />
-                  </div>
-                  <span className="text-xs font-bold text-gray-700 w-14 text-right">{pct}% ({t.totalMembers})</span>
-                </div>
-              )
-            })}
-          </div>
-        </CardContent>
-      </Card>
     </div>
   )
 }

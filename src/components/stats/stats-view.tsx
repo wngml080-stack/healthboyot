@@ -184,22 +184,28 @@ export function StatsView({ stats, target }: Props) {
           <CardTitle className="text-sm font-bold text-gray-900">요일별 OT 현황</CardTitle>
         </CardHeader>
         <CardContent className="px-4 pb-4">
-          <div className="space-y-2">
-            {stats.dailyData.map((d) => {
-              const maxCount = Math.max(...stats.dailyData.map((x) => x.count), 1)
-              const width = (d.count / maxCount) * 100
-              const isWeekend = d.day === '토' || d.day === '일'
-              return (
-                <div key={d.day} className="flex items-center gap-3">
-                  <span className={`w-6 text-center text-xs font-bold ${isWeekend ? 'text-red-500' : 'text-gray-700'}`}>{d.day}</span>
-                  <div className="flex-1 h-5 bg-gray-100 rounded-full overflow-hidden">
-                    <div className={`h-full rounded-full transition-all ${isWeekend ? 'bg-red-300' : 'bg-yellow-400'}`} style={{ width: `${width}%` }} />
-                  </div>
-                  <span className="text-xs font-medium text-gray-700 w-8 text-right">{d.count}</span>
-                </div>
-              )
-            })}
-          </div>
+          {(() => {
+            const totalCount = stats.dailyData.reduce((s, d) => s + d.count, 0)
+            const maxCount = Math.max(...stats.dailyData.map((x) => x.count), 1)
+            return (
+              <div className="space-y-2">
+                {stats.dailyData.map((d) => {
+                  const width = (d.count / maxCount) * 100
+                  const pct = totalCount > 0 ? Math.round((d.count / totalCount) * 100) : 0
+                  const isWeekend = d.day === '토' || d.day === '일'
+                  return (
+                    <div key={d.day} className="flex items-center gap-3">
+                      <span className={`w-6 text-center text-xs font-bold ${isWeekend ? 'text-red-500' : 'text-gray-700'}`}>{d.day}</span>
+                      <div className="flex-1 h-5 bg-gray-100 rounded-full overflow-hidden">
+                        <div className={`h-full rounded-full transition-all ${isWeekend ? 'bg-red-300' : 'bg-yellow-400'}`} style={{ width: `${width}%` }} />
+                      </div>
+                      <span className="text-xs font-medium text-gray-700 w-20 text-right">{d.count}건 ({pct}%)</span>
+                    </div>
+                  )
+                })}
+              </div>
+            )
+          })()}
         </CardContent>
       </Card>
 
