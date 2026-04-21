@@ -205,6 +205,8 @@ export function TrainerFolderGrid({ folders, allStaff, currentUserRole, currentU
                     {folder.role === 'trainer' ? '트레이너' : folder.role === 'fc' ? 'FC' : folder.role}
                   </p>
 
+                  <NewBadge date={folder.latestAssignmentDate} />
+
                   <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 mt-4">
                     <StatItem value={folder.stats.inProgress} label="금일 OT" color="text-green-600" />
                     <StatItem value={folder.stats.pending} label="금일 매출대상자" color="text-red-500" />
@@ -368,6 +370,31 @@ function StatItem({ value, label, color }: { value: number; label: string; color
     <div className="text-center">
       <p className={cn('text-xl font-bold', color)}>{value}</p>
       <p className="text-xs text-gray-500">{label}</p>
+    </div>
+  )
+}
+
+function NewBadge({ date }: { date: string | null }) {
+  if (!date) return null
+
+  // KST 기준으로 2일 이내인지 확인
+  const nowKst = new Date(Date.now() + 9 * 60 * 60 * 1000)
+  const assignedKst = new Date(new Date(date).getTime() + 9 * 60 * 60 * 1000)
+  const diffMs = nowKst.getTime() - assignedKst.getTime()
+  const diffDays = diffMs / (1000 * 60 * 60 * 24)
+
+  if (diffDays > 2) return null
+
+  // YY.MM.DD 형식
+  const yy = String(assignedKst.getUTCFullYear()).slice(2)
+  const mm = String(assignedKst.getUTCMonth() + 1).padStart(2, '0')
+  const dd = String(assignedKst.getUTCDate()).padStart(2, '0')
+
+  return (
+    <div className="mt-2">
+      <span className="inline-flex items-center gap-1.5 rounded-full bg-red-500 px-2.5 py-0.5 text-[11px] font-bold text-white animate-pulse">
+        New <span className="text-red-200">|</span> {yy}.{mm}.{dd}
+      </span>
     </div>
   )
 }

@@ -11,6 +11,7 @@ export interface TrainerFolder {
   color: string
   has_password: boolean
   folder_order: number
+  latestAssignmentDate: string | null // 가장 최근 배정일 (ISO string)
   stats: {
     inProgress: number
     pending: number
@@ -55,7 +56,7 @@ export async function getTrainerFolders(): Promise<TrainerFolder[]> {
   const [{ data: assignments }, { data: todaySchedules }] = await Promise.all([
     supabase
       .from('ot_assignments')
-      .select('status, pt_trainer_id, ppt_trainer_id, is_sales_target, is_pt_conversion, member:members!inner(id, name, registration_source)')
+      .select('status, pt_trainer_id, ppt_trainer_id, is_sales_target, is_pt_conversion, created_at, member:members!inner(id, name, registration_source)')
       .or(`pt_trainer_id.in.(${trainerIds.join(',')}),ppt_trainer_id.in.(${trainerIds.join(',')})`),
     supabase
       .from('trainer_schedules')
@@ -85,6 +86,12 @@ export async function getTrainerFolders(): Promise<TrainerFolder[]> {
       }
     }
 
+    // 가장 최근 배정일
+    const latestDate = myAssignments.reduce<string | null>((latest, a) => {
+      if (!a.created_at) return latest
+      return !latest || a.created_at > latest ? a.created_at : latest
+    }, null)
+
     return {
       id: t.id,
       name: t.name,
@@ -92,6 +99,7 @@ export async function getTrainerFolders(): Promise<TrainerFolder[]> {
       color: ROLE_COLORS[t.role] ?? 'bg-gray-400',
       has_password: !!t.folder_password,
       folder_order: t.folder_order ?? 0,
+      latestAssignmentDate: latestDate,
       stats: {
         inProgress: myTodayOts.length, // 금일 OT 수업 개수
         pending: todaySalesTargetMemberIds.size, // 금일 매출대상자
@@ -120,6 +128,7 @@ function getDemoFolders(): TrainerFolder[] {
       color: 'bg-blue-500',
       has_password: true,
       folder_order: 1,
+      latestAssignmentDate: new Date().toISOString(),
       stats: {
         inProgress: trainerAssignments.filter((a) => a.status === '진행중').length,
         pending: trainerAssignments.filter((a) =>
@@ -136,6 +145,7 @@ function getDemoFolders(): TrainerFolder[] {
       color: 'bg-gray-400',
       has_password: false,
       folder_order: 2,
+      latestAssignmentDate: null,
       stats: {
         inProgress: unassigned.filter((a) => a.status === '진행중').length,
         pending: unassigned.filter((a) =>

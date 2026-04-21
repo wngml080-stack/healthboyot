@@ -44,9 +44,8 @@ export async function getStats(period: 'weekly' | 'monthly' = 'monthly', offset:
     periodEnd = new Date(targetMonth.getFullYear(), targetMonth.getMonth() + 1, 0, 23, 59, 59, 999)
   }
 
-  const { data: assignments } = await supabase
-    .from('ot_assignments')
-    .select(`
+  const [assignRes, folderRes] = await Promise.all([
+    supabase.from('ot_assignments').select(`
       id, status, created_at, week_number,
       actual_sales, expected_sales, sales_status, contact_status,
       is_sales_target, is_pt_conversion, pt_trainer_id, ppt_trainer_id,
@@ -55,9 +54,18 @@ export async function getStats(period: 'weekly' | 'monthly' = 'monthly', offset:
       sessions:ot_sessions(completed_at, scheduled_at)
     `)
     .gte('created_at', periodStart.toISOString())
-    .lte('created_at', periodEnd.toISOString())
+    .lte('created_at', periodEnd.toISOString()),
+    supabase.from('profiles').select('id').eq('has_folder', true),
+  ])
 
-  if (!assignments || assignments.length === 0) return emptyStats()
+  const folderIds = new Set((folderRes.data ?? []).map(p => p.id))
+  // 폴더 있는 트레이너의 배정만 필터
+  const assignments = (assignRes.data ?? []).filter(a => {
+    const folderId = a.pt_trainer_id || a.ppt_trainer_id
+    return folderId && folderIds.has(folderId)
+  })
+
+  if (assignments.length === 0) return emptyStats()
 
   // 단일 순회로 모든 집계 수행
   let newSales = 0
