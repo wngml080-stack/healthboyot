@@ -120,12 +120,16 @@ export async function getStats(period: 'weekly' | 'monthly' = 'monthly', offset:
     if (isCompleted) { e.reg++; e.sales += actualSales }
     trainerMap.set(tName, e)
 
-    // 요일별
-    const dayIdx = new Date(a.created_at).getDay()
-    dayCounts[dayIdx].count++
-    if (isCompleted) dayCounts[dayIdx].sales += actualSales
-    if (tName) {
-      dayCounts[dayIdx].trainerCounts.set(tName, (dayCounts[dayIdx].trainerCounts.get(tName) ?? 0) + 1)
+    // 요일별 — 완료된 세션의 수업일 기준
+    const sessions = (a.sessions as { completed_at: string | null; scheduled_at?: string | null }[]) ?? []
+    for (const s of sessions) {
+      if (!s.completed_at) continue
+      const sessionDate = s.scheduled_at ?? s.completed_at
+      const dayIdx = new Date(sessionDate).getDay()
+      dayCounts[dayIdx].count++
+      if (tName) {
+        dayCounts[dayIdx].trainerCounts.set(tName, (dayCounts[dayIdx].trainerCounts.get(tName) ?? 0) + 1)
+      }
     }
   }
 
