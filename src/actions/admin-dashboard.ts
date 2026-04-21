@@ -84,25 +84,29 @@ export async function getAdminDashboard(period: 'weekly' | 'monthly' = 'monthly'
   const periodStartIso = periodStart.toISOString()
   const periodEndIso = periodEnd.toISOString()
 
-  // 병렬 조회
-  const [assignRes, sessionRes, regRes, trainerRes, programRes] = await Promise.all([
+  // 병렬 조회 — DB 레벨에서 기간 필터 적용 + nested select로 쿼리 통합
+  const [assignRes, regRes, trainerRes] = await Promise.all([
+    // assignments + sessions + programs를 nested select로 한 번에 조회 (기간 필터 적용)
     supabase.from('ot_assignments').select(`
       id, status, sales_status, is_sales_target, is_pt_conversion,
       pt_trainer_id, ppt_trainer_id, created_at,
       pt_trainer:profiles!ot_assignments_pt_trainer_id_fkey(id, name),
-      ppt_trainer:profiles!ot_assignments_ppt_trainer_id_fkey(id, name)
-    `).limit(1000),
-    supabase.from('ot_sessions').select('id, ot_assignment_id, completed_at').not('completed_at', 'is', null).limit(5000),
-    supabase.from('ot_registrations').select('id, trainer_id, ot_credit, registration_amount, approval_status, submitted_at').limit(2000),
+      ppt_trainer:profiles!ot_assignments_ppt_trainer_id_fkey(id, name),
+      sessions:ot_sessions(id, completed_at),
+      programs:ot_programs(sessions)
+    `)
+      .gte('created_at', periodStartIso)
+      .lte('created_at', periodEndIso),
+    // registrations — 기간 필터 적용
+    supabase.from('ot_registrations').select('id, trainer_id, ot_credit, registration_amount, approval_status, submitted_at')
+      .gte('submitted_at', periodStartIso)
+      .lte('submitted_at', periodEndIso),
     supabase.from('profiles').select('id, name, role, folder_order').eq('has_folder', true).order('folder_order', { ascending: true, nullsFirst: false }),
-    supabase.from('ot_programs').select('ot_assignment_id, sessions').limit(1000),
   ])
 
   const assignments = assignRes.data ?? []
-  const sessions = sessionRes.data ?? []
   const registrations = regRes.data ?? []
   const allTrainers = trainerRes.data ?? []
-  const programs = programRes.data ?? []
 
   // assignment → 폴더 트레이너 매핑 (PT 우선, 없으면 PPT)
   const assignmentTrainerMap = new Map<string, string>()
@@ -111,35 +115,38 @@ export async function getAdminDashboard(period: 'weekly' | 'monthly' = 'monthly'
     if (folderId) assignmentTrainerMap.set(a.id, folderId)
   }
 
-  // 세션 카운트 맵
+  // 세션 카운트 맵 — nested select에서 직접 계산
   const sessionCountByAssignment = new Map<string, number>()
   const periodSessionCountByAssignment = new Map<string, number>()
-  for (const s of sessions) {
-    sessionCountByAssignment.set(s.ot_assignment_id, (sessionCountByAssignment.get(s.ot_assignment_id) ?? 0) + 1)
-    if (s.completed_at && s.completed_at >= periodStartIso && s.completed_at <= periodEndIso) {
-      periodSessionCountByAssignment.set(s.ot_assignment_id, (periodSessionCountByAssignment.get(s.ot_assignment_id) ?? 0) + 1)
+  for (const a of assignments) {
+    const sessions = a.sessions as { id: string; completed_at: string | null }[] | null
+    if (!sessions) continue
+    const completedSessions = sessions.filter((s) => s.completed_at)
+    sessionCountByAssignment.set(a.id, completedSessions.length)
+    const periodSessions = completedSessions.filter((s) => s.completed_at! >= periodStartIso && s.completed_at! <= periodEndIso)
+    periodSessionCountByAssignment.set(a.id, periodSessions.length)
+  }
+
+  // 인바디 카운트 — nested programs에서 직접 계산
+  const periodStartDate = periodStart.toISOString().split('T')[0] // YYYY-MM-DD
+  const periodEndDate = periodEnd.toISOString().split('T')[0]
+  const inbodyByTrainer = new Map<string, number>()
+  for (const a of assignments) {
+    const folderId = a.pt_trainer_id || a.ppt_trainer_id
+    if (!folderId) continue
+    const programs = a.programs as { sessions: { inbody?: boolean; date?: string }[] | null }[] | null
+    if (!programs) continue
+    for (const p of programs) {
+      const pSessions = p.sessions
+      if (!pSessions) continue
+      const count = pSessions.filter((s) => s.inbody && s.date && s.date >= periodStartDate && s.date <= periodEndDate).length
+      if (count > 0) inbodyByTrainer.set(folderId, (inbodyByTrainer.get(folderId) ?? 0) + count)
     }
   }
 
-  // 인바디 카운트 — ot_programs의 sessions JSONB에서 inbody: true인 세션 수를 assignment → trainer로 매핑
-  // 기간 필터: 세션의 date 필드가 기간 내인 것만 카운트
-  const periodStartDate = periodStart.toISOString().split('T')[0] // YYYY-MM-DD
-  const inbodyByTrainer = new Map<string, number>()
-  for (const p of programs) {
-    const folderId = assignmentTrainerMap.get(p.ot_assignment_id)
-    if (!folderId) continue
-    const pSessions = p.sessions as { inbody?: boolean; date?: string }[] | null
-    if (!pSessions) continue
-    const periodEndDate = periodEnd.toISOString().split('T')[0]
-    const count = pSessions.filter((s) => s.inbody && s.date && s.date >= periodStartDate && s.date <= periodEndDate).length
-    if (count > 0) inbodyByTrainer.set(folderId, (inbodyByTrainer.get(folderId) ?? 0) + count)
-  }
-
-  // 인정건수 맵 — trainer_id(폴더 주인) 기준, 기간 필터 적용
+  // 인정건수 맵 — trainer_id(폴더 주인) 기준 (이미 DB에서 기간 필터 적용됨)
   const regByTrainer = new Map<string, { approved: number; pending: number; amount: number }>()
   for (const r of registrations) {
-    // 기간 필터: 제출일이 기간 내인 것만 카운트
-    if (r.submitted_at && (r.submitted_at < periodStartIso || r.submitted_at > periodEndIso)) continue
     const e = regByTrainer.get(r.trainer_id) ?? { approved: 0, pending: 0, amount: 0 }
     if (r.approval_status === '승인') {
       e.approved += r.ot_credit
@@ -176,10 +183,8 @@ export async function getAdminDashboard(period: 'weekly' | 'monthly' = 'monthly'
     })
   }
 
-  // ★ 기간 내 배정된 회원만 필터 — 해당 월/주에 생성된 배정만 카운트
-  const periodAssignments = assignments.filter((a) => a.created_at >= periodStartIso && a.created_at <= periodEndIso)
-
-  for (const a of periodAssignments) {
+  // ★ DB에서 이미 기간 필터 적용됨 — 추가 필터 불필요
+  for (const a of assignments) {
     const folderId = a.pt_trainer_id || a.ppt_trainer_id
     if (!folderId) continue
     const t = trainerMap.get(folderId)
@@ -207,7 +212,7 @@ export async function getAdminDashboard(period: 'weekly' | 'monthly' = 'monthly'
   // 기간 내 세션 완료 카운트 — periodSessionCountByAssignment 사용
   let session1Done = 0, session2Done = 0, session3Done = 0
   let totalNoContact = 0, totalClosingFailed = 0, totalScheduleUndecided = 0
-  for (const a of periodAssignments) {
+  for (const a of assignments) {
     const periodDone = periodSessionCountByAssignment.get(a.id) ?? 0
     if (periodDone === 1) session1Done++
     else if (periodDone === 2) session2Done++
@@ -216,7 +221,7 @@ export async function getAdminDashboard(period: 'weekly' | 'monthly' = 'monthly'
     if (a.sales_status === '클로징실패') totalClosingFailed++
     if (a.sales_status === '스케줄미확정') totalScheduleUndecided++
   }
-  const periodAssigned = periodAssignments.length
+  const periodAssigned = assignments.length
 
   // folder_order 매핑
   const orderMap = new Map<string, number>()

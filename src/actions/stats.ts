@@ -13,7 +13,7 @@ export interface StatsData {
   salesSummary: { 진행인원: number; 등록인원: number; 클로징율: number; 객단가: number }
   routeSales: { route: string; 등록매출: number; 진행인원: number; 등록인원: number; 클로징율: number; 객단가: number }[]
   trainerStats: { name: string; newSales: number; renewSales: number; totalSales: number; 등록인원: number; 클로징율: number; 배정인원: number; 플로팅: number; 총인원: number; PT전환자: number }[]
-  dailyData: { day: string; count: number; sales: number }[]
+  dailyData: { day: string; count: number; sales: number; trainers: { name: string; count: number }[] }[]
   ageData: { ageGroup: string; count: number; percentage: number }[]
 }
 
@@ -56,7 +56,6 @@ export async function getStats(period: 'weekly' | 'monthly' = 'monthly', offset:
     `)
     .gte('created_at', periodStart.toISOString())
     .lte('created_at', periodEnd.toISOString())
-    .limit(1000)
 
   if (!assignments || assignments.length === 0) return emptyStats()
 
@@ -70,7 +69,7 @@ export async function getStats(period: 'weekly' | 'monthly' = 'monthly', offset:
   const weeklyAcc = [1, 2, 3, 4].map(() => ({ newSales: 0, renewSales: 0, expectedSales: 0, actualSales: 0, assignedCount: 0, otSessionCount: 0, ptConversionCount: 0 }))
   const trainerMap = new Map<string, { assigned: number; floating: number; total: number; pt: number; reg: number; sales: number }>()
   const dayNames = ['일', '월', '화', '수', '목', '금', '토']
-  const dayCounts = dayNames.map(() => ({ count: 0, sales: 0 }))
+  const dayCounts = dayNames.map(() => ({ count: 0, sales: 0, trainerCounts: new Map<string, number>() }))
 
   for (const a of assignments) {
     const isCompleted = a.status === '완료'
@@ -125,6 +124,9 @@ export async function getStats(period: 'weekly' | 'monthly' = 'monthly', offset:
     const dayIdx = new Date(a.created_at).getDay()
     dayCounts[dayIdx].count++
     if (isCompleted) dayCounts[dayIdx].sales += actualSales
+    if (tName) {
+      dayCounts[dayIdx].trainerCounts.set(tName, (dayCounts[dayIdx].trainerCounts.get(tName) ?? 0) + 1)
+    }
   }
 
   // 클로징율: 진행회원 대비 PT전환
@@ -142,7 +144,10 @@ export async function getStats(period: 'weekly' | 'monthly' = 'monthly', offset:
       등록인원: v.reg, 클로징율: v.total > 0 ? Math.round((v.reg / v.total) * 100) : 0,
       배정인원: v.assigned, 플로팅: v.floating, 총인원: v.total, PT전환자: v.pt,
     })),
-    dailyData: dayNames.map((day, i) => ({ day, ...dayCounts[i] })),
+    dailyData: dayNames.map((day, i) => ({
+      day, count: dayCounts[i].count, sales: dayCounts[i].sales,
+      trainers: Array.from(dayCounts[i].trainerCounts.entries()).map(([name, count]) => ({ name, count })).sort((a, b) => b.count - a.count),
+    })),
     ageData: [],
   }
 }
@@ -156,7 +161,7 @@ function emptyStats(): StatsData {
     otStatus: { total: 0, inProgress: 0, notStarted: 0, scheduleUndecided: 0, noContact: 0, closingFailed: 0, session1Done: 0, session2Done: 0, session3Done: 0, salesTargets: 0, ptConversions: 0, closingRate: 0 },
     salesSummary: { 진행인원: 0, 등록인원: 0, 클로징율: 0, 객단가: 0 },
     routeSales: [], trainerStats: [],
-    dailyData: ['일','월','화','수','목','금','토'].map(d => ({ day: d, count: 0, sales: 0 })),
+    dailyData: ['일','월','화','수','목','금','토'].map(d => ({ day: d, count: 0, sales: 0, trainers: [] })),
     ageData: [],
   }
 }
@@ -176,10 +181,10 @@ function getDemoStats(): StatsData {
     routeSales: [],
     trainerStats: [{ name: '박트레이너', newSales: 3300000, renewSales: 0, totalSales: 3300000, 등록인원: 1, 클로징율: 33, 배정인원: 4, 플로팅: 2, 총인원: 6, PT전환자: 1 }],
     dailyData: [
-      { day: '일', count: 0, sales: 0 }, { day: '월', count: 2, sales: 1650000 },
-      { day: '화', count: 1, sales: 0 }, { day: '수', count: 2, sales: 1650000 },
-      { day: '목', count: 1, sales: 0 }, { day: '금', count: 2, sales: 0 },
-      { day: '토', count: 0, sales: 0 },
+      { day: '일', count: 0, sales: 0, trainers: [] }, { day: '월', count: 2, sales: 1650000, trainers: [{ name: '박트레이너', count: 2 }] },
+      { day: '화', count: 1, sales: 0, trainers: [{ name: '박트레이너', count: 1 }] }, { day: '수', count: 2, sales: 1650000, trainers: [{ name: '박트레이너', count: 2 }] },
+      { day: '목', count: 1, sales: 0, trainers: [{ name: '박트레이너', count: 1 }] }, { day: '금', count: 2, sales: 0, trainers: [{ name: '박트레이너', count: 2 }] },
+      { day: '토', count: 0, sales: 0, trainers: [] },
     ],
     ageData: [],
   }

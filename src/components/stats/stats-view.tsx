@@ -138,10 +138,10 @@ export function StatsView({ stats: initialStats, target }: Props) {
 
       {/* 기간 네비게이션 */}
       <div className="flex items-center justify-center gap-3">
-        <button onClick={handlePrev} disabled={loading} className="h-7 w-7 flex items-center justify-center rounded-lg bg-gray-100 hover:bg-gray-200 text-gray-700 transition-colors disabled:opacity-50 text-sm">←</button>
-        <button onClick={handleToday} disabled={loading} className="text-sm font-bold text-gray-900 hover:text-blue-600 min-w-[140px] text-center">{getPeriodLabel()}</button>
-        <button onClick={handleNext} disabled={loading || offset >= 0} className="h-7 w-7 flex items-center justify-center rounded-lg bg-gray-100 hover:bg-gray-200 text-gray-700 transition-colors disabled:opacity-30 text-sm">→</button>
-        {offset !== 0 && <button onClick={handleToday} className="text-xs text-blue-600 hover:underline font-medium">오늘</button>}
+        <button onClick={handlePrev} disabled={loading} className="h-7 w-7 flex items-center justify-center rounded-lg bg-gray-800 hover:bg-gray-700 text-white transition-colors disabled:opacity-50 text-sm">←</button>
+        <button onClick={handleToday} disabled={loading} className="text-sm font-bold text-white hover:text-blue-400 min-w-[140px] text-center">{getPeriodLabel()}</button>
+        <button onClick={handleNext} disabled={loading || offset >= 0} className="h-7 w-7 flex items-center justify-center rounded-lg bg-gray-800 hover:bg-gray-700 text-white transition-colors disabled:opacity-30 text-sm">→</button>
+        {offset !== 0 && <button onClick={handleToday} className="text-xs text-blue-400 hover:underline font-medium">오늘</button>}
       </div>
 
       {/* OT 현황 */}
@@ -225,42 +225,56 @@ export function StatsView({ stats: initialStats, target }: Props) {
         </CardContent>
       </Card>
 
-      {/* 트레이너별 회원 비중 */}
+      {/* 요일별 트레이너 비중 */}
       <Card className={`bg-white border-gray-200 ${loading ? 'opacity-50' : ''}`}>
         <CardHeader className="pb-2 px-4 pt-4">
-          <CardTitle className="text-sm font-bold text-gray-900">트레이너별 회원 비중</CardTitle>
+          <CardTitle className="text-sm font-bold text-gray-900">요일별 트레이너 비중</CardTitle>
         </CardHeader>
         <CardContent className="px-4 pb-4">
           {(() => {
-            const sorted = stats.trainerStats.filter(t => (t.총인원 ?? t.배정인원 ?? 0) > 0).sort((a, b) => (b.총인원 ?? b.배정인원 ?? 0) - (a.총인원 ?? a.배정인원 ?? 0))
-            const total = sorted.reduce((s, t) => s + (t.총인원 ?? t.배정인원 ?? 0), 0)
             const colors = ['bg-blue-400', 'bg-yellow-400', 'bg-green-400', 'bg-purple-400', 'bg-pink-400', 'bg-indigo-400', 'bg-orange-400', 'bg-teal-400']
+            // 전체 트레이너 이름 목록 (색상 고정용)
+            const allTrainerNames = Array.from(new Set(stats.dailyData.flatMap(d => d.trainers.map(t => t.name))))
+            const colorMap = new Map(allTrainerNames.map((name, i) => [name, colors[i % colors.length]]))
+
             return (
-              <div className="space-y-3">
-                {/* 스택 바 */}
-                <div className="h-10 rounded-full overflow-hidden flex bg-gray-100">
-                  {sorted.map((t, i) => {
-                    const pct = total > 0 ? (t.총인원 ?? t.배정인원 ?? 0) / total * 100 : 0
-                    if (pct < 1) return null
-                    return (
-                      <div key={t.name} className={`${colors[i % colors.length]} flex items-center justify-center`} style={{ width: `${pct}%` }}>
-                        {pct >= 8 && <span className="text-[10px] font-bold text-white truncate px-1">{t.name} {Math.round(pct)}%</span>}
+              <div className="space-y-4">
+                {stats.dailyData.map((d) => {
+                  const isWeekend = d.day === '토' || d.day === '일'
+                  if (d.count === 0) return (
+                    <div key={d.day} className="flex items-center gap-3">
+                      <span className={`w-6 text-center text-xs font-bold shrink-0 ${isWeekend ? 'text-red-500' : 'text-gray-700'}`}>{d.day}</span>
+                      <div className="flex-1 h-8 rounded-full bg-gray-100 flex items-center justify-center">
+                        <span className="text-[10px] text-gray-400">-</span>
                       </div>
-                    )
-                  })}
-                </div>
+                      <span className="text-xs text-gray-400 w-6 text-right">0</span>
+                    </div>
+                  )
+                  return (
+                    <div key={d.day} className="flex items-center gap-3">
+                      <span className={`w-6 text-center text-xs font-bold shrink-0 ${isWeekend ? 'text-red-500' : 'text-gray-700'}`}>{d.day}</span>
+                      <div className="flex-1 h-8 rounded-full overflow-hidden flex bg-gray-100">
+                        {d.trainers.map((t) => {
+                          const pct = d.count > 0 ? t.count / d.count * 100 : 0
+                          return (
+                            <div key={t.name} className={`${colorMap.get(t.name) ?? 'bg-gray-300'} flex items-center justify-center`} style={{ width: `${pct}%` }}>
+                              {pct >= 15 && <span className="text-[10px] font-bold text-white truncate px-0.5">{t.name} {Math.round(pct)}%</span>}
+                            </div>
+                          )
+                        })}
+                      </div>
+                      <span className="text-xs font-medium text-gray-700 w-6 text-right">{d.count}</span>
+                    </div>
+                  )
+                })}
                 {/* 범례 */}
-                <div className="flex flex-wrap gap-x-4 gap-y-1 justify-center">
-                  {sorted.map((t, i) => {
-                    const count = t.총인원 ?? t.배정인원 ?? 0
-                    const pct = total > 0 ? Math.round(count / total * 100) : 0
-                    return (
-                      <div key={t.name} className="flex items-center gap-1.5">
-                        <div className={`w-2.5 h-2.5 rounded-sm ${colors[i % colors.length]}`} />
-                        <span className="text-xs text-gray-700">{t.name} <span className="font-bold">{pct}%</span> ({count}명)</span>
-                      </div>
-                    )
-                  })}
+                <div className="flex flex-wrap gap-x-4 gap-y-1 justify-center pt-1">
+                  {allTrainerNames.map((name) => (
+                    <div key={name} className="flex items-center gap-1.5">
+                      <div className={`w-2.5 h-2.5 rounded-sm ${colorMap.get(name)}`} />
+                      <span className="text-xs text-gray-700">{name}</span>
+                    </div>
+                  ))}
                 </div>
               </div>
             )
