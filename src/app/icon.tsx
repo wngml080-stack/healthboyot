@@ -19,11 +19,12 @@ export default function Icon() {
       >
         <span
           style={{
-            fontSize: 36,
+            fontSize: 40,
             fontWeight: 900,
             fontStyle: 'italic',
             color: '#facc15',
             transform: 'skewX(-12deg)',
+            textShadow: '1px 0 0 #facc15, -1px 0 0 #facc15',
           }}
         >
           H

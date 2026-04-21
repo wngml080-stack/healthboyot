@@ -96,15 +96,18 @@ export function TrainerStats({ assignments, trainerName, programs, registrations
   const [newTargetName, setNewTargetName] = useState('')
   const [newTargetAmount, setNewTargetAmount] = useState('')
 
-  // 이미지 저장
+  // 이미지 저장 — 섹션별 개별 캡처 후 하나로 합성
   const handleCapture = async () => {
     if (!captureRef.current) return
     setCapturing(true)
     try {
       const el = captureRef.current
       const html2canvas = (await import('html2canvas')).default
+      const scale = 2
+      const gap = 16 * scale // space-y-4 = 16px
+      const pad = 24 * scale
 
-      // 캡처 전: sticky/overflow 제거 (글자 밀림 방지)
+      // 캡처 전: sticky/overflow 제거
       const stickyCells = el.querySelectorAll<HTMLElement>('.sticky')
       const overflowEls = el.querySelectorAll<HTMLElement>('.overflow-x-auto')
       stickyCells.forEach((c) => { c.dataset.pos = c.style.position; c.style.position = 'relative' })
@@ -114,16 +117,38 @@ export function TrainerStats({ assignments, trainerName, programs, registrations
       const hideEls = el.querySelectorAll<HTMLElement>('input, .capture-hide')
       hideEls.forEach((e) => { e.dataset.vis = e.style.visibility; e.style.visibility = 'hidden' })
 
-      const canvas = await html2canvas(el, { scale: 2, backgroundColor: '#1a1a2e', useCORS: true, logging: false })
+      // 각 직계 자식(섹션)을 개별 캡처
+      const children = Array.from(el.children) as HTMLElement[]
+      const canvases: HTMLCanvasElement[] = []
+      for (const child of children) {
+        const c = await html2canvas(child, { scale, backgroundColor: null, useCORS: true, logging: false })
+        canvases.push(c)
+      }
 
       // 복원
       stickyCells.forEach((c) => { c.style.position = c.dataset.pos || ''; delete c.dataset.pos })
       overflowEls.forEach((c) => { c.style.overflow = c.dataset.ov || ''; delete c.dataset.ov })
       hideEls.forEach((e) => { e.style.visibility = e.dataset.vis || ''; delete e.dataset.vis })
 
+      // 하나의 캔버스에 합성
+      const maxW = Math.max(...canvases.map((c) => c.width))
+      const totalH = canvases.reduce((s, c) => s + c.height, 0) + gap * (canvases.length - 1) + pad * 2
+      const combined = document.createElement('canvas')
+      combined.width = maxW + pad * 2
+      combined.height = totalH
+      const ctx = combined.getContext('2d')!
+      ctx.fillStyle = '#1a1a2e'
+      ctx.fillRect(0, 0, combined.width, combined.height)
+
+      let y = pad
+      for (let i = 0; i < canvases.length; i++) {
+        ctx.drawImage(canvases[i], pad, y)
+        y += canvases[i].height + gap
+      }
+
       const link = document.createElement('a')
       link.download = `${trainerName}_통계표_${viewMode === 'monthly' ? `${year}년${month}월` : format(selectedWeekStart, 'yyyy-MM-dd')}.png`
-      link.href = canvas.toDataURL('image/png')
+      link.href = combined.toDataURL('image/png')
       link.click()
     } catch { alert('이미지 저장에 실패했습니다') }
     setCapturing(false)
