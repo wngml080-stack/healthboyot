@@ -47,28 +47,25 @@ export function AdminDashboard({ data: initialData, initialPeriod }: Props) {
   const captureSection = useCallback(async (ref: React.RefObject<HTMLDivElement | null>, name: string) => {
     if (!ref.current) return
     const el = ref.current
+    const html2canvas = (await import('html2canvas')).default
 
-    // 캡처 전: sticky/overflow 제거 (레이아웃 깨짐 방지)
-    const stickyCells = el.querySelectorAll<HTMLElement>('.sticky')
-    const overflowEls = el.querySelectorAll<HTMLElement>('.overflow-x-auto')
-    stickyCells.forEach((c) => { c.dataset.pos = c.style.position; c.style.position = 'relative' })
-    overflowEls.forEach((c) => { c.dataset.ov = c.style.overflow; c.style.overflow = 'visible' })
+    // 카메라 버튼 숨기기
+    const camBtns = el.querySelectorAll<HTMLElement>('.capture-hide')
+    camBtns.forEach((b) => b.style.display = 'none')
 
-    const { toPng } = await import('html-to-image')
-    const dataUrl = await toPng(el, {
+    const canvas = await html2canvas(el, {
       backgroundColor: '#ffffff',
-      pixelRatio: 2,
-      style: { padding: '12px' },
-      filter: (node) => !(node instanceof HTMLElement && node.tagName === 'BUTTON' && node.querySelector('.lucide-camera')),
+      scale: 2,
+      useCORS: true,
+      logging: false,
     })
 
-    // 캡처 후: 원래 스타일 복원
-    stickyCells.forEach((c) => { c.style.position = c.dataset.pos || ''; delete c.dataset.pos })
-    overflowEls.forEach((c) => { c.style.overflow = c.dataset.ov || ''; delete c.dataset.ov })
+    // 카메라 버튼 복원
+    camBtns.forEach((b) => b.style.display = '')
 
     const link = document.createElement('a')
     link.download = `${name}_${data.periodLabel.replace(/[^가-힣0-9~/]/g, '')}.png`
-    link.href = dataUrl
+    link.href = canvas.toDataURL('image/png')
     link.click()
   }, [data.periodLabel])
 
@@ -148,7 +145,7 @@ export function AdminDashboard({ data: initialData, initialPeriod }: Props) {
         <CardHeader className="pb-2">
           <div className="flex items-center gap-2">
             <CardTitle className="text-base text-gray-900">트레이너별 실적 종합</CardTitle>
-            <button onClick={() => captureSection(tableRef, '실적종합')} className="text-gray-400 hover:text-gray-600"><Camera className="h-3.5 w-3.5" /></button>
+            <button onClick={() => captureSection(tableRef, '실적종합')} className="capture-hide text-gray-400 hover:text-gray-600"><Camera className="h-3.5 w-3.5" /></button>
           </div>
         </CardHeader>
         <CardContent>

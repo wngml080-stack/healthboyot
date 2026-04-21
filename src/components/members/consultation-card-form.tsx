@@ -126,16 +126,20 @@ export function ConsultationCardForm({ member, card, onSaved, isStandalone, card
       exercise_personality: exercisePersonality,
     }
 
+    // 즉시 성공 표시 (낙관적 업데이트)
+    setSuccess(true)
+    setSaving(false)
+    setTimeout(() => setSuccess(false), 2000)
+
+    // 서버 저장은 백그라운드
     const result = isStandalone && cardId
       ? await updateStandaloneCard(cardId, values)
       : await upsertConsultationCard(member.id, values)
 
-    setSaving(false)
     if (result.error) {
       setError(result.error)
+      setSuccess(false)
     } else {
-      setSuccess(true)
-      setTimeout(() => setSuccess(false), 3000)
       onSaved?.()
     }
   }
