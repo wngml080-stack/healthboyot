@@ -106,6 +106,11 @@ export function StatsView({ stats, target }: Props) {
             <StatBox label="등록완료" value={stats.otStatus.registered} bg="bg-blue-50" text="text-blue-700" />
             <StatBox label="거부자" value={stats.otStatus.rejected} bg="bg-orange-50" text="text-orange-700" />
           </div>
+          <div className="grid grid-cols-3 gap-2">
+            <StatBox label="1차 완료" value={stats.otStatus.session1Done} bg="bg-emerald-50" text="text-emerald-700" />
+            <StatBox label="2차 완료" value={stats.otStatus.session2Done} bg="bg-emerald-50" text="text-emerald-700" />
+            <StatBox label="3차+ 완료" value={stats.otStatus.session3Done} bg="bg-emerald-50" text="text-emerald-700" />
+          </div>
           <div className="border-t border-gray-100" />
           <div className="grid grid-cols-2 gap-2">
             <StatBox label="연락두절" value={stats.otStatus.noContact} bg="bg-gray-50" text="text-gray-600" />
