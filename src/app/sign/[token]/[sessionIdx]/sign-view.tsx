@@ -60,6 +60,53 @@ export function SignView({ token, sessionIdx, memberName, trainerName, session }
           />
         </div>
 
+        {/* 인바디 + 비포/애프터 이미지 */}
+        {((session.inbody && (session.inbody_images ?? []).length > 0) || (session.image_records ?? []).length > 0) && (
+          <Card className="max-w-xl mx-auto">
+            <CardContent className="px-4 py-4 space-y-4">
+              {session.inbody && (session.inbody_images ?? []).length > 0 && (
+                <div className="space-y-2">
+                  <p className="text-sm font-bold text-purple-700">📊 인바디 측정</p>
+                  <div className="grid grid-cols-2 gap-2">
+                    {(session.inbody_images ?? []).map((img, i) => (
+                      <img key={i} src={img} alt={`인바디 ${i + 1}`} className="w-full rounded-lg border border-purple-200" />
+                    ))}
+                  </div>
+                </div>
+              )}
+              {(session.image_records ?? []).length > 0 && (() => {
+                const records = session.image_records ?? []
+                const before = records.filter((r) => r.label === 'before')
+                const after = records.filter((r) => r.label === 'after')
+                if (before.length === 0 && after.length === 0) return null
+                return (
+                  <div className="space-y-2">
+                    <p className="text-sm font-bold text-gray-700">📷 비포 / 애프터</p>
+                    <div className="grid grid-cols-2 gap-3">
+                      {before.length > 0 && (
+                        <div className="space-y-1">
+                          <p className="text-xs font-bold text-blue-600">BEFORE</p>
+                          {before.map((r, i) => (
+                            <img key={i} src={r.url} alt={`before ${i + 1}`} className="w-full rounded-lg border" />
+                          ))}
+                        </div>
+                      )}
+                      {after.length > 0 && (
+                        <div className="space-y-1">
+                          <p className="text-xs font-bold text-green-600">AFTER</p>
+                          {after.map((r, i) => (
+                            <img key={i} src={r.url} alt={`after ${i + 1}`} className="w-full rounded-lg border" />
+                          ))}
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                )
+              })()}
+            </CardContent>
+          </Card>
+        )}
+
         {/* 서명 섹션 */}
         <Card className="max-w-xl mx-auto">
           <CardHeader className="py-3 px-4">

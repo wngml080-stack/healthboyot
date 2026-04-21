@@ -1002,126 +1002,6 @@ export const OtProgramForm = forwardRef<OtProgramFormRef, Props>(function OtProg
                     )
                   })()}
 
-                  {/* 세일즈 정보 */}
-                  {(() => {
-                    const salesDisabled = !canEdit || isSessionLocked(session)
-                    const PROB_OPTIONS = [20, 40, 60, 80, 100]
-                    const isPtConversion = session.sales_status === 'PT전환'
-                    return (
-                      <div className="rounded-lg border border-emerald-200 bg-emerald-50/40 p-3 space-y-3">
-                        <Label className="text-xs font-bold text-emerald-700">세일즈 정보</Label>
-
-                        {/* 매출대상자 */}
-                        <button type="button" disabled={salesDisabled}
-                          className={`w-full h-10 rounded-lg border-2 text-sm font-bold transition-colors ${session.is_sales_target ? 'bg-blue-50 border-blue-500 text-blue-700' : 'bg-white border-gray-200 text-gray-400'} disabled:opacity-50`}
-                          onClick={() => updateSession(idx, 'is_sales_target', !session.is_sales_target)}
-                        >★ 매출대상자 {session.is_sales_target ? '✓' : ''}</button>
-
-                        {/* 상태: PT전환 / 클로징실패 / 스케줄미확정 */}
-                        <div className="space-y-1">
-                          <Label className="text-xs font-bold text-gray-600">상태</Label>
-                          <div className="grid grid-cols-3 gap-1.5">
-                            {(['PT전환', '클로징실패', '스케줄미확정'] as const).map((st) => {
-                              const active = session.sales_status === st
-                              const colors: Record<string, string> = {
-                                'PT전환': active ? 'bg-purple-600 text-white border-purple-600' : 'bg-white text-purple-600 border-purple-200 hover:border-purple-400',
-                                '클로징실패': active ? 'bg-red-500 text-white border-red-500' : 'bg-white text-red-500 border-red-200 hover:border-red-400',
-                                '스케줄미확정': active ? 'bg-yellow-500 text-white border-yellow-500' : 'bg-white text-yellow-600 border-yellow-200 hover:border-yellow-400',
-                              }
-                              return (
-                                <button key={st} type="button" disabled={salesDisabled}
-                                  className={`h-10 rounded-lg border-2 text-sm font-bold transition-colors ${colors[st]} disabled:opacity-50`}
-                                  onClick={() => {
-                                    const newStatus = active ? null : st
-                                    updateSession(idx, 'sales_status', newStatus)
-                                    if (st === 'PT전환') {
-                                      updateSession(idx, 'is_pt_conversion', !active)
-                                    } else if (active) {
-                                      // 해제 시
-                                    }
-                                  }}
-                                >{st}</button>
-                              )
-                            })}
-                          </div>
-                        </div>
-
-                        {/* PT전환 시 회수/금액 입력 */}
-                        {isPtConversion && (
-                          <div className="rounded-lg border border-purple-200 bg-purple-50/50 p-3 space-y-2">
-                            <Label className="text-xs font-bold text-purple-700">PT 등록 정보</Label>
-                            <div className="grid grid-cols-2 gap-2">
-                              <div className="space-y-1">
-                                <Label className="text-[10px] text-gray-500">등록 회수</Label>
-                                <div className="flex items-center gap-1">
-                                  <Input type="number" inputMode="numeric" value={session.expected_sessions ?? ''} onChange={(e) => updateSession(idx, 'expected_sessions', e.target.value === '' ? null : Number(e.target.value))} placeholder="0" className="h-8 text-sm bg-white" disabled={salesDisabled} />
-                                  <span className="text-xs text-gray-500 shrink-0">회</span>
-                                </div>
-                              </div>
-                              <div className="space-y-1">
-                                <Label className="text-[10px] text-gray-500">등록 금액</Label>
-                                <div className="flex items-center gap-1">
-                                  <Input type="number" inputMode="numeric" value={session.pt_sales_amount ?? ''} onChange={(e) => updateSession(idx, 'pt_sales_amount', e.target.value === '' ? null : Number(e.target.value))} placeholder="0" className="h-8 text-sm bg-white" disabled={salesDisabled} />
-                                  <span className="text-xs text-gray-500 shrink-0">만원</span>
-                                </div>
-                              </div>
-                            </div>
-                          </div>
-                        )}
-
-                        {/* 클로징실패 사유 */}
-                        {session.sales_status === '클로징실패' && (
-                          <div className="rounded-lg border border-red-200 bg-red-50/50 p-3 space-y-1">
-                            <Label className="text-xs font-bold text-red-600">실패 사유</Label>
-                            <Textarea value={session.closing_fail_reason ?? ''} onChange={(e) => updateSession(idx, 'closing_fail_reason', e.target.value)} className="text-sm min-h-[50px] bg-white" placeholder="실패 원인을 적어주세요" disabled={salesDisabled} />
-                          </div>
-                        )}
-
-                        {/* 예상 매출 / 클로징 확률 (PT전환이 아닐 때) */}
-                        {!isPtConversion && (
-                          <>
-                            <div className="grid grid-cols-2 gap-2">
-                              <div className="space-y-1">
-                                <Label className="text-xs font-bold text-gray-600">예상 매출</Label>
-                                <div className="flex items-center gap-1">
-                                  <Input type="number" inputMode="numeric" value={session.expected_amount ?? ''} onChange={(e) => updateSession(idx, 'expected_amount', e.target.value === '' ? null : Number(e.target.value))} className="h-8 text-sm bg-white" disabled={salesDisabled} />
-                                  <span className="text-xs text-gray-500">만원</span>
-                                </div>
-                              </div>
-                              <div className="space-y-1">
-                                <Label className="text-xs font-bold text-gray-600">예상 회수</Label>
-                                <div className="flex items-center gap-1">
-                                  <Input type="number" inputMode="numeric" value={session.expected_sessions ?? ''} onChange={(e) => updateSession(idx, 'expected_sessions', e.target.value === '' ? null : Number(e.target.value))} className="h-8 text-sm bg-white" disabled={salesDisabled} />
-                                  <span className="text-xs text-gray-500">회</span>
-                                </div>
-                              </div>
-                            </div>
-
-                            <div className="space-y-1">
-                              <Label className="text-xs font-bold text-gray-600">클로징 확률</Label>
-                              <div className="flex gap-1.5">
-                                {PROB_OPTIONS.map((p) => {
-                                  const active = session.closing_probability === p
-                                  return (
-                                    <button key={p} type="button" disabled={salesDisabled}
-                                      className={`flex-1 h-8 rounded-md border text-xs font-bold transition-colors ${active ? 'bg-emerald-600 text-white border-emerald-600' : 'bg-white text-gray-600 border-gray-200 hover:border-emerald-400'} disabled:opacity-50`}
-                                      onClick={() => updateSession(idx, 'closing_probability', active ? null : p)}
-                                    >{p}%</button>
-                                  )
-                                })}
-                              </div>
-                            </div>
-                          </>
-                        )}
-
-                        <div className="space-y-1">
-                          <Label className="text-xs font-bold text-gray-600">세일즈 메모</Label>
-                          <Textarea value={session.sales_note ?? ''} onChange={(e) => updateSession(idx, 'sales_note', e.target.value)} className="text-sm min-h-[60px] bg-white" placeholder="다음 액션, 팔로업 일정, 특이사항 등" disabled={salesDisabled} />
-                        </div>
-                      </div>
-                    )
-                  })()}
-
                   {/* 관리자 피드백 표시 — 관리자가 입력해둔 피드백은 항상 노출 (트레이너가 볼 수 있도록) */}
                   {session.admin_feedback && (
                     <div className="bg-blue-50 border-2 border-blue-300 rounded-lg p-3">
@@ -1306,6 +1186,127 @@ export const OtProgramForm = forwardRef<OtProgramFormRef, Props>(function OtProg
                             </div>
                           </div>
                         )}
+                      </div>
+                    )
+                  })()}
+
+
+                  {/* 세일즈 정보 */}
+                  {(() => {
+                    const salesDisabled = !canEdit || isSessionLocked(session)
+                    const PROB_OPTIONS = [20, 40, 60, 80, 100]
+                    const isPtConversion = session.sales_status === 'PT전환'
+                    return (
+                      <div className="rounded-lg border border-emerald-200 bg-emerald-50/40 p-3 space-y-3">
+                        <Label className="text-xs font-bold text-emerald-700">세일즈 정보</Label>
+
+                        {/* 매출대상자 */}
+                        <button type="button" disabled={salesDisabled}
+                          className={`w-full h-10 rounded-lg border-2 text-sm font-bold transition-colors ${session.is_sales_target ? 'bg-blue-50 border-blue-500 text-blue-700' : 'bg-white border-gray-200 text-gray-400'} disabled:opacity-50`}
+                          onClick={() => updateSession(idx, 'is_sales_target', !session.is_sales_target)}
+                        >★ 매출대상자 {session.is_sales_target ? '✓' : ''}</button>
+
+                        {/* 상태: PT전환 / 클로징실패 / 스케줄미확정 */}
+                        <div className="space-y-1">
+                          <Label className="text-xs font-bold text-gray-600">상태</Label>
+                          <div className="grid grid-cols-3 gap-1.5">
+                            {(['PT전환', '클로징실패', '스케줄미확정'] as const).map((st) => {
+                              const active = session.sales_status === st
+                              const colors: Record<string, string> = {
+                                'PT전환': active ? 'bg-purple-600 text-white border-purple-600' : 'bg-white text-purple-600 border-purple-200 hover:border-purple-400',
+                                '클로징실패': active ? 'bg-red-500 text-white border-red-500' : 'bg-white text-red-500 border-red-200 hover:border-red-400',
+                                '스케줄미확정': active ? 'bg-yellow-500 text-white border-yellow-500' : 'bg-white text-yellow-600 border-yellow-200 hover:border-yellow-400',
+                              }
+                              return (
+                                <button key={st} type="button" disabled={salesDisabled}
+                                  className={`h-10 rounded-lg border-2 text-sm font-bold transition-colors ${colors[st]} disabled:opacity-50`}
+                                  onClick={() => {
+                                    const newStatus = active ? null : st
+                                    updateSession(idx, 'sales_status', newStatus)
+                                    if (st === 'PT전환') {
+                                      updateSession(idx, 'is_pt_conversion', !active)
+                                    } else if (active) {
+                                      // 해제 시
+                                    }
+                                  }}
+                                >{st}</button>
+                              )
+                            })}
+                          </div>
+                        </div>
+
+                        {/* PT전환 시 회수/금액 입력 */}
+                        {isPtConversion && (
+                          <div className="rounded-lg border border-purple-200 bg-purple-50/50 p-3 space-y-2">
+                            <Label className="text-xs font-bold text-purple-700">PT 등록 정보</Label>
+                            <div className="grid grid-cols-2 gap-2">
+                              <div className="space-y-1">
+                                <Label className="text-[10px] text-gray-500">등록 회수</Label>
+                                <div className="flex items-center gap-1">
+                                  <Input type="number" inputMode="numeric" value={session.expected_sessions ?? ''} onChange={(e) => updateSession(idx, 'expected_sessions', e.target.value === '' ? null : Number(e.target.value))} placeholder="0" className="h-8 text-sm bg-white" disabled={salesDisabled} />
+                                  <span className="text-xs text-gray-500 shrink-0">회</span>
+                                </div>
+                              </div>
+                              <div className="space-y-1">
+                                <Label className="text-[10px] text-gray-500">등록 금액</Label>
+                                <div className="flex items-center gap-1">
+                                  <Input type="number" inputMode="numeric" value={session.pt_sales_amount ?? ''} onChange={(e) => updateSession(idx, 'pt_sales_amount', e.target.value === '' ? null : Number(e.target.value))} placeholder="0" className="h-8 text-sm bg-white" disabled={salesDisabled} />
+                                  <span className="text-xs text-gray-500 shrink-0">만원</span>
+                                </div>
+                              </div>
+                            </div>
+                          </div>
+                        )}
+
+                        {/* 클로징실패 사유 */}
+                        {session.sales_status === '클로징실패' && (
+                          <div className="rounded-lg border border-red-200 bg-red-50/50 p-3 space-y-1">
+                            <Label className="text-xs font-bold text-red-600">실패 사유</Label>
+                            <Textarea value={session.closing_fail_reason ?? ''} onChange={(e) => updateSession(idx, 'closing_fail_reason', e.target.value)} className="text-sm min-h-[50px] bg-white" placeholder="실패 원인을 적어주세요" disabled={salesDisabled} />
+                          </div>
+                        )}
+
+                        {/* 예상 매출 / 클로징 확률 (PT전환이 아닐 때) */}
+                        {!isPtConversion && (
+                          <>
+                            <div className="grid grid-cols-2 gap-2">
+                              <div className="space-y-1">
+                                <Label className="text-xs font-bold text-gray-600">예상 매출</Label>
+                                <div className="flex items-center gap-1">
+                                  <Input type="number" inputMode="numeric" value={session.expected_amount ?? ''} onChange={(e) => updateSession(idx, 'expected_amount', e.target.value === '' ? null : Number(e.target.value))} className="h-8 text-sm bg-white" disabled={salesDisabled} />
+                                  <span className="text-xs text-gray-500">만원</span>
+                                </div>
+                              </div>
+                              <div className="space-y-1">
+                                <Label className="text-xs font-bold text-gray-600">예상 회수</Label>
+                                <div className="flex items-center gap-1">
+                                  <Input type="number" inputMode="numeric" value={session.expected_sessions ?? ''} onChange={(e) => updateSession(idx, 'expected_sessions', e.target.value === '' ? null : Number(e.target.value))} className="h-8 text-sm bg-white" disabled={salesDisabled} />
+                                  <span className="text-xs text-gray-500">회</span>
+                                </div>
+                              </div>
+                            </div>
+
+                            <div className="space-y-1">
+                              <Label className="text-xs font-bold text-gray-600">클로징 확률</Label>
+                              <div className="flex gap-1.5">
+                                {PROB_OPTIONS.map((p) => {
+                                  const active = session.closing_probability === p
+                                  return (
+                                    <button key={p} type="button" disabled={salesDisabled}
+                                      className={`flex-1 h-8 rounded-md border text-xs font-bold transition-colors ${active ? 'bg-emerald-600 text-white border-emerald-600' : 'bg-white text-gray-600 border-gray-200 hover:border-emerald-400'} disabled:opacity-50`}
+                                      onClick={() => updateSession(idx, 'closing_probability', active ? null : p)}
+                                    >{p}%</button>
+                                  )
+                                })}
+                              </div>
+                            </div>
+                          </>
+                        )}
+
+                        <div className="space-y-1">
+                          <Label className="text-xs font-bold text-gray-600">세일즈 메모</Label>
+                          <Textarea value={session.sales_note ?? ''} onChange={(e) => updateSession(idx, 'sales_note', e.target.value)} className="text-sm min-h-[60px] bg-white" placeholder="다음 액션, 팔로업 일정, 특이사항 등" disabled={salesDisabled} />
+                        </div>
                       </div>
                     )
                   })()}
