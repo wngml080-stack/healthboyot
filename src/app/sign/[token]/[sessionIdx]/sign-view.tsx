@@ -22,6 +22,7 @@ export function SignView({ token, sessionIdx, memberName, trainerName, session }
   const [signerName, setSignerName] = useState(alreadySigned ? (session.signer_name ?? memberName) : memberName)
   const [signature, setSignature] = useState<string | null>(alreadySigned ? (session.signature_url ?? null) : null)
   const [saving, setSaving] = useState(false)
+  const [zoomImg, setZoomImg] = useState<string | null>(null)
   const [done, setDone] = useState(alreadySigned)
   const [error, setError] = useState<string | null>(null)
 
@@ -69,7 +70,7 @@ export function SignView({ token, sessionIdx, memberName, trainerName, session }
                   <p className="text-sm font-bold text-purple-700">📊 인바디 측정</p>
                   <div className="grid grid-cols-2 gap-2">
                     {(session.inbody_images ?? []).map((img, i) => (
-                      <img key={i} src={img} alt={`인바디 ${i + 1}`} className="w-full rounded-lg border border-purple-200" />
+                      <img key={i} src={img} alt={`인바디 ${i + 1}`} className="w-full rounded-lg border border-purple-200 cursor-pointer hover:opacity-80 transition-opacity" onClick={() => setZoomImg(img)} />
                     ))}
                   </div>
                 </div>
@@ -87,7 +88,7 @@ export function SignView({ token, sessionIdx, memberName, trainerName, session }
                         <div className="space-y-1">
                           <p className="text-xs font-bold text-blue-600">BEFORE</p>
                           {before.map((r, i) => (
-                            <img key={i} src={r.url} alt={`before ${i + 1}`} className="w-full rounded-lg border" />
+                            <img key={i} src={r.url} alt={`before ${i + 1}`} className="w-full rounded-lg border cursor-pointer hover:opacity-80 transition-opacity" onClick={() => setZoomImg(r.url)} />
                           ))}
                         </div>
                       )}
@@ -95,7 +96,7 @@ export function SignView({ token, sessionIdx, memberName, trainerName, session }
                         <div className="space-y-1">
                           <p className="text-xs font-bold text-green-600">AFTER</p>
                           {after.map((r, i) => (
-                            <img key={i} src={r.url} alt={`after ${i + 1}`} className="w-full rounded-lg border" />
+                            <img key={i} src={r.url} alt={`after ${i + 1}`} className="w-full rounded-lg border cursor-pointer hover:opacity-80 transition-opacity" onClick={() => setZoomImg(r.url)} />
                           ))}
                         </div>
                       )}
@@ -153,6 +154,17 @@ export function SignView({ token, sessionIdx, memberName, trainerName, session }
           </CardContent>
         </Card>
       </div>
+
+      {/* 이미지 줌 모달 */}
+      {zoomImg && (
+        <div
+          className="fixed inset-0 z-50 bg-black/80 flex items-center justify-center p-4"
+          onClick={() => setZoomImg(null)}
+        >
+          <img src={zoomImg} alt="확대" className="max-w-full max-h-full object-contain rounded-lg" />
+          <button className="absolute top-4 right-4 w-10 h-10 rounded-full bg-white/20 text-white text-xl flex items-center justify-center hover:bg-white/40" onClick={() => setZoomImg(null)}>×</button>
+        </div>
+      )}
     </div>
   )
 }
