@@ -151,6 +151,7 @@ export function TrainerCardList({ assignments, trainers = [], trainerId, trainer
   const [addExerciseGoal, setAddExerciseGoal] = useState('')
   const [addNotes, setAddNotes] = useState('')
   const [addRole, setAddRole] = useState<'pt' | 'ppt'>('pt')
+  const [addIsFloating, setAddIsFloating] = useState(false)
   const [addLoading, setAddLoading] = useState(false)
 
   // 회원 퀵뷰
@@ -538,7 +539,7 @@ export function TrainerCardList({ assignments, trainers = [], trainerId, trainer
             <Button
               size="sm"
               className="h-8 bg-blue-600 hover:bg-blue-700 text-white text-xs"
-              onClick={() => { setAddName(''); setAddPhone(''); setAddAssignDate(''); setAddDateUnknown(false); setAddCategory(''); setAddTrainingType(''); setAddDuration(''); setAddExerciseTime(''); setAddExerciseGoal(''); setAddNotes(''); setShowAddMember(true) }}
+              onClick={() => { setAddName(''); setAddPhone(''); setAddAssignDate(''); setAddDateUnknown(false); setAddCategory(''); setAddTrainingType(''); setAddDuration(''); setAddExerciseTime(''); setAddExerciseGoal(''); setAddNotes(''); setAddIsFloating(false); setShowAddMember(true) }}
             >
               <UserPlus className="h-3.5 w-3.5 mr-1" />회원 추가
             </Button>
@@ -683,6 +684,9 @@ export function TrainerCardList({ assignments, trainers = [], trainerId, trainer
                           <span className="font-bold text-gray-900">{a.member.name}</span>
                           {a.member.registration_source === '수기' && (
                             <span className="inline-flex items-center rounded px-1 py-0.5 text-[10px] font-bold bg-amber-100 text-amber-700 border border-amber-300">수기</span>
+                          )}
+                          {a.member.registration_source === '플로팅' && (
+                            <span className="inline-flex items-center rounded px-1 py-0.5 text-[10px] font-bold bg-orange-100 text-orange-700 border border-orange-300">플로팅</span>
                           )}
                           {trainerId && trainerId !== 'unassigned' && (() => {
                             const isPt = a.pt_trainer_id === trainerId
@@ -1929,6 +1933,15 @@ export function TrainerCardList({ assignments, trainers = [], trainerId, trainer
                   PPT 담당
                 </button>
               </div>
+              <label className="flex items-center gap-2 mt-2 cursor-pointer select-none">
+                <input
+                  type="checkbox"
+                  checked={addIsFloating}
+                  onChange={(e) => setAddIsFloating(e.target.checked)}
+                  className="h-4 w-4 rounded border-gray-300 accent-orange-500"
+                />
+                <span className="text-sm text-gray-700">플로팅 배정</span>
+              </label>
             </div>
             {/* 이름 * */}
             <div className="space-y-2">
@@ -2017,6 +2030,7 @@ export function TrainerCardList({ assignments, trainers = [], trainerId, trainer
                   exercise_time: addExerciseTime || null,
                   exercise_goal: addExerciseGoal || undefined,
                   notes: addNotes || null,
+                  registration_source: addIsFloating ? '플로팅' : '수기',
                 })
                 if (result.error) {
                   alert('등록 실패: ' + result.error)

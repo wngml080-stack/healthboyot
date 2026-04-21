@@ -271,6 +271,7 @@ export async function quickRegisterMember(values: {
   exercise_time?: string | null
   exercise_goal?: string
   notes?: string | null
+  registration_source?: string
   // PT 가입 정보 (옵셔널) — 총 등록 횟수, 현재까지 진행한 횟수
   expected_sessions?: number
   actual_sessions?: number
@@ -339,7 +340,7 @@ export async function quickRegisterMember(values: {
     injury_tags: [],
     created_by: user?.id,
     is_existing_member: values.isExistingMember ?? false,
-    registration_source: '수기',
+    registration_source: values.registration_source || '수기',
   }
   if (values.registered_at) {
     memberData.registered_at = values.registered_at

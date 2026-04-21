@@ -42,7 +42,7 @@ export interface Member {
   is_completed: boolean
   is_renewal: boolean
   is_existing_member?: boolean
-  registration_source?: '자동' | '수기'
+  registration_source?: '자동' | '수기' | '플로팅'
   registered_at: string
   created_by: string | null
   creator_name?: string | null
