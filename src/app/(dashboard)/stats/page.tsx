@@ -17,7 +17,7 @@ export default async function StatsPage() {
 async function StatsContent() {
   const now = new Date()
   const [stats, target, dashboard, profile] = await Promise.all([
-    getStats(),
+    getStats('monthly', 0),
     getSalesTarget(now.getFullYear(), now.getMonth() + 1),
     getAdminDashboard('monthly'),
     getCurrentProfile(),

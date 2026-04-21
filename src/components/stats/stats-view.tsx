@@ -176,7 +176,7 @@ export function StatsView({ stats: initialStats, target }: Props) {
       </Card>
 
       {/* 당월 목표매출 */}
-      <Card className="bg-white border-gray-200">
+      <Card className={`bg-white border-gray-200 ${loading ? 'opacity-50' : ''}`}>
         <CardHeader className="pb-2 px-4 pt-4">
           <CardTitle className="text-sm font-bold text-gray-900">당월 목표매출</CardTitle>
         </CardHeader>
@@ -226,7 +226,7 @@ export function StatsView({ stats: initialStats, target }: Props) {
       </Card>
 
       {/* 트레이너별 회원 비중 */}
-      <Card className="bg-white border-gray-200">
+      <Card className={`bg-white border-gray-200 ${loading ? 'opacity-50' : ''}`}>
         <CardHeader className="pb-2 px-4 pt-4">
           <CardTitle className="text-sm font-bold text-gray-900">트레이너별 회원 비중</CardTitle>
         </CardHeader>
