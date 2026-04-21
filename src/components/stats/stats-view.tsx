@@ -62,12 +62,18 @@ export function StatsView({ stats, target }: Props) {
     ]), '매출요약')
 
     utils.book_append_sheet(wb, utils.json_to_sheet([
-      { '항목': '진행중', '값': stats.otStatus.inProgress },
-      { '항목': '거부자', '값': stats.otStatus.rejected },
-      { '항목': '등록완료', '값': stats.otStatus.registered },
-      { '항목': '스케줄미확정', '값': stats.otStatus.scheduleUndecided },
+      { '항목': '총 인원', '값': stats.otStatus.total },
+      { '항목': '진행회원', '값': stats.otStatus.inProgress },
+      { '항목': '미진행회원', '값': stats.otStatus.notStarted },
+      { '항목': '1차 완료', '값': stats.otStatus.session1Done },
+      { '항목': '2차 완료', '값': stats.otStatus.session2Done },
+      { '항목': '3차+ 완료', '값': stats.otStatus.session3Done },
       { '항목': '연락두절', '값': stats.otStatus.noContact },
+      { '항목': '스케줄미확정', '값': stats.otStatus.scheduleUndecided },
+      { '항목': '매출대상자', '값': stats.otStatus.salesTargets },
       { '항목': '클로싱실패', '값': stats.otStatus.closingFailed },
+      { '항목': 'PT전환', '값': stats.otStatus.ptConversions },
+      { '항목': '클로징율', '값': `${stats.otStatus.closingRate}%` },
     ]), 'OT현황')
 
     utils.book_append_sheet(wb, utils.json_to_sheet(
@@ -100,25 +106,24 @@ export function StatsView({ stats, target }: Props) {
           </div>
         </CardHeader>
         <CardContent className="px-4 pb-4 space-y-3">
-          <div className="grid grid-cols-2 gap-2">
-            <StatBox label="총 인원" value={stats.otStatus.inProgress + stats.otStatus.rejected + stats.otStatus.registered} bg="bg-gray-50" text="text-gray-900" />
-            <StatBox label="진행중" value={stats.otStatus.inProgress} bg="bg-green-50" text="text-green-700" />
-            <StatBox label="등록완료" value={stats.otStatus.registered} bg="bg-blue-50" text="text-blue-700" />
-            <StatBox label="거부자" value={stats.otStatus.rejected} bg="bg-orange-50" text="text-orange-700" />
+          <div className="grid grid-cols-3 gap-2">
+            <StatBox label="총 인원" value={stats.otStatus.total} bg="bg-gray-50" text="text-gray-900" sub="회원 총인원" />
+            <StatBox label="진행회원" value={stats.otStatus.inProgress} bg="bg-green-50" text="text-green-700" sub="OT 진행한 회원" />
+            <StatBox label="미진행회원" value={stats.otStatus.notStarted} bg="bg-orange-50" text="text-orange-700" sub="스케줄 미잡힌 대상자" />
           </div>
           <div className="grid grid-cols-3 gap-2">
-            <StatBox label="1차 완료" value={stats.otStatus.session1Done} bg="bg-emerald-50" text="text-emerald-700" />
-            <StatBox label="2차 완료" value={stats.otStatus.session2Done} bg="bg-emerald-50" text="text-emerald-700" />
-            <StatBox label="3차+ 완료" value={stats.otStatus.session3Done} bg="bg-emerald-50" text="text-emerald-700" />
+            <StatBox label="1차 완료" value={stats.otStatus.session1Done} bg="bg-emerald-50" text="text-emerald-700" sub="1차 수업 완료" />
+            <StatBox label="2차 완료" value={stats.otStatus.session2Done} bg="bg-emerald-50" text="text-emerald-700" sub="2차 수업 완료" />
+            <StatBox label="3차+ 완료" value={stats.otStatus.session3Done} bg="bg-emerald-50" text="text-emerald-700" sub="3차 이상 수업 완료" />
           </div>
           <div className="border-t border-gray-100" />
           <div className="grid grid-cols-2 gap-2">
-            <StatBox label="연락두절" value={stats.otStatus.noContact} bg="bg-gray-50" text="text-gray-600" />
-            <StatBox label="클로싱실패" value={stats.otStatus.closingFailed} bg="bg-red-50" text="text-red-600" />
-            <StatBox label="스케줄미확정" value={stats.otStatus.scheduleUndecided} bg="bg-yellow-50" text="text-yellow-700" />
-            <StatBox label="매출대상자" value={stats.salesSummary.진행인원} bg="bg-blue-50" text="text-blue-700" />
-            <StatBox label="PT전환" value={stats.salesSummary.등록인원} bg="bg-purple-50" text="text-purple-700" />
-            <StatBox label="클로징율" value={`${stats.salesSummary.클로징율}%`} bg="bg-pink-50" text="text-pink-700" />
+            <StatBox label="연락두절" value={stats.otStatus.noContact} bg="bg-gray-50" text="text-gray-600" sub="연락 안 되시는 분" />
+            <StatBox label="스케줄미확정" value={stats.otStatus.scheduleUndecided} bg="bg-yellow-50" text="text-yellow-700" sub="스케줄 조율중" />
+            <StatBox label="매출대상자" value={stats.otStatus.salesTargets} bg="bg-blue-50" text="text-blue-700" sub="매출 대상자" />
+            <StatBox label="클로징실패" value={stats.otStatus.closingFailed} bg="bg-red-50" text="text-red-600" sub="세일즈 진행 후 실패" />
+            <StatBox label="PT전환" value={stats.otStatus.ptConversions} bg="bg-purple-50" text="text-purple-700" sub="OT → PT 전환" />
+            <StatBox label="클로징율" value={`${stats.otStatus.closingRate}%`} bg="bg-pink-50" text="text-pink-700" sub="진행회원 대비 PT전환" />
           </div>
         </CardContent>
       </Card>
@@ -245,10 +250,13 @@ export function StatsView({ stats, target }: Props) {
   )
 }
 
-function StatBox({ label, value, bg, text }: { label: string; value: number | string; bg: string; text: string }) {
+function StatBox({ label, value, bg, text, sub }: { label: string; value: number | string; bg: string; text: string; sub?: string }) {
   return (
     <div className={`flex items-center justify-between rounded-lg px-3 py-2.5 ${bg}`}>
-      <span className={`text-xs font-medium ${text}`}>{label}</span>
+      <div>
+        <span className={`text-xs font-medium ${text}`}>{label}</span>
+        {sub && <p className="text-[10px] text-gray-400 mt-0.5">{sub}</p>}
+      </div>
       <span className={`text-base font-bold ${text}`}>{value}</span>
     </div>
   )

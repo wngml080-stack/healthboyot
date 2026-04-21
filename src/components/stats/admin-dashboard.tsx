@@ -125,10 +125,10 @@ export function AdminDashboard({ data: initialData, initialPeriod }: Props) {
                 <TableHeader>
                   <TableRow className="bg-gray-50">
                     <TableHead className="text-center font-bold text-gray-700 sticky left-0 bg-gray-50 z-10">트레이너</TableHead>
-                    <TableHead className="text-center text-gray-600">총 배정</TableHead>
-                    <TableHead className="text-center text-gray-600">진행중</TableHead>
-                    <TableHead className="text-center text-gray-600">완료</TableHead>
-                    <TableHead className="text-center text-gray-600">거부</TableHead>
+                    <TableHead className="text-center text-gray-600">총 인원</TableHead>
+                    <TableHead className="text-center text-green-600">진행회원</TableHead>
+                    <TableHead className="text-center text-orange-600">미진행</TableHead>
+                    <TableHead className="text-center text-gray-500">거부</TableHead>
                     <TableHead className="text-center text-blue-600 font-bold">OT수업</TableHead>
                     <TableHead className="text-center text-purple-600 font-bold">PT전환</TableHead>
                     <TableHead className="text-center text-amber-600 font-bold">클로징율</TableHead>

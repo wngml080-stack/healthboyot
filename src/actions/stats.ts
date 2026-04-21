@@ -9,7 +9,7 @@ export interface StatsData {
   renewSales: number
   totalSales: number
   weeklyData: { week: number; newSales: number; renewSales: number; expectedSales: number; actualSales: number; assignedCount: number; otSessionCount: number; ptConversionCount: number }[]
-  otStatus: { inProgress: number; rejected: number; registered: number; scheduleUndecided: number; noContact: number; closingFailed: number; session1Done: number; session2Done: number; session3Done: number }
+  otStatus: { total: number; inProgress: number; notStarted: number; scheduleUndecided: number; noContact: number; closingFailed: number; session1Done: number; session2Done: number; session3Done: number; salesTargets: number; ptConversions: number; closingRate: number }
   salesSummary: { 진행인원: number; 등록인원: number; 클로징율: number; 객단가: number }
   routeSales: { route: string; 등록매출: number; 진행인원: number; 등록인원: number; 클로징율: number; 객단가: number }[]
   trainerStats: { name: string; newSales: number; renewSales: number; totalSales: number; 등록인원: number; 클로징율: number; 배정인원: number; 플로팅: number; 총인원: number; PT전환자: number }[]
@@ -42,7 +42,7 @@ export async function getStats(): Promise<StatsData> {
   let salesTargetCount = 0
   let ptCount = 0
 
-  const otStatus = { inProgress: 0, rejected: 0, registered: 0, scheduleUndecided: 0, noContact: 0, closingFailed: 0, session1Done: 0, session2Done: 0, session3Done: 0 }
+  const otStatus = { total: 0, inProgress: 0, notStarted: 0, scheduleUndecided: 0, noContact: 0, closingFailed: 0, session1Done: 0, session2Done: 0, session3Done: 0, salesTargets: 0, ptConversions: 0, closingRate: 0 }
   const weeklyAcc = [1, 2, 3, 4].map(() => ({ newSales: 0, renewSales: 0, expectedSales: 0, actualSales: 0, assignedCount: 0, otSessionCount: 0, ptConversionCount: 0 }))
   const trainerMap = new Map<string, { assigned: number; floating: number; total: number; pt: number; reg: number; sales: number }>()
   const dayNames = ['일', '월', '화', '수', '목', '금', '토']
@@ -60,14 +60,17 @@ export async function getStats(): Promise<StatsData> {
     if (a.is_pt_conversion) ptCount++
 
     // OT 상태
-    if (a.status === '진행중' || a.status === '배정완료') otStatus.inProgress++
-    if (a.status === '거부') otStatus.rejected++
-    if (isCompleted) otStatus.registered++
+    otStatus.total++
+    const doneCount = (a.sessions as { completed_at: string | null }[])?.filter((s) => s.completed_at).length ?? 0
+    const hasAnySession = (a.sessions as { completed_at: string | null; scheduled_at?: string }[])?.length > 0
+    if (hasAnySession) otStatus.inProgress++
+    else otStatus.notStarted++
     if (salesOrContact === '스케줄미확정') otStatus.scheduleUndecided++
     if (salesOrContact === '연락두절') otStatus.noContact++
     if (salesOrContact === '클로징실패') otStatus.closingFailed++
+    if (a.is_sales_target) otStatus.salesTargets++
+    if (a.is_pt_conversion) otStatus.ptConversions++
     // 차수별 완료
-    const doneCount = (a.sessions as { completed_at: string | null }[])?.filter((s) => s.completed_at).length ?? 0
     if (doneCount === 1) otStatus.session1Done++
     else if (doneCount === 2) otStatus.session2Done++
     else if (doneCount >= 3) otStatus.session3Done++
@@ -100,7 +103,8 @@ export async function getStats(): Promise<StatsData> {
     if (isCompleted) dayCounts[dayIdx].sales += actualSales
   }
 
-  // 클로징율: 완료 / (전체 - 거부) — 거부자는 분모에서 제외
+  // 클로징율: 진행회원 대비 PT전환
+  otStatus.closingRate = otStatus.inProgress > 0 ? Math.round((otStatus.ptConversions / otStatus.inProgress) * 100) : 0
   const activeTotal = assignments.filter((a) => a.status !== '거부').length
 
   return {
@@ -125,7 +129,7 @@ function emptyStats(): StatsData {
   return {
     newSales: 0, renewSales: 0, totalSales: 0,
     weeklyData: [1,2,3,4].map(w => ({ week: w, newSales: 0, renewSales: 0, expectedSales: 0, actualSales: 0, assignedCount: 0, otSessionCount: 0, ptConversionCount: 0 })),
-    otStatus: { inProgress: 0, rejected: 0, registered: 0, scheduleUndecided: 0, noContact: 0, closingFailed: 0, session1Done: 0, session2Done: 0, session3Done: 0 },
+    otStatus: { total: 0, inProgress: 0, notStarted: 0, scheduleUndecided: 0, noContact: 0, closingFailed: 0, session1Done: 0, session2Done: 0, session3Done: 0, salesTargets: 0, ptConversions: 0, closingRate: 0 },
     salesSummary: { 진행인원: 0, 등록인원: 0, 클로징율: 0, 객단가: 0 },
     routeSales: [], trainerStats: [],
     dailyData: ['일','월','화','수','목','금','토'].map(d => ({ day: d, count: 0, sales: 0 })),
@@ -143,7 +147,7 @@ function getDemoStats(): StatsData {
       { week: 3, newSales: 0, renewSales: 0, expectedSales: 0, actualSales: 0, assignedCount: 0, otSessionCount: 0, ptConversionCount: 0 },
       { week: 4, newSales: 0, renewSales: 0, expectedSales: 0, actualSales: 0, assignedCount: 0, otSessionCount: 0, ptConversionCount: 0 },
     ],
-    otStatus: { inProgress: a.filter(x => x.status === '진행중').length, rejected: a.filter(x => x.status === '거부').length, registered: a.filter(x => x.status === '완료').length, scheduleUndecided: 0, noContact: 0, closingFailed: 0, session1Done: 0, session2Done: 0, session3Done: 0 },
+    otStatus: { total: a.length, inProgress: a.filter(x => x.status === '진행중').length, notStarted: 0, scheduleUndecided: 0, noContact: 0, closingFailed: 0, session1Done: 0, session2Done: 0, session3Done: 0, salesTargets: 0, ptConversions: 0, closingRate: 0 },
     salesSummary: { 진행인원: a.length, 등록인원: 1, 클로징율: 12, 객단가: 3300000 },
     routeSales: [],
     trainerStats: [{ name: '박트레이너', newSales: 3300000, renewSales: 0, totalSales: 3300000, 등록인원: 1, 클로징율: 33, 배정인원: 4, 플로팅: 2, 총인원: 6, PT전환자: 1 }],

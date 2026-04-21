@@ -221,22 +221,6 @@ export async function upsertOtSession(values: {
       }
     } catch {}
 
-    // 알림 발송
-    try {
-      if (values.scheduled_at && !values.completed_at) {
-        const { notifyScheduleConfirmed } = await import('./notify')
-        await notifyScheduleConfirmed({
-          memberName: member.name, memberPhone: member.phone,
-          trainerName: ptName ?? '담당자', sessionNumber: values.session_number,
-          scheduledAt: values.scheduled_at,
-        })
-      }
-      if (values.completed_at && values.session_number === 3) {
-        const { notifyOtCompleted } = await import('./notify')
-        await notifyOtCompleted({ memberName: member.name, memberPhone: member.phone })
-      }
-    } catch {}
-
     // 자동 상태 전환 + trainer_schedules 동기화 (병렬)
     const statusPromises: PromiseLike<unknown>[] = []
 

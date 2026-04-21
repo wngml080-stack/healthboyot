@@ -338,18 +338,28 @@ export function TrainerStats({ assignments, trainerName, programs, registrations
 
     return {
       memberRows: rows, dailyTotals: totals, columns: cols,
-      summary: {
-        totalMembers: assignments.length, totalOt, totalCompleted, totalScheduled,
-        ptConversions: rows.filter((r) => r.isPtConversion).length,
-        salesTargets: rows.filter((r) => r.isSalesTarget).length,
-        totalActualSales: rows.reduce((s, r) => s + r.actualSales, 0),
-        totalExpectedSales: rows.reduce((s, r) => s + r.expectedAmount, 0),
-        registered, closingRate: activeRows.length > 0 ? Math.round((rows.filter((r) => r.isPtConversion).length / activeRows.length) * 100) : 0,
-        rejected: assignments.filter((a) => a.status === '거부').length,
-        noContact: assignments.filter((a) => a.sales_status === '연락두절').length,
-        closingFailed: assignments.filter((a) => a.sales_status === '클로징실패').length,
-        scheduleUndecided: assignments.filter((a) => a.sales_status === '스케줄미확정').length,
-      },
+      summary: (() => {
+        const inProgressCount = rows.filter((r) => r.totalCompleted > 0 || r.totalScheduled > 0).length
+        const notStartedCount = assignments.length - inProgressCount
+        const s1 = rows.filter((r) => r.totalCompleted === 1).length
+        const s2 = rows.filter((r) => r.totalCompleted === 2).length
+        const s3 = rows.filter((r) => r.totalCompleted >= 3).length
+        const ptConvCount = rows.filter((r) => r.isPtConversion).length
+        return {
+          totalMembers: assignments.length, totalOt, totalCompleted, totalScheduled,
+          inProgress: inProgressCount, notStarted: notStartedCount,
+          session1Done: s1, session2Done: s2, session3Done: s3,
+          ptConversions: ptConvCount,
+          salesTargets: rows.filter((r) => r.isSalesTarget).length,
+          totalActualSales: rows.reduce((s, r) => s + r.actualSales, 0),
+          totalExpectedSales: rows.reduce((s, r) => s + r.expectedAmount, 0),
+          registered, closingRate: inProgressCount > 0 ? Math.round((ptConvCount / inProgressCount) * 100) : 0,
+          rejected: assignments.filter((a) => a.status === '거부').length,
+          noContact: assignments.filter((a) => a.sales_status === '연락두절').length,
+          closingFailed: assignments.filter((a) => a.sales_status === '클로징실패').length,
+          scheduleUndecided: assignments.filter((a) => a.sales_status === '스케줄미확정').length,
+        }
+      })(),
       periodSummary: periodStats,
       otOverview: {
         totalManaged: activeAssignments.length,
@@ -727,17 +737,24 @@ export function TrainerStats({ assignments, trainerName, programs, registrations
               <h3 className="text-sm font-bold text-gray-900">OT 현황</h3>
               <span className="text-[10px] text-gray-400">{periodLabel}</span>
             </div>
+            <div className="grid grid-cols-3 gap-2">
+              <StatPill label="총 인원" value={summary.totalMembers} color="bg-gray-100 text-gray-800" sub="회원 총인원" />
+              <StatPill label="진행회원" value={summary.inProgress} color="bg-green-100 text-green-800" sub="OT 진행한 회원" />
+              <StatPill label="미진행회원" value={summary.notStarted} color="bg-orange-100 text-orange-800" sub="스케줄 미잡힌 대상자" />
+            </div>
+            <div className="grid grid-cols-3 gap-2">
+              <StatPill label="1차 완료" value={summary.session1Done} color="bg-emerald-100 text-emerald-800" sub="1차 수업 완료" />
+              <StatPill label="2차 완료" value={summary.session2Done} color="bg-emerald-100 text-emerald-800" sub="2차 수업 완료" />
+              <StatPill label="3차+ 완료" value={summary.session3Done} color="bg-emerald-100 text-emerald-800" sub="3차 이상 완료" />
+            </div>
+            <div className="border-t border-gray-100 my-1" />
             <div className="grid grid-cols-2 gap-2">
-              <StatPill label="총 인원" value={summary.totalMembers} color="bg-gray-100 text-gray-800" />
-              <StatPill label="진행중" value={summary.totalMembers - summary.rejected - summary.registered} color="bg-green-100 text-green-800" />
-              <StatPill label="등록완료" value={summary.registered} color="bg-blue-100 text-blue-800" />
-              <StatPill label="거부자" value={summary.rejected} color="bg-orange-100 text-orange-800" />
-              <StatPill label="연락두절" value={summary.noContact} color="bg-gray-100 text-gray-800" />
-              <StatPill label="클로징실패" value={summary.closingFailed} color="bg-red-100 text-red-800" />
-              <StatPill label="스케줄미확정" value={summary.scheduleUndecided} color="bg-yellow-100 text-yellow-800" />
-              <StatPill label="매출대상자" value={summary.salesTargets} color="bg-indigo-100 text-indigo-800" />
-              <StatPill label="PT전환" value={summary.ptConversions} color="bg-purple-100 text-purple-800" />
-              <StatPill label="클로징율" value={`${summary.closingRate}%`} color="bg-pink-100 text-pink-800" />
+              <StatPill label="연락두절" value={summary.noContact} color="bg-gray-100 text-gray-800" sub="연락 안 되시는 분" />
+              <StatPill label="스케줄미확정" value={summary.scheduleUndecided} color="bg-yellow-100 text-yellow-800" sub="스케줄 조율중" />
+              <StatPill label="매출대상자" value={summary.salesTargets} color="bg-blue-100 text-blue-800" sub="매출 대상자" />
+              <StatPill label="클로징실패" value={summary.closingFailed} color="bg-red-100 text-red-800" sub="세일즈 후 실패" />
+              <StatPill label="PT전환" value={summary.ptConversions} color="bg-purple-100 text-purple-800" sub="OT → PT 전환" />
+              <StatPill label="클로징율" value={`${summary.closingRate}%`} color="bg-pink-100 text-pink-800" sub="진행회원 대비 PT전환" />
             </div>
           </CardContent>
         </Card>
@@ -982,10 +999,13 @@ function RegistrationSection({ registrations: initial, trainerId, trainerName }:
   )
 }
 
-function StatPill({ label, value, color }: { label: string; value: number | string; color: string }) {
+function StatPill({ label, value, color, sub }: { label: string; value: number | string; color: string; sub?: string }) {
   return (
     <div className={`flex items-center justify-between rounded-lg px-3 py-2 ${color}`}>
-      <span className="text-xs font-medium">{label}</span>
+      <div>
+        <span className="text-xs font-medium">{label}</span>
+        {sub && <p className="text-[10px] opacity-60 mt-0.5">{sub}</p>}
+      </div>
       <span className="text-sm font-bold">{value}</span>
     </div>
   )
