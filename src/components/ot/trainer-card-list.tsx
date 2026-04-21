@@ -707,7 +707,10 @@ export function TrainerCardList({ assignments, trainers = [], trainerId, trainer
                             <Badge variant="outline" className="text-[10px] px-1.5 font-bold bg-yellow-300 text-black border-yellow-500">PT전환</Badge>
                           )}
                         </div>
-                        <div className="text-right text-xs text-gray-500">
+                        <div className="text-right text-xs text-gray-500 flex items-center justify-end gap-1.5">
+                          {a.created_at && (Date.now() - new Date(a.created_at).getTime()) < 3 * 24 * 60 * 60 * 1000 && (
+                            <span className="inline-flex items-center rounded px-1.5 py-0.5 text-[10px] font-bold bg-red-500 text-white">New</span>
+                          )}
                           <span>배정날짜 : {a.created_at ? format(new Date(a.created_at), 'yyyy-MM-dd') : '-'}</span>
                         </div>
                       </div>
