@@ -153,15 +153,15 @@ export function AdminDashboard({ data: initialData, initialPeriod }: Props) {
       </Card>
 
       {/* 트레이너별 실적 비교 테이블 */}
-      <Card className="bg-white/5 border-gray-700">
+      <Card className="bg-white border-gray-200">
         <CardHeader className="pb-2">
-          <CardTitle className="text-base text-white">트레이너별 실적 종합</CardTitle>
+          <CardTitle className="text-base text-gray-900">트레이너별 실적 종합</CardTitle>
         </CardHeader>
         <CardContent>
           {loading ? (
             <div className="py-10 text-center text-sm text-gray-400">로딩 중...</div>
           ) : (
-            <div className="rounded-md border border-gray-200 bg-white overflow-x-auto">
+            <div className="rounded-lg border border-gray-200 bg-white overflow-x-auto">
               <Table>
                 <TableHeader>
                   <TableRow className="bg-gray-50">
