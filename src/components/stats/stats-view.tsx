@@ -1,6 +1,6 @@
 'use client'
 
-import { useState } from 'react'
+import { useState, useRef, useCallback } from 'react'
 import { useRouter } from 'next/navigation'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
@@ -13,7 +13,7 @@ import {
   Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription,
 } from '@/components/ui/dialog'
 import { PageTitle } from '@/components/shared/page-title'
-import { Download, Target } from 'lucide-react'
+import { Download, Target, Camera } from 'lucide-react'
 import { upsertSalesTarget } from '@/actions/sales-target'
 import type { StatsData } from '@/actions/stats'
 import type { SalesTarget } from '@/actions/sales-target'
@@ -83,6 +83,20 @@ export function StatsView({ stats: initialStats, target }: Props) {
     router.refresh()
   }
 
+  const otRef = useRef<HTMLDivElement>(null)
+  const weeklyRef = useRef<HTMLDivElement>(null)
+  const dailyRef = useRef<HTMLDivElement>(null)
+
+  const captureSection = useCallback(async (ref: React.RefObject<HTMLDivElement | null>, name: string) => {
+    if (!ref.current) return
+    const { toPng } = await import('html-to-image')
+    const dataUrl = await toPng(ref.current, { backgroundColor: '#1a1a1a', pixelRatio: 2 })
+    const link = document.createElement('a')
+    link.download = `${name}_${getPeriodLabel().replace(/[^가-힣0-9~/]/g, '')}.png`
+    link.href = dataUrl
+    link.click()
+  }, [period, offset]) // eslint-disable-line react-hooks/exhaustive-deps
+
   const handleExcelDownload = async () => {
     const { utils, writeFile } = await import('xlsx')
     const wb = utils.book_new()
@@ -145,10 +159,14 @@ export function StatsView({ stats: initialStats, target }: Props) {
       </div>
 
       {/* OT 현황 */}
+      <div ref={otRef}>
       <Card className={`bg-white border-gray-200 ${loading ? 'opacity-50' : ''}`}>
         <CardHeader className="pb-2 px-4 pt-4">
           <div className="flex items-center justify-between">
-            <CardTitle className="text-sm font-bold text-gray-900">OT 현황</CardTitle>
+            <div className="flex items-center gap-2">
+              <CardTitle className="text-sm font-bold text-gray-900">OT 현황</CardTitle>
+              <button onClick={() => captureSection(otRef, 'OT현황')} className="text-gray-400 hover:text-gray-600"><Camera className="h-3.5 w-3.5" /></button>
+            </div>
             <span className="text-xs text-gray-400">{getPeriodLabel()}</span>
           </div>
         </CardHeader>
@@ -174,11 +192,16 @@ export function StatsView({ stats: initialStats, target }: Props) {
           </div>
         </CardContent>
       </Card>
+      </div>
 
       {/* 당월 목표매출 */}
+      <div ref={weeklyRef}>
       <Card className={`bg-white border-gray-200 ${loading ? 'opacity-50' : ''}`}>
         <CardHeader className="pb-2 px-4 pt-4">
-          <CardTitle className="text-sm font-bold text-gray-900">당월 목표매출</CardTitle>
+          <div className="flex items-center gap-2">
+            <CardTitle className="text-sm font-bold text-gray-900">당월 목표매출</CardTitle>
+            <button onClick={() => captureSection(weeklyRef, '목표매출')} className="text-gray-400 hover:text-gray-600"><Camera className="h-3.5 w-3.5" /></button>
+          </div>
         </CardHeader>
         <CardContent className="px-4 pb-4">
           <div className="rounded-lg border border-gray-200 bg-white overflow-x-auto">
@@ -224,11 +247,16 @@ export function StatsView({ stats: initialStats, target }: Props) {
           </div>
         </CardContent>
       </Card>
+      </div>
 
       {/* 요일별 트레이너 비중 */}
+      <div ref={dailyRef}>
       <Card className={`bg-white border-gray-200 ${loading ? 'opacity-50' : ''}`}>
         <CardHeader className="pb-2 px-4 pt-4">
-          <CardTitle className="text-sm font-bold text-gray-900">요일별 트레이너 비중</CardTitle>
+          <div className="flex items-center gap-2">
+            <CardTitle className="text-sm font-bold text-gray-900">요일별 트레이너 비중</CardTitle>
+            <button onClick={() => captureSection(dailyRef, '요일별비중')} className="text-gray-400 hover:text-gray-600"><Camera className="h-3.5 w-3.5" /></button>
+          </div>
         </CardHeader>
         <CardContent className="px-4 pb-4">
           {(() => {
@@ -281,6 +309,7 @@ export function StatsView({ stats: initialStats, target }: Props) {
           })()}
         </CardContent>
       </Card>
+      </div>
 
       {/* 목표 설정 다이얼로그 */}
       <Dialog open={showTarget} onOpenChange={setShowTarget}>

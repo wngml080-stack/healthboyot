@@ -1,6 +1,6 @@
 'use client'
 
-import { useState } from 'react'
+import { useState, useRef, useCallback } from 'react'
 import { useRouter } from 'next/navigation'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
@@ -8,7 +8,7 @@ import { Button } from '@/components/ui/button'
 import {
   Table, TableBody, TableCell, TableHead, TableHeader, TableRow,
 } from '@/components/ui/table'
-import { Users, TrendingUp, ClipboardCheck, BarChart3, Download, ChevronLeft, ChevronRight } from 'lucide-react'
+import { Users, TrendingUp, ClipboardCheck, BarChart3, Download, ChevronLeft, ChevronRight, Camera } from 'lucide-react'
 import type { AdminDashboardData } from '@/actions/admin-dashboard'
 
 interface Props {
@@ -40,6 +40,19 @@ export function AdminDashboard({ data: initialData, initialPeriod }: Props) {
   const handlePrev = () => { const o = offset - 1; setOffset(o); fetchData(period, o) }
   const handleNext = () => { const o = offset + 1; setOffset(o); fetchData(period, o) }
   const handleToday = () => { setOffset(0); fetchData(period, 0) }
+
+  const tableRef = useRef<HTMLDivElement>(null)
+  const cardsRef = useRef<HTMLDivElement>(null)
+
+  const captureSection = useCallback(async (ref: React.RefObject<HTMLDivElement | null>, name: string) => {
+    if (!ref.current) return
+    const { toPng } = await import('html-to-image')
+    const dataUrl = await toPng(ref.current, { backgroundColor: '#1a1a1a', pixelRatio: 2 })
+    const link = document.createElement('a')
+    link.download = `${name}_${data.periodLabel.replace(/[^가-힣0-9~/]/g, '')}.png`
+    link.href = dataUrl
+    link.click()
+  }, [data.periodLabel])
 
   const { trainers, totals } = data
 
@@ -112,9 +125,13 @@ export function AdminDashboard({ data: initialData, initialPeriod }: Props) {
       </div>
 
       {/* 트레이너별 실적 비교 테이블 */}
+      <div ref={tableRef}>
       <Card className="bg-white border-gray-200">
         <CardHeader className="pb-2">
-          <CardTitle className="text-base text-gray-900">트레이너별 실적 종합</CardTitle>
+          <div className="flex items-center gap-2">
+            <CardTitle className="text-base text-gray-900">트레이너별 실적 종합</CardTitle>
+            <button onClick={() => captureSection(tableRef, '실적종합')} className="text-gray-400 hover:text-gray-600"><Camera className="h-3.5 w-3.5" /></button>
+          </div>
         </CardHeader>
         <CardContent>
           {loading ? (
@@ -204,8 +221,10 @@ export function AdminDashboard({ data: initialData, initialPeriod }: Props) {
           )}
         </CardContent>
       </Card>
+      </div>
 
       {/* 트레이너별 카드 뷰 */}
+      <div ref={cardsRef}>
       {(() => {
         // 클로징 순위 계산 (totalMembers > 0인 트레이너만)
         const ranked = trainers
@@ -260,6 +279,7 @@ export function AdminDashboard({ data: initialData, initialPeriod }: Props) {
           </div>
         )
       })()}
+      </div>
 
     </div>
   )
