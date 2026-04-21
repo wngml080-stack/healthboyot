@@ -13,7 +13,7 @@ import {
   Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription,
 } from '@/components/ui/dialog'
 import { PageTitle } from '@/components/shared/page-title'
-import { Download, Settings, Target } from 'lucide-react'
+import { Download, Target } from 'lucide-react'
 import { upsertSalesTarget } from '@/actions/sales-target'
 import type { StatsData } from '@/actions/stats'
 import type { SalesTarget } from '@/actions/sales-target'
@@ -87,10 +87,6 @@ export function StatsView({ stats, target }: Props) {
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
         <PageTitle>통계 · 보고서</PageTitle>
         <div className="flex gap-2">
-          <Button variant="outline" size="sm" onClick={() => setShowTarget(true)} className="bg-white text-gray-700 border-gray-300">
-            <Settings className="h-4 w-4 mr-1" />
-            목표 설정
-          </Button>
           <Button variant="outline" size="sm" onClick={handleExcelDownload} className="bg-white text-gray-700 border-gray-300">
             <Download className="h-4 w-4 mr-1" />
             엑셀
@@ -120,12 +116,7 @@ export function StatsView({ stats, target }: Props) {
         {/* 목표 달성율 (오른쪽) */}
         <Card className="border-yellow-400">
           <CardHeader className="pb-2">
-            <div className="flex items-center justify-between">
-              <CardTitle className="text-base text-gray-900">당월 목표 달성율</CardTitle>
-              <Button variant="outline" size="sm" onClick={() => setShowTarget(true)} className="h-7 text-xs bg-white text-gray-700 border-gray-300">
-                <Settings className="h-3 w-3 mr-1" />설정
-              </Button>
-            </div>
+            <CardTitle className="text-base text-gray-900">당월 목표 달성율</CardTitle>
           </CardHeader>
           <CardContent className="space-y-4">
             {target ? (
@@ -151,25 +142,26 @@ export function StatsView({ stats, target }: Props) {
                     </p>
                   </div>
                 </div>
+                {/* 강사별 목표 */}
                 <div className="space-y-2 border-t pt-3">
-                  {[
-                    { label: '1주차', target: target.week1_target },
-                    { label: '2주차', target: target.week2_target },
-                    { label: '3주차', target: target.week3_target },
-                    { label: '4주차', target: target.week4_target },
-                  ].map((w, i) => {
-                    const actual = stats.weeklyData[i]?.actualSales ?? 0
-                    const rate = w.target > 0 ? Math.round((actual / w.target) * 100) : 0
+                  <p className="text-xs font-bold text-gray-600 mb-1">강사별 목표</p>
+                  {stats.trainerStats.map((t) => {
+                    const tRate = target.target_amount > 0 ? Math.round((t.newSales / (target.target_amount / Math.max(stats.trainerStats.length, 1))) * 100) : 0
                     return (
-                      <div key={w.label} className="flex items-center gap-3">
-                        <span className="text-xs font-bold text-gray-600 w-12 shrink-0">{w.label}</span>
+                      <div key={t.name} className="flex items-center gap-3">
+                        <span className="text-xs font-bold text-gray-700 w-16 shrink-0 truncate">{t.name}</span>
                         <div className="flex-1 h-3 bg-gray-100 rounded-full overflow-hidden">
-                          <div className={`h-full rounded-full ${rate >= 100 ? 'bg-green-500' : rate >= 50 ? 'bg-yellow-400' : 'bg-gray-300'}`} style={{ width: `${Math.min(rate, 100)}%` }} />
+                          <div className={`h-full rounded-full ${tRate >= 100 ? 'bg-green-500' : tRate >= 50 ? 'bg-yellow-400' : 'bg-gray-300'}`} style={{ width: `${Math.min(tRate, 100)}%` }} />
                         </div>
-                        <span className="text-xs text-gray-500 w-24 text-right">{fmtMoney(actual)} / {fmtMoney(w.target)}</span>
+                        <span className="text-xs text-gray-500 w-20 text-right">{fmtMoney(t.newSales)}</span>
                       </div>
                     )
                   })}
+                </div>
+                <div className="text-center pt-2">
+                  <Button size="sm" className="bg-yellow-400 text-black hover:bg-yellow-500" onClick={() => setShowTarget(true)}>
+                    목표 설정하기
+                  </Button>
                 </div>
               </>
             ) : (
@@ -256,17 +248,17 @@ export function StatsView({ stats, target }: Props) {
         </CardContent>
       </Card>
 
-      {/* 목표 설정 다이얼로그 */}
+      {/* 목표 설정 다이얼로그 — 강사별 목표 */}
       <Dialog open={showTarget} onOpenChange={setShowTarget}>
-        <DialogContent className="max-w-md">
+        <DialogContent className="max-w-lg max-h-[85vh] overflow-y-auto">
           <DialogHeader>
-            <DialogTitle>당월 목표매출 설정</DialogTitle>
-            <DialogDescription>{new Date().getFullYear()}년 {new Date().getMonth() + 1}월</DialogDescription>
+            <DialogTitle>당월 목표 설정</DialogTitle>
+            <DialogDescription>{new Date().getFullYear()}년 {new Date().getMonth() + 1}월 · 전체 + 강사별 목표</DialogDescription>
           </DialogHeader>
           <div className="space-y-4">
             <div className="space-y-2">
-              <Label className="text-gray-700">총 목표매출</Label>
-              <Input type="number" value={targetAmount} onChange={(e) => setTargetAmount(Number(e.target.value))} className="bg-white text-gray-900 border-gray-300" />
+              <Label className="text-gray-700 font-bold">전체 목표매출</Label>
+              <Input type="number" value={targetAmount} onChange={(e) => setTargetAmount(Number(e.target.value))} className="bg-white text-gray-900 border-gray-300" placeholder="전체 목표 금액" />
             </div>
             <div className="grid grid-cols-2 gap-3">
               <div className="space-y-1">
@@ -286,7 +278,26 @@ export function StatsView({ stats, target }: Props) {
                 <Input type="number" value={w4} onChange={(e) => setW4(Number(e.target.value))} className="bg-white text-gray-900 border-gray-300" />
               </div>
             </div>
-            <div className="flex justify-end gap-2">
+            {/* 강사별 목표 */}
+            {stats.trainerStats.length > 0 && (
+              <div className="space-y-2 border-t pt-3">
+                <Label className="text-gray-700 font-bold">강사별 개별 목표</Label>
+                <p className="text-xs text-gray-400">각 강사의 당월 목표를 설정하세요. 미입력 시 전체 목표를 균등 배분합니다.</p>
+                <div className="space-y-2">
+                  {stats.trainerStats.map((t) => (
+                    <div key={t.name} className="flex items-center gap-3">
+                      <span className="text-sm font-bold text-gray-900 w-16 shrink-0 truncate">{t.name}</span>
+                      <Input
+                        type="number"
+                        placeholder="목표 금액"
+                        className="bg-white text-gray-900 border-gray-300 h-8 text-sm"
+                      />
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+            <div className="flex justify-end gap-2 pt-2">
               <Button variant="outline" className="text-gray-900 bg-gray-100" onClick={() => setShowTarget(false)}>취소</Button>
               <Button onClick={handleSaveTarget} disabled={saving} className="bg-yellow-400 text-black hover:bg-yellow-500">
                 {saving ? '저장 중...' : '저장'}

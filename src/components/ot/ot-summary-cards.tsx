@@ -30,7 +30,8 @@ export function OtSummaryCards({ assignments }: Props) {
   const totalCount = assignments.length
   const salesTargetCount = assignments.filter((a) => a.is_sales_target).length
   const ptConversionCount = assignments.filter((a) => a.is_pt_conversion).length
-  const 클로징율 = totalCount > 0 ? Math.round((registered / totalCount) * 100) : 0
+  const activeCount = assignments.filter((a) => ['배정완료', '진행중'].includes(a.status)).length
+  const 클로징율 = activeCount > 0 ? Math.round((ptConversionCount / activeCount) * 100) : 0
 
   // 주차별
   const weeklyData = [1, 2, 3, 4].map((week) => {

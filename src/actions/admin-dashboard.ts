@@ -39,6 +39,7 @@ export interface AdminDashboardData {
     pendingCredits: number
     registrationAmount: number
     inbodyCount: number
+    periodAssigned: number // 당월/당주 배정인원
     session1Done: number  // 1차 완료
     session2Done: number  // 2차 완료
     session3Done: number  // 3차 이상 완료
@@ -93,7 +94,7 @@ export async function getAdminDashboard(period: 'weekly' | 'monthly' = 'monthly'
     `).limit(1000),
     supabase.from('ot_sessions').select('id, ot_assignment_id, completed_at').not('completed_at', 'is', null),
     supabase.from('ot_registrations').select('id, trainer_id, ot_credit, registration_amount, approval_status, submitted_at'),
-    supabase.from('profiles').select('id, name, role').order('name'),
+    supabase.from('profiles').select('id, name, role, folder_order').order('folder_order', { ascending: true, nullsFirst: false }),
     supabase.from('ot_programs').select('ot_assignment_id, sessions').limit(1000),
   ])
 
@@ -175,8 +176,10 @@ export async function getAdminDashboard(period: 'weekly' | 'monthly' = 'monthly'
     })
   }
 
-  for (const a of assignments) {
-    // 폴더 기준: PT 트레이너 우선, 없으면 PPT 트레이너
+  // ★ 기간 내 배정된 회원만 필터 — 해당 월/주에 생성된 배정만 카운트
+  const periodAssignments = assignments.filter((a) => a.created_at >= periodStartIso && a.created_at <= periodEndIso)
+
+  for (const a of periodAssignments) {
     const folderId = a.pt_trainer_id || a.ppt_trainer_id
     if (!folderId) continue
     const t = trainerMap.get(folderId)
@@ -198,25 +201,32 @@ export async function getAdminDashboard(period: 'weekly' | 'monthly' = 'monthly'
 
   // 클로징율 계산
   for (const t of Array.from(trainerMap.values())) {
-    t.closingRate = t.totalMembers > 0 ? Math.round((t.completedMembers / t.totalMembers) * 100) : 0
+    t.closingRate = t.activeMembers > 0 ? Math.round((t.ptConversions / t.activeMembers) * 100) : 0
   }
 
-  // 1차/2차/3차 완료 카운트 (assignment별 완료 세션 수 기준)
+  // 기간 내 세션 완료 카운트 — periodSessionCountByAssignment 사용
   let session1Done = 0, session2Done = 0, session3Done = 0
   let totalNoContact = 0, totalClosingFailed = 0, totalScheduleUndecided = 0
-  for (const a of assignments) {
-    const completedCount = sessionCountByAssignment.get(a.id) ?? 0
-    if (completedCount === 1) session1Done++
-    else if (completedCount === 2) session2Done++
-    else if (completedCount >= 3) session3Done++
+  for (const a of periodAssignments) {
+    const periodDone = periodSessionCountByAssignment.get(a.id) ?? 0
+    if (periodDone === 1) session1Done++
+    else if (periodDone === 2) session2Done++
+    else if (periodDone >= 3) session3Done++
     if (a.sales_status === '연락두절') totalNoContact++
     if (a.sales_status === '클로징실패') totalClosingFailed++
     if (a.sales_status === '스케줄미확정') totalScheduleUndecided++
   }
+  const periodAssigned = periodAssignments.length
+
+  // folder_order 매핑
+  const orderMap = new Map<string, number>()
+  for (const t of allTrainers) {
+    orderMap.set(t.id, (t as unknown as { folder_order?: number }).folder_order ?? 999)
+  }
 
   const trainers = Array.from(trainerMap.values())
     .filter((t) => t.totalMembers > 0 || t.registrationCredits > 0 || t.pendingCredits > 0)
-    .sort((a, b) => b.totalMembers - a.totalMembers)
+    .sort((a, b) => (orderMap.get(a.id) ?? 999) - (orderMap.get(b.id) ?? 999))
 
   const totals = {
     totalMembers: trainers.reduce((s, t) => s + t.totalMembers, 0),
@@ -232,6 +242,7 @@ export async function getAdminDashboard(period: 'weekly' | 'monthly' = 'monthly'
     pendingCredits: trainers.reduce((s, t) => s + t.pendingCredits, 0),
     registrationAmount: trainers.reduce((s, t) => s + t.registrationAmount, 0),
     inbodyCount: trainers.reduce((s, t) => s + t.inbodyCount, 0),
+    periodAssigned,
     session1Done,
     session2Done,
     session3Done,
@@ -239,7 +250,7 @@ export async function getAdminDashboard(period: 'weekly' | 'monthly' = 'monthly'
     closingFailed: totalClosingFailed,
     scheduleUndecided: totalScheduleUndecided,
   }
-  totals.closingRate = totals.totalMembers > 0 ? Math.round((totals.completedMembers / totals.totalMembers) * 100) : 0
+  totals.closingRate = totals.activeMembers > 0 ? Math.round((totals.ptConversions / totals.activeMembers) * 100) : 0
 
   return { trainers, totals, periodLabel }
 }

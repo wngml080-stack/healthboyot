@@ -344,7 +344,7 @@ export function TrainerStats({ assignments, trainerName, programs, registrations
         salesTargets: rows.filter((r) => r.isSalesTarget).length,
         totalActualSales: rows.reduce((s, r) => s + r.actualSales, 0),
         totalExpectedSales: rows.reduce((s, r) => s + r.expectedAmount, 0),
-        registered, closingRate: assignments.length > 0 ? Math.round((registered / assignments.length) * 100) : 0,
+        registered, closingRate: activeRows.length > 0 ? Math.round((rows.filter((r) => r.isPtConversion).length / activeRows.length) * 100) : 0,
         rejected: assignments.filter((a) => a.status === '거부').length,
         noContact: assignments.filter((a) => a.sales_status === '연락두절').length,
         closingFailed: assignments.filter((a) => a.sales_status === '클로징실패').length,

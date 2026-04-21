@@ -66,11 +66,12 @@ export async function upsertConsultationCard(
   const supabase = await createClient()
   const { data: { user } } = await supabase.auth.getUser()
 
-  // 회원 정보 동기화 — 상담카드에서 이름/번호/성별 변경 시 members 테이블도 업데이트
+  // 회원 정보 동기화 — 상담카드에서 이름/번호/성별/운동시작일 변경 시 members 테이블도 업데이트
   const memberUpdate: Record<string, unknown> = {}
   if (values.member_name) memberUpdate.name = values.member_name
   if (values.member_phone) memberUpdate.phone = values.member_phone
   if (values.member_gender) memberUpdate.gender = values.member_gender
+  if (values.exercise_start_date) memberUpdate.start_date = values.exercise_start_date
   if (Object.keys(memberUpdate).length > 0) {
     await supabase.from('members').update({ ...memberUpdate, updated_at: new Date().toISOString() }).eq('id', memberId)
   }
@@ -152,6 +153,9 @@ export async function updateStandaloneCard(
 export async function linkCardToMember(cardId: string, memberId: string) {
   const supabase = await createClient()
 
+  // 카드 데이터 조회 → 회원 정보 동기화
+  const { data: card } = await supabase.from('consultation_cards').select('exercise_start_date, member_name, member_phone, member_gender').eq('id', cardId).single()
+
   const { error } = await supabase
     .from('consultation_cards')
     .update({
@@ -162,6 +166,19 @@ export async function linkCardToMember(cardId: string, memberId: string) {
     .eq('id', cardId)
 
   if (error) return { error: error.message }
+
+  // 상담카드의 운동시작일/이름/번호를 회원에 동기화
+  if (card) {
+    const memberUpdate: Record<string, unknown> = {}
+    if (card.exercise_start_date) memberUpdate.start_date = card.exercise_start_date
+    if (card.member_name) memberUpdate.name = card.member_name
+    if (card.member_phone) memberUpdate.phone = card.member_phone
+    if (card.member_gender) memberUpdate.gender = card.member_gender
+    if (Object.keys(memberUpdate).length > 0) {
+      await supabase.from('members').update({ ...memberUpdate, updated_at: new Date().toISOString() }).eq('id', memberId)
+    }
+  }
+
   return { success: true }
 }
 

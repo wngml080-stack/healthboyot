@@ -96,15 +96,15 @@ export function AdminDashboard({ data: initialData, initialPeriod }: Props) {
         </div>
         {/* 기간 네비게이션 */}
         <div className="flex items-center justify-center gap-3">
-          <Button variant="outline" size="sm" onClick={handlePrev} disabled={loading} className="h-8 w-8 p-0 bg-white">
-            <ChevronLeft className="h-4 w-4" />
-          </Button>
+          <button onClick={handlePrev} disabled={loading} className="h-8 w-8 flex items-center justify-center rounded-lg bg-gray-800 hover:bg-gray-700 text-white transition-colors disabled:opacity-50">
+            <ChevronLeft className="h-5 w-5" />
+          </button>
           <button onClick={handleToday} disabled={loading} className="text-sm font-bold text-white hover:text-blue-400 min-w-[180px] text-center">
             {data.periodLabel}
           </button>
-          <Button variant="outline" size="sm" onClick={handleNext} disabled={loading || offset >= 0} className="h-8 w-8 p-0 bg-white">
-            <ChevronRight className="h-4 w-4" />
-          </Button>
+          <button onClick={handleNext} disabled={loading || offset >= 0} className="h-8 w-8 flex items-center justify-center rounded-lg bg-gray-800 hover:bg-gray-700 text-white transition-colors disabled:opacity-30">
+            <ChevronRight className="h-5 w-5" />
+          </button>
           {offset !== 0 && (
             <button onClick={handleToday} className="text-xs text-blue-600 hover:underline font-medium">오늘</button>
           )}
@@ -120,31 +120,34 @@ export function AdminDashboard({ data: initialData, initialPeriod }: Props) {
           </div>
         </CardHeader>
         <CardContent className="space-y-4">
-          {/* 상단: 총 인원 + 1차/2차/3차 완료 */}
+          {/* 배정 현황 */}
           <div className="grid grid-cols-2 gap-3">
-            <StatusBox label="총 인원" value={totals.totalMembers} bg="bg-gray-50" text="text-gray-900" />
-            <StatusBox label="진행중" value={totals.activeMembers} bg="bg-green-50" text="text-green-700" />
+            <StatusBox label="배정회원" value={totals.totalMembers} bg="bg-gray-50" text="text-gray-900" />
+            <StatusBox label="OT수업" value={totals.otSessionsThisPeriod} bg="bg-indigo-50" text="text-indigo-700" sub="기간 내 완료된 수업" />
           </div>
           <div className="grid grid-cols-2 gap-3">
-            <StatusBox label="등록완료" value={totals.completedMembers} bg="bg-blue-50" text="text-blue-700" />
-            <StatusBox label="거부자" value={totals.rejectedMembers} bg="bg-orange-50" text="text-orange-700" />
+            <StatusBox label="진행중" value={totals.activeMembers} bg="bg-green-50" text="text-green-700" sub="OT 1·2·3차 진행중" />
+            <StatusBox label="거부자" value={totals.rejectedMembers} bg="bg-orange-50" text="text-orange-700" sub="거부 또는 초기 연락두절" />
           </div>
+
+          {/* 차수별 완료 */}
           <div className="grid grid-cols-3 gap-3">
-            <StatusBox label="1차 완료" value={totals.session1Done} bg="bg-emerald-50" text="text-emerald-700" />
-            <StatusBox label="2차 완료" value={totals.session2Done} bg="bg-emerald-50" text="text-emerald-700" />
-            <StatusBox label="3차+ 완료" value={totals.session3Done} bg="bg-emerald-50" text="text-emerald-700" />
+            <StatusBox label="OT 1차 완료" value={totals.session1Done} bg="bg-emerald-50" text="text-emerald-700" />
+            <StatusBox label="OT 2차 완료" value={totals.session2Done} bg="bg-emerald-50" text="text-emerald-700" />
+            <StatusBox label="OT 3차 이상 완료" value={totals.session3Done} bg="bg-emerald-50" text="text-emerald-700" sub="3차, 4차, 5차+@" />
           </div>
 
           <div className="border-t border-gray-200" />
 
-          {/* 하단: 세부 상태 */}
+          {/* 세부 상태 */}
           <div className="grid grid-cols-2 gap-3">
-            <StatusBox label="연락두절" value={totals.noContact} bg="bg-gray-50" text="text-gray-700" />
-            <StatusBox label="클로징실패" value={totals.closingFailed} bg="bg-red-50" text="text-red-700" />
-            <StatusBox label="스케줄미확정" value={totals.scheduleUndecided} bg="bg-yellow-50" text="text-yellow-700" />
-            <StatusBox label="매출대상자" value={totals.salesTargets} bg="bg-blue-50" text="text-blue-700" />
-            <StatusBox label="PT전환" value={totals.ptConversions} bg="bg-purple-50" text="text-purple-700" />
-            <StatusBox label="클로징율" value={`${totals.closingRate}%`} bg="bg-amber-50" text="text-amber-700" />
+            <StatusBox label="진행완료" value={totals.completedMembers} bg="bg-blue-50" text="text-blue-700" sub="OT 3회 이상 진행완료" />
+            <StatusBox label="클로징율" value={`${totals.closingRate}%`} bg="bg-amber-50" text="text-amber-700" sub="진행 대비 PT전환" />
+            <StatusBox label="연락두절" value={totals.noContact} bg="bg-gray-50" text="text-gray-700" sub="진행 중 연락 안됨" />
+            <StatusBox label="클로징실패" value={totals.closingFailed} bg="bg-red-50" text="text-red-700" sub="매출대상 후 실패" />
+            <StatusBox label="스케줄미확정" value={totals.scheduleUndecided} bg="bg-yellow-50" text="text-yellow-700" sub="스케줄 조율중" />
+            <StatusBox label="매출대상자" value={totals.salesTargets} bg="bg-blue-50" text="text-blue-700" sub="OT 진행중 매출대상" />
+            <StatusBox label="PT전환" value={totals.ptConversions} bg="bg-purple-50" text="text-purple-700" sub="OT 중 PT 전환" />
           </div>
         </CardContent>
       </Card>
@@ -243,52 +246,72 @@ export function AdminDashboard({ data: initialData, initialPeriod }: Props) {
         </CardContent>
       </Card>
 
-      {/* 트레이너별 카드 뷰 (모바일 친화) */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
-        {trainers.map((t) => (
-          <Card key={t.id} className="bg-white border-gray-200 hover:shadow-md transition-shadow">
-            <CardContent className="pt-4 pb-3 px-4">
-              <div className="flex items-center justify-between mb-3">
-                <h3 className="font-bold text-gray-900">{t.name}</h3>
-                <Badge className={`text-xs ${t.closingRate >= 50 ? 'bg-green-500 text-white' : t.closingRate >= 30 ? 'bg-yellow-500 text-white' : 'bg-gray-400 text-white'}`}>
-                  클로징 {t.closingRate}%
-                </Badge>
-              </div>
-              <div className="grid grid-cols-4 gap-2 text-center">
-                <MiniStat label="배정" value={t.totalMembers} color="text-gray-900" />
-                <MiniStat label="진행" value={t.activeMembers} color="text-blue-600" />
-                <MiniStat label="완료" value={t.completedMembers} color="text-green-600" />
-                <MiniStat label="거부" value={t.rejectedMembers} color="text-red-500" />
-                <MiniStat label="OT수업" value={t.otSessionsThisPeriod} color="text-blue-700" />
-                <MiniStat label="PT전환" value={t.ptConversions} color="text-purple-700" />
-                <MiniStat label="인바디" value={t.inbodyCount} color="text-purple-600" />
-                <MiniStat label="OT이외 인정" value={t.registrationCredits} color="text-emerald-700" />
-              </div>
-              {t.registrationAmount > 0 && (
-                <div className="mt-2 pt-2 border-t border-gray-100 text-center">
-                  <span className="text-xs text-gray-500">등록금액</span>
-                  <p className="text-sm font-bold text-green-700">{t.registrationAmount.toLocaleString()}원</p>
-                </div>
-              )}
-              {(t.noContact > 0 || t.closingFailed > 0 || t.scheduleUndecided > 0) && (
-                <div className="mt-2 pt-2 border-t border-gray-100 flex gap-2 justify-center flex-wrap">
-                  {t.noContact > 0 && <Badge className="bg-gray-100 text-gray-600 text-[10px]">연락두절 {t.noContact}</Badge>}
-                  {t.closingFailed > 0 && <Badge className="bg-red-100 text-red-600 text-[10px]">클로징실패 {t.closingFailed}</Badge>}
-                  {t.scheduleUndecided > 0 && <Badge className="bg-yellow-100 text-yellow-600 text-[10px]">미확정 {t.scheduleUndecided}</Badge>}
-                </div>
-              )}
-            </CardContent>
-          </Card>
-        ))}
-      </div>
+      {/* 트레이너별 카드 뷰 */}
+      {(() => {
+        // 클로징 순위 계산 (totalMembers > 0인 트레이너만)
+        const ranked = trainers
+          .filter((t) => t.totalMembers > 0)
+          .map((t) => ({ id: t.id, rate: t.closingRate }))
+          .sort((a, b) => b.rate - a.rate)
+        const rankMap = new Map<string, number>()
+        ranked.forEach((r, i) => { if (r.rate > 0) rankMap.set(r.id, i + 1) })
+        const medals = ['', '🥇', '🥈', '🥉']
+
+        return (
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
+            {trainers.map((t) => {
+              const rank = rankMap.get(t.id)
+              return (
+                <Card key={t.id} className="bg-white border-gray-200 hover:shadow-md transition-shadow">
+                  <CardContent className="pt-4 pb-3 px-4">
+                    <div className="flex items-center justify-between mb-3">
+                      <div className="flex items-center gap-2">
+                        {rank && rank <= 3 && <span className="text-lg">{medals[rank]}</span>}
+                        <h3 className="font-bold text-gray-900">{t.name}</h3>
+                      </div>
+                      <Badge className={`text-xs ${t.closingRate >= 50 ? 'bg-green-500 text-white' : t.closingRate >= 30 ? 'bg-yellow-500 text-white' : 'bg-gray-400 text-white'}`}>
+                        클로징 {t.closingRate}%
+                      </Badge>
+                    </div>
+                    <div className="grid grid-cols-4 gap-2 text-center">
+                      <MiniStat label="배정" value={t.totalMembers} color="text-gray-900" />
+                      <MiniStat label="진행" value={t.activeMembers} color="text-blue-600" />
+                      <MiniStat label="완료" value={t.completedMembers} color="text-green-600" />
+                      <MiniStat label="거부" value={t.rejectedMembers} color="text-red-500" />
+                      <MiniStat label="OT수업" value={t.otSessionsThisPeriod} color="text-blue-700" />
+                      <MiniStat label="PT전환" value={t.ptConversions} color="text-purple-700" />
+                      <MiniStat label="인바디" value={t.inbodyCount} color="text-purple-600" />
+                      <MiniStat label="OT이외 인정" value={t.registrationCredits} color="text-emerald-700" />
+                    </div>
+                    <div className="mt-2 pt-2 border-t border-gray-100 text-center">
+                      <span className="text-xs text-gray-500">등록금액</span>
+                      <p className="text-sm font-bold text-green-700">{t.registrationAmount.toLocaleString()}원</p>
+                    </div>
+                    {(t.noContact > 0 || t.closingFailed > 0 || t.scheduleUndecided > 0) && (
+                      <div className="mt-2 pt-2 border-t border-gray-100 flex gap-2 justify-center flex-wrap">
+                        {t.noContact > 0 && <Badge className="bg-gray-100 text-gray-600 text-[10px]">연락두절 {t.noContact}</Badge>}
+                        {t.closingFailed > 0 && <Badge className="bg-red-100 text-red-600 text-[10px]">클로징실패 {t.closingFailed}</Badge>}
+                        {t.scheduleUndecided > 0 && <Badge className="bg-yellow-100 text-yellow-600 text-[10px]">미확정 {t.scheduleUndecided}</Badge>}
+                      </div>
+                    )}
+                  </CardContent>
+                </Card>
+              )
+            })}
+          </div>
+        )
+      })()}
     </div>
   )
 }
 
-function StatusBox({ label, value, bg, text }: { label: string; value: number | string; bg: string; text: string }) {
+function StatusBox({ label, value, bg, text, sub }: { label: string; value: number | string; bg: string; text: string; sub?: string }) {
   return (
     <div className={`flex items-center justify-between rounded-lg px-4 py-3 ${bg}`}>
-      <span className={`text-sm font-medium ${text}`}>{label}</span>
+      <div>
+        <span className={`text-sm font-medium ${text}`}>{label}</span>
+        {sub && <p className="text-[10px] text-gray-400 mt-0.5">{sub}</p>}
+      </div>
       <span className={`text-lg font-bold ${text}`}>{value}</span>
     </div>
   )
