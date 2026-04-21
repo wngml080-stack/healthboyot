@@ -305,7 +305,36 @@ export async function quickRegisterMember(values: {
     : undefined
 
   if (existing) {
-    // 기존 회원이 있으면 OT 배정만 추가
+    // 기존 회원 — 활성 배정이 있는지 확인
+    const { data: activeAssignment } = await supabase
+      .from('ot_assignments')
+      .select('id, pt_trainer_id, ppt_trainer_id')
+      .eq('member_id', existing.id)
+      .not('status', 'in', '("완료","거부")')
+      .maybeSingle()
+
+    if (activeAssignment) {
+      // 활성 배정이 있으면 트레이너만 업데이트
+      const updateData: Record<string, unknown> = {}
+      if (isPpt) {
+        updateData.ppt_trainer_id = trainerId
+        updateData.ppt_assign_status = trainerId ? 'assigned' : 'none'
+      } else {
+        updateData.pt_trainer_id = trainerId
+        updateData.pt_assign_status = trainerId ? 'assigned' : 'none'
+      }
+      updateData.status = '배정완료'
+
+      const { error: updateErr } = await supabase
+        .from('ot_assignments')
+        .update(updateData)
+        .eq('id', activeAssignment.id)
+
+      if (updateErr) return { error: updateErr.message }
+      return { data: { memberId: existing.id, assignmentId: activeAssignment.id }, existingMember: existing }
+    }
+
+    // 활성 배정 없으면 새로 생성
     const { data: assignment, error: assignErr } = await supabase
       .from('ot_assignments')
       .insert({
