@@ -94,7 +94,7 @@ export async function getAdminDashboard(period: 'weekly' | 'monthly' = 'monthly'
     `).limit(1000),
     supabase.from('ot_sessions').select('id, ot_assignment_id, completed_at').not('completed_at', 'is', null),
     supabase.from('ot_registrations').select('id, trainer_id, ot_credit, registration_amount, approval_status, submitted_at'),
-    supabase.from('profiles').select('id, name, role, folder_order').order('folder_order', { ascending: true, nullsFirst: false }),
+    supabase.from('profiles').select('id, name, role, folder_order').eq('has_folder', true).order('folder_order', { ascending: true, nullsFirst: false }),
     supabase.from('ot_programs').select('ot_assignment_id, sessions').limit(1000),
   ])
 
