@@ -225,31 +225,43 @@ export function StatsView({ stats: initialStats, target }: Props) {
         </CardContent>
       </Card>
 
-      {/* 요일별 OT 현황 */}
+      {/* 트레이너별 회원 비중 */}
       <Card className="bg-white border-gray-200">
         <CardHeader className="pb-2 px-4 pt-4">
-          <CardTitle className="text-sm font-bold text-gray-900">요일별 OT 현황</CardTitle>
+          <CardTitle className="text-sm font-bold text-gray-900">트레이너별 회원 비중</CardTitle>
         </CardHeader>
         <CardContent className="px-4 pb-4">
           {(() => {
-            const totalCount = stats.dailyData.reduce((s, d) => s + d.count, 0)
-            const maxCount = Math.max(...stats.dailyData.map((x) => x.count), 1)
+            const sorted = stats.trainerStats.filter(t => (t.총인원 ?? t.배정인원 ?? 0) > 0).sort((a, b) => (b.총인원 ?? b.배정인원 ?? 0) - (a.총인원 ?? a.배정인원 ?? 0))
+            const total = sorted.reduce((s, t) => s + (t.총인원 ?? t.배정인원 ?? 0), 0)
+            const colors = ['bg-blue-400', 'bg-yellow-400', 'bg-green-400', 'bg-purple-400', 'bg-pink-400', 'bg-indigo-400', 'bg-orange-400', 'bg-teal-400']
             return (
-              <div className="space-y-2">
-                {stats.dailyData.map((d) => {
-                  const width = (d.count / maxCount) * 100
-                  const pct = totalCount > 0 ? Math.round((d.count / totalCount) * 100) : 0
-                  const isWeekend = d.day === '토' || d.day === '일'
-                  return (
-                    <div key={d.day} className="flex items-center gap-3">
-                      <span className={`w-6 text-center text-xs font-bold ${isWeekend ? 'text-red-500' : 'text-gray-700'}`}>{d.day}</span>
-                      <div className="flex-1 h-5 bg-gray-100 rounded-full overflow-hidden">
-                        <div className={`h-full rounded-full transition-all ${isWeekend ? 'bg-red-300' : 'bg-yellow-400'}`} style={{ width: `${width}%` }} />
+              <div className="space-y-3">
+                {/* 스택 바 */}
+                <div className="h-10 rounded-full overflow-hidden flex bg-gray-100">
+                  {sorted.map((t, i) => {
+                    const pct = total > 0 ? (t.총인원 ?? t.배정인원 ?? 0) / total * 100 : 0
+                    if (pct < 1) return null
+                    return (
+                      <div key={t.name} className={`${colors[i % colors.length]} flex items-center justify-center`} style={{ width: `${pct}%` }}>
+                        {pct >= 8 && <span className="text-[10px] font-bold text-white truncate px-1">{t.name} {Math.round(pct)}%</span>}
                       </div>
-                      <span className="text-xs font-medium text-gray-700 w-20 text-right">{d.count}건 ({pct}%)</span>
-                    </div>
-                  )
-                })}
+                    )
+                  })}
+                </div>
+                {/* 범례 */}
+                <div className="flex flex-wrap gap-x-4 gap-y-1 justify-center">
+                  {sorted.map((t, i) => {
+                    const count = t.총인원 ?? t.배정인원 ?? 0
+                    const pct = total > 0 ? Math.round(count / total * 100) : 0
+                    return (
+                      <div key={t.name} className="flex items-center gap-1.5">
+                        <div className={`w-2.5 h-2.5 rounded-sm ${colors[i % colors.length]}`} />
+                        <span className="text-xs text-gray-700">{t.name} <span className="font-bold">{pct}%</span> ({count}명)</span>
+                      </div>
+                    )
+                  })}
+                </div>
               </div>
             )
           })()}
