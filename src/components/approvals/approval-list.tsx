@@ -139,6 +139,11 @@ export function ApprovalList({ programs: initialPrograms, profile, registrations
     setViewTarget({ ...viewTarget, program: updatedProgram })
     setPrograms((prev) => prev.map((p) => p.id === programId ? { ...p, ...updatedProgram } : p))
 
+    // 모든 세션 승인 완료 시 자동으로 팝업 닫기
+    if (allApproved) {
+      setTimeout(() => { setViewTarget(null); router.refresh() }, 1000)
+    }
+
     // 서버 반영은 백그라운드
     void (async () => {
       if (feedbackText) {

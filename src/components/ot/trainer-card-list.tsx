@@ -1428,12 +1428,14 @@ export function TrainerCardList({ assignments, trainers = [], trainerId, trainer
       {/* 완료 처리 — OT 프로그램 팝업 */}
       <Dialog open={!!completeTarget} onOpenChange={(open) => {
         if (!open) {
-          const choice = window.confirm('저장하시겠습니까?\n\n확인: 저장 후 닫기\n취소: 저장하지 않고 닫기')
-          if (choice) {
-            // 프로그램 폼의 저장 호출
-            programFormRef.current?.saveData().then(() => {
-              startTransition(() => router.refresh())
-            })
+          const dirty = programFormRef.current?.isDirty?.() ?? false
+          if (dirty) {
+            const choice = window.confirm('변경사항이 있습니다. 저장하시겠습니까?\n\n확인: 저장 후 닫기\n취소: 저장하지 않고 닫기')
+            if (choice) {
+              programFormRef.current?.saveData().then(() => {
+                startTransition(() => router.refresh())
+              })
+            }
           }
           setCompleteTarget(null)
         }

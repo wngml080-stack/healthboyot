@@ -89,8 +89,26 @@ export function StatsView({ stats: initialStats, target }: Props) {
 
   const captureSection = useCallback(async (ref: React.RefObject<HTMLDivElement | null>, name: string) => {
     if (!ref.current) return
+    const el = ref.current
+
+    // 캡처 전: sticky/overflow 제거 (레이아웃 깨짐 방지)
+    const stickyCells = el.querySelectorAll<HTMLElement>('.sticky')
+    const overflowEls = el.querySelectorAll<HTMLElement>('.overflow-x-auto')
+    stickyCells.forEach((c) => { c.dataset.pos = c.style.position; c.style.position = 'relative' })
+    overflowEls.forEach((c) => { c.dataset.ov = c.style.overflow; c.style.overflow = 'visible' })
+
     const { toPng } = await import('html-to-image')
-    const dataUrl = await toPng(ref.current, { backgroundColor: '#1a1a1a', pixelRatio: 2 })
+    const dataUrl = await toPng(el, {
+      backgroundColor: '#ffffff',
+      pixelRatio: 2,
+      style: { padding: '12px' },
+      filter: (node) => !(node instanceof HTMLElement && node.tagName === 'BUTTON' && node.querySelector('.lucide-camera')),
+    })
+
+    // 캡처 후: 원래 스타일 복원
+    stickyCells.forEach((c) => { c.style.position = c.dataset.pos || ''; delete c.dataset.pos })
+    overflowEls.forEach((c) => { c.style.overflow = c.dataset.ov || ''; delete c.dataset.ov })
+
     const link = document.createElement('a')
     link.download = `${name}_${getPeriodLabel().replace(/[^가-힣0-9~/]/g, '')}.png`
     link.href = dataUrl

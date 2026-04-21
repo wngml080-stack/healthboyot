@@ -66,6 +66,7 @@ const emptySession = (): OtProgramSession => ({
 export interface OtProgramFormRef {
   saveData: () => Promise<{ error?: string }>
   markSessionCompleted: (sessionIdx: number) => void
+  isDirty: () => boolean
 }
 
 interface Props {
@@ -233,13 +234,19 @@ export const OtProgramForm = forwardRef<OtProgramFormRef, Props>(function OtProg
     consultation_data: consultation,
   }), [trainerName, athleticGoal, totalSets, daysPerWeek, durationMin, targetHR, startDate, endDate, sessions, inbody, consultation])
 
-  // ref로 외부에서 저장/완료마킹 가능
+  // 마지막 저장 시점의 payload 스냅샷
+  const lastSavedRef = useRef(JSON.stringify(buildSavePayload()))
+
+  // ref로 외부에서 저장/완료마킹/dirty체크 가능
   useImperativeHandle(ref, () => ({
     saveData: async () => {
-      const result = await upsertOtProgram(a.id, a.member_id, buildSavePayload())
+      const payload = buildSavePayload()
+      const result = await upsertOtProgram(a.id, a.member_id, payload)
       if (result.error) return { error: result.error }
+      lastSavedRef.current = JSON.stringify(payload)
       return {}
     },
+    isDirty: () => JSON.stringify(buildSavePayload()) !== lastSavedRef.current,
     markSessionCompleted: (sessionIdx: number) => {
       setSessions((prev) => {
         const copy = [...prev]
@@ -474,10 +481,12 @@ export const OtProgramForm = forwardRef<OtProgramFormRef, Props>(function OtProg
     setSaving(true)
     setError(null)
     setSuccess(false)
-    const result = await upsertOtProgram(a.id, a.member_id, buildSavePayload())
+    const payload = buildSavePayload()
+    const result = await upsertOtProgram(a.id, a.member_id, payload)
     setSaving(false)
     if (result.error) setError(result.error)
     else {
+      lastSavedRef.current = JSON.stringify(payload)
       setSuccess(true)
       setTimeout(() => setSuccess(false), 3000)
       onSaved?.()
