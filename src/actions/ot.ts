@@ -92,17 +92,18 @@ export async function updateOtAssignment(id: string, values: Record<string, any>
 
   const supabase = await createClient()
 
-  // 변경 전 데이터 조회 (로그용)
-  const { data: before } = await supabase
-    .from('ot_assignments')
-    .select('status, sales_status, is_sales_target, is_pt_conversion, member:members!inner(name), pt_trainer:profiles!ot_assignments_pt_trainer_id_fkey(name)')
-    .eq('id', id)
-    .single()
-
-  const { error } = await supabase
-    .from('ot_assignments')
-    .update(values)
-    .eq('id', id)
+  // 변경 전 데이터 조회 + 업데이트 병렬 실행
+  const [{ data: before }, { error }] = await Promise.all([
+    supabase
+      .from('ot_assignments')
+      .select('status, sales_status, is_sales_target, is_pt_conversion, member:members!inner(name), pt_trainer:profiles!ot_assignments_pt_trainer_id_fkey(name)')
+      .eq('id', id)
+      .single(),
+    supabase
+      .from('ot_assignments')
+      .update(values)
+      .eq('id', id),
+  ])
 
   if (error) {
     console.error('updateOtAssignment error:', error.message, 'id:', id, 'values:', values)
@@ -323,41 +324,29 @@ export async function moveOtSchedule(params: {
     return { error: '완료된 세션은 이동할 수 없습니다' }
   }
 
-  const { error: sessionErr } = await supabase
-    .from('ot_sessions')
-    .update({ scheduled_at: params.newScheduledAtIso })
-    .eq('id', params.ot_session_id)
+  // 2. 세션 + 스케줄 + 로그 병렬 업데이트
+  const [{ error: sessionErr }, { error: tsErr }] = await Promise.all([
+    supabase
+      .from('ot_sessions')
+      .update({ scheduled_at: params.newScheduledAtIso })
+      .eq('id', params.ot_session_id),
+    supabase
+      .from('trainer_schedules')
+      .update({ scheduled_date: params.newDateStr, start_time: params.newTimeStr })
+      .eq('ot_session_id', params.ot_session_id),
+    supabase.auth.getSession().then(({ data: { session } }) =>
+      supabase.from('change_logs').insert({
+        target_type: 'ot_session',
+        target_id: existingSession.ot_assignment_id,
+        action: 'OT 일정 드래그 이동',
+        note: `→ ${params.newDateStr} ${params.newTimeStr}`,
+        changed_by: session?.user?.id ?? null,
+      })
+    ).catch(() => {}),
+  ])
 
-  if (sessionErr) {
-    return { error: 'OT 세션 업데이트 실패: ' + sessionErr.message }
-  }
-
-  // 2. 같은 ot_session_id에 묶인 모든 trainer_schedules 행 업데이트
-  //    (PT/PPT 트레이너 양쪽 row 동기화)
-  //    server는 RLS를 같은 컨텍스트(authenticated)에서 평가 → 호출자가 admin이거나 본인 trainer_id인 row만 update.
-  //    하지만 ot_sessions 권한이 통과했다는 건 호출자가 PT/PPT 둘 중 하나거나 admin이라는 의미 → 둘 다 update할 권한이 부족할 수 있음.
-  //    이를 회피하려면 service_role이 필요. 대신 본 시스템에서는 ot.ts의 다른 함수와 동일하게
-  //    authenticated 컨텍스트로 진행하되, 양쪽 모두 옮겨지지 않으면 다음 fetch에서 정합성 복구한다.
-  const { error: tsErr } = await supabase
-    .from('trainer_schedules')
-    .update({ scheduled_date: params.newDateStr, start_time: params.newTimeStr })
-    .eq('ot_session_id', params.ot_session_id)
-
-  if (tsErr) {
-    return { warning: 'trainer_schedules 일부 동기화 실패: ' + tsErr.message }
-  }
-
-  // 3. change_log 기록
-  try {
-    const { data: { session } } = await supabase.auth.getSession()
-    await supabase.from('change_logs').insert({
-      target_type: 'ot_session',
-      target_id: existingSession.ot_assignment_id,
-      action: 'OT 일정 드래그 이동',
-      note: `→ ${params.newDateStr} ${params.newTimeStr}`,
-      changed_by: session?.user?.id ?? null,
-    })
-  } catch {}
+  if (sessionErr) return { error: 'OT 세션 업데이트 실패: ' + sessionErr.message }
+  if (tsErr) return { warning: 'trainer_schedules 일부 동기화 실패: ' + tsErr.message }
 
   return { success: true }
 }
@@ -373,20 +362,21 @@ export async function changeTrainer(
   if (isDemoMode()) return { success: true }
 
   const supabase = await createClient()
-  const { data: { session } } = await supabase.auth.getSession()
 
-  // 1. trainer_id 변경
-  const { error } = await supabase
-    .from('ot_assignments')
-    .update({
-      [field]: newTrainerId,
-      [field === 'pt_trainer_id' ? 'pt_assign_status' : 'ppt_assign_status']: newTrainerId ? 'assigned' : 'none',
-    })
-    .eq('id', assignmentId)
+  // trainer_id 변경 + auth + 로그 기록 병렬
+  const [{ error }, authResult] = await Promise.all([
+    supabase
+      .from('ot_assignments')
+      .update({
+        [field]: newTrainerId,
+        [field === 'pt_trainer_id' ? 'pt_assign_status' : 'ppt_assign_status']: newTrainerId ? 'assigned' : 'none',
+      })
+      .eq('id', assignmentId),
+    supabase.auth.getSession(),
+  ])
 
   if (error) return { error: error.message }
 
-  // 2. 로그 기록
   try {
     await supabase.from('change_logs').insert({
       target_type: 'ot_assignment',
@@ -395,11 +385,9 @@ export async function changeTrainer(
       old_value: oldTrainerName,
       new_value: newTrainerName,
       note: `${memberName} 회원 — 히스토리 포함 이동`,
-      changed_by: session?.user?.id ?? null,
+      changed_by: authResult.data?.session?.user?.id ?? null,
     })
-  } catch (err) {
-    console.error('changeTrainer: change_logs insert 실패', err)
-  }
+  } catch {}
 
   return { success: true }
 }

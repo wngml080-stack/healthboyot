@@ -125,60 +125,66 @@ export async function recoverOtSessionsFromChangeLogs(dryRun: boolean): Promise<
     errors: [],
   }
 
-  // 3. 각 assignment마다 change_logs 분석
-  for (const a of assignments) {
+  // 3. 완료 세션 없는 assignment만 필터링
+  const candidateAssignments = assignments.filter((a) => {
+    const sessions = (a.sessions ?? []) as { completed_at: string | null }[]
+    const hasCompleted = sessions.some((s) => s.completed_at)
+    if (hasCompleted) { result.skipped_completed++; return false }
+    return true
+  })
+
+  // 4. 해당 assignment들의 change_logs를 한 번에 조회 (N+1 제거)
+  const candidateIds = candidateAssignments.map((a) => a.id)
+  const { data: allLogs } = candidateIds.length > 0
+    ? await supabase
+        .from('change_logs')
+        .select('id, action, note, created_at, target_id')
+        .in('target_id', candidateIds)
+        .eq('target_type', 'ot_session')
+        .ilike('action', '%OT 일정 등록%')
+        .order('created_at', { ascending: true })
+    : { data: [] as { id: string; action: string; note: string; created_at: string; target_id: string }[] }
+
+  // target_id별로 그룹핑
+  const logsByAssignment = new Map<string, typeof allLogs>()
+  for (const log of (allLogs ?? [])) {
+    const list = logsByAssignment.get(log.target_id) ?? []
+    list.push(log)
+    logsByAssignment.set(log.target_id, list)
+  }
+
+  for (const a of candidateAssignments) {
     const member = a.member as unknown as { id: string; name: string }
     const sessions = (a.sessions ?? []) as { id: string; session_number: number; scheduled_at: string | null; completed_at: string | null }[]
 
-    // 완료된 세션이 하나라도 있으면 skip
-    const hasCompleted = sessions.some((s) => s.completed_at)
-    if (hasCompleted) {
-      result.skipped_completed++
-      continue
-    }
-
-    // 해당 assignment의 'OT 일정 등록' 로그 가져오기
-    const { data: logs } = await supabase
-      .from('change_logs')
-      .select('id, action, note, created_at')
-      .eq('target_id', a.id)
-      .eq('target_type', 'ot_session')
-      .ilike('action', '%OT 일정 등록%')
-      .order('created_at', { ascending: true })
-
+    const logs = logsByAssignment.get(a.id)
     if (!logs || logs.length === 0) {
       result.skipped_no_logs++
       continue
     }
 
-    // 4. note에서 시간 파싱 + dedup (시간 문자열 기준)
-    // 같은 시간이 여러 번 로깅되면(중복 클릭) 가장 빠른 created_at만 유지
+    // note에서 시간 파싱 + dedup
     const seenTimes = new Map<string, { iso: string; logCreatedAt: string }>()
     for (const log of logs) {
       const parsed = parseTimeFromNote(log.note)
       if (!parsed) continue
-      // year는 log.created_at 기준
       const logYear = new Date(log.created_at).getUTCFullYear()
       const iso = kstToIsoUtc(logYear, parsed.month, parsed.day, parsed.hour, parsed.minute)
-      const timeKey = iso
-      if (!seenTimes.has(timeKey)) {
-        seenTimes.set(timeKey, { iso, logCreatedAt: log.created_at })
+      if (!seenTimes.has(iso)) {
+        seenTimes.set(iso, { iso, logCreatedAt: log.created_at })
       }
     }
 
-    // 5. log_created_at 기준 정렬 → 시도 순서 보존
     const distinctTimes = Array.from(seenTimes.values())
       .sort((x, y) => x.logCreatedAt.localeCompare(y.logCreatedAt))
       .map((x) => x.iso)
-      .slice(0, 3) // 최대 3차까지
+      .slice(0, 3)
 
     if (distinctTimes.length <= 1) {
-      // 0개 또는 1개면 복구 필요 없음 (현재 ot_sessions 그대로 둠)
       result.skipped_single++
       continue
     }
 
-    // 6. 복구 대상 — items에 기록
     const item: RecoveryItem = {
       assignment_id: a.id,
       member_name: member.name,
@@ -191,7 +197,6 @@ export async function recoverOtSessionsFromChangeLogs(dryRun: boolean): Promise<
     result.items.push(item)
     result.to_recover++
 
-    // 7. 실제 적용 (dryRun이 false일 때만)
     if (!dryRun) {
       try {
         await applyRecoveryForAssignment(supabase, a.id, distinctTimes, a.pt_trainer_id as string | null, a.ppt_trainer_id as string | null, member)
@@ -218,66 +223,48 @@ async function applyRecoveryForAssignment(
   pptTrainerId: string | null,
   member: { id: string; name: string },
 ) {
-  // 1. 기존 미완료 ot_sessions 모두 삭제 (1, 2, 3 어떤 번호든)
-  //    완료된 건 위에서 이미 skip했으므로 여기 도달한 assignment는 모두 미완료
-  const { error: delSessErr } = await supabase
-    .from('ot_sessions')
-    .delete()
-    .eq('ot_assignment_id', assignmentId)
-    .is('completed_at', null)
-  if (delSessErr) throw new Error(`ot_sessions 삭제 실패: ${delSessErr.message}`)
-
-  // 2. 기존 OT trainer_schedules 삭제 (해당 회원 + OT 타입)
+  // 1. 기존 미완료 ot_sessions + trainer_schedules 병렬 삭제
   const trainerIds = [ptTrainerId, pptTrainerId].filter(Boolean) as string[]
-  for (const tid of trainerIds) {
-    await supabase
-      .from('trainer_schedules')
-      .delete()
-      .eq('trainer_id', tid)
-      .eq('schedule_type', 'OT')
-      .eq('member_name', member.name)
-  }
+  const deleteOps: PromiseLike<unknown>[] = [
+    supabase.from('ot_sessions').delete().eq('ot_assignment_id', assignmentId).is('completed_at', null)
+      .then(({ error }) => { if (error) throw new Error(`ot_sessions 삭제 실패: ${error.message}`) }),
+    ...trainerIds.map((tid) =>
+      supabase.from('trainer_schedules').delete().eq('trainer_id', tid).eq('schedule_type', 'OT').eq('member_name', member.name)
+    ),
+  ]
+  await Promise.all(deleteOps)
 
-  // 3. 새 ot_sessions + trainer_schedules 생성
-  for (let i = 0; i < distinctTimesIso.length; i++) {
-    const sessionNumber = i + 1
-    const scheduledAtIso = distinctTimesIso[i]
+  // 2. 새 ot_sessions 일괄 insert
+  const sessionRows = distinctTimesIso.map((iso, i) => ({
+    ot_assignment_id: assignmentId,
+    session_number: i + 1,
+    scheduled_at: iso,
+  }))
+  const { data: insertedSessions, error: sessErr } = await supabase
+    .from('ot_sessions')
+    .insert(sessionRows)
+    .select('id, scheduled_at')
+  if (sessErr) throw new Error(`ot_sessions insert 실패: ${sessErr.message}`)
 
-    // ot_sessions insert
-    const { data: sessRow, error: sessErr } = await supabase
-      .from('ot_sessions')
-      .insert({
-        ot_assignment_id: assignmentId,
-        session_number: sessionNumber,
-        scheduled_at: scheduledAtIso,
-      })
-      .select('id')
-      .single()
-    if (sessErr) throw new Error(`ot_sessions insert 실패 (${sessionNumber}차): ${sessErr.message}`)
-
-    const sessionId = sessRow?.id as string
-
-    // trainer_schedules insert (PT/PPT 트레이너별)
-    if (trainerIds.length > 0) {
-      // KST로 dateStr/timeStr 만들기
-      const kst = new Date(new Date(scheduledAtIso).getTime() + 9 * 60 * 60 * 1000)
+  // 3. trainer_schedules 일괄 insert (병렬)
+  if (trainerIds.length > 0 && insertedSessions) {
+    const scheduleRows = insertedSessions.flatMap((sess) => {
+      const kst = new Date(new Date(sess.scheduled_at).getTime() + 9 * 60 * 60 * 1000)
       const pad = (n: number) => String(n).padStart(2, '0')
       const dateStr = `${kst.getUTCFullYear()}-${pad(kst.getUTCMonth() + 1)}-${pad(kst.getUTCDate())}`
       const timeStr = `${pad(kst.getUTCHours())}:${pad(kst.getUTCMinutes())}`
-
-      for (const tid of trainerIds) {
-        await supabase.from('trainer_schedules').insert({
-          trainer_id: tid,
-          schedule_type: 'OT',
-          member_name: member.name,
-          member_id: member.id,
-          ot_session_id: sessionId,
-          scheduled_date: dateStr,
-          start_time: timeStr,
-          duration: 50,
-        })
-      }
-    }
+      return trainerIds.map((tid) => ({
+        trainer_id: tid,
+        schedule_type: 'OT' as const,
+        member_name: member.name,
+        member_id: member.id,
+        ot_session_id: sess.id,
+        scheduled_date: dateStr,
+        start_time: timeStr,
+        duration: 50,
+      }))
+    })
+    await supabase.from('trainer_schedules').insert(scheduleRows)
   }
 
   // 4. assignment 상태가 신청대기/배정완료면 진행중으로 전환

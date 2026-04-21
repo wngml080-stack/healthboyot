@@ -45,23 +45,25 @@ export async function getTrainerFolders(): Promise<TrainerFolder[]> {
 
   if (!trainers || trainers.length === 0) return []
 
-  // 해당 트레이너들의 배정만 조회 (PT 또는 PPT 담당) — 수기 회원 포함 전체 카운트
   const trainerIds = trainers.map((t) => t.id)
-  const { data: assignments } = await supabase
-    .from('ot_assignments')
-    .select('status, pt_trainer_id, ppt_trainer_id, is_sales_target, is_pt_conversion, member:members!inner(id, name, registration_source)')
-    .or(`pt_trainer_id.in.(${trainerIds.join(',')}),ppt_trainer_id.in.(${trainerIds.join(',')})`)
 
-  // 오늘의 OT 수업 (trainer_schedules에서 오늘 schedule_type='OT' 행)
-  // KST 기준 오늘 — 서버가 UTC라서 KST offset 적용
+  // KST 기준 오늘
   const nowKst = new Date(Date.now() + 9 * 60 * 60 * 1000)
   const todayStr = `${nowKst.getUTCFullYear()}-${String(nowKst.getUTCMonth() + 1).padStart(2, '0')}-${String(nowKst.getUTCDate()).padStart(2, '0')}`
-  const { data: todaySchedules } = await supabase
-    .from('trainer_schedules')
-    .select('trainer_id, member_name')
-    .eq('scheduled_date', todayStr)
-    .eq('schedule_type', 'OT')
-    .in('trainer_id', trainerIds)
+
+  // 배정 + 오늘 스케줄 병렬 조회
+  const [{ data: assignments }, { data: todaySchedules }] = await Promise.all([
+    supabase
+      .from('ot_assignments')
+      .select('status, pt_trainer_id, ppt_trainer_id, is_sales_target, is_pt_conversion, member:members!inner(id, name, registration_source)')
+      .or(`pt_trainer_id.in.(${trainerIds.join(',')}),ppt_trainer_id.in.(${trainerIds.join(',')})`),
+    supabase
+      .from('trainer_schedules')
+      .select('trainer_id, member_name')
+      .eq('scheduled_date', todayStr)
+      .eq('schedule_type', 'OT')
+      .in('trainer_id', trainerIds),
+  ])
 
   const folders: TrainerFolder[] = trainers.map((t) => {
     // 트레이너 본인 담당 회원 전체 (수기 포함)
@@ -154,26 +156,23 @@ export async function verifyFolderPassword(trainerId: string, password: string):
 
   const supabase = await createClient()
 
-  // 관리자 통합 비밀번호 체크
-  const { data: currentUser } = await supabase.auth.getUser()
+  // 관리자 체크 + 폴더 비밀번호 병렬 조회
+  const [{ data: currentUser }, { data: folderData }] = await Promise.all([
+    supabase.auth.getUser(),
+    supabase.from('profiles').select('folder_password').eq('id', trainerId).single(),
+  ])
+
   if (currentUser?.user) {
     const { data: profile } = await supabase
       .from('profiles')
       .select('role')
       .eq('id', currentUser.user.id)
       .single()
-    if (profile?.role === 'admin') return true // 관리자는 모든 폴더 접근
+    if (profile?.role === 'admin') return true
   }
 
-  // 트레이너 폴더 비밀번호 체크
-  const { data } = await supabase
-    .from('profiles')
-    .select('folder_password')
-    .eq('id', trainerId)
-    .single()
-
-  if (!data?.folder_password) return true // 비밀번호 미설정 시 접근 허용
-  return data.folder_password === password
+  if (!folderData?.folder_password) return true
+  return folderData.folder_password === password
 }
 
 export async function setFolderPassword(trainerId: string, password: string) {
@@ -237,19 +236,12 @@ export async function swapFolderOrder(folderId1: string, order1: number, folderI
 
   const supabase = await createClient()
 
-  const { error: e1 } = await supabase
-    .from('profiles')
-    .update({ folder_order: order2 })
-    .eq('id', folderId1)
+  const [{ error: e1 }, { error: e2 }] = await Promise.all([
+    supabase.from('profiles').update({ folder_order: order2 }).eq('id', folderId1),
+    supabase.from('profiles').update({ folder_order: order1 }).eq('id', folderId2),
+  ])
 
   if (e1) return { error: e1.message }
-
-  const { error: e2 } = await supabase
-    .from('profiles')
-    .update({ folder_order: order1 })
-    .eq('id', folderId2)
-
   if (e2) return { error: e2.message }
-
   return { success: true }
 }

@@ -26,8 +26,12 @@ interface Props {
 function fmtMoney(v: number): string { return v ? v.toLocaleString() : '0' }
 function fmtMan(v: number): string { return v >= 10000 ? `${(v / 10000).toLocaleString()}만` : v ? v.toLocaleString() : '0' }
 
-export function StatsView({ stats, target }: Props) {
+export function StatsView({ stats: initialStats, target }: Props) {
   const router = useRouter()
+  const [stats, setStats] = useState(initialStats)
+  const [period, setPeriod] = useState<'weekly' | 'monthly'>('monthly')
+  const [offset, setOffset] = useState(0)
+  const [loading, setLoading] = useState(false)
   const [showTarget, setShowTarget] = useState(false)
   const [targetAmount, setTargetAmount] = useState(target?.target_amount ?? 0)
   const [w1, setW1] = useState(target?.week1_target ?? 0)
@@ -35,6 +39,35 @@ export function StatsView({ stats, target }: Props) {
   const [w3, setW3] = useState(target?.week3_target ?? 0)
   const [w4, setW4] = useState(target?.week4_target ?? 0)
   const [saving, setSaving] = useState(false)
+
+  const fetchStats = async (p: 'weekly' | 'monthly', o: number) => {
+    setLoading(true)
+    const { getStats } = await import('@/actions/stats')
+    const result = await getStats(p, o)
+    setStats(result)
+    setLoading(false)
+  }
+
+  const handlePeriodChange = (p: 'weekly' | 'monthly') => { setPeriod(p); setOffset(0); fetchStats(p, 0) }
+  const handlePrev = () => { const o = offset - 1; setOffset(o); fetchStats(period, o) }
+  const handleNext = () => { if (offset >= 0) return; const o = offset + 1; setOffset(o); fetchStats(period, o) }
+  const handleToday = () => { setOffset(0); fetchStats(period, 0) }
+
+  const getPeriodLabel = () => {
+    const now = new Date()
+    if (period === 'weekly') {
+      const dayOfWeek = now.getDay()
+      const thisMonday = new Date(now)
+      thisMonday.setDate(now.getDate() - (dayOfWeek === 0 ? 6 : dayOfWeek - 1))
+      const targetMonday = new Date(thisMonday)
+      targetMonday.setDate(thisMonday.getDate() + offset * 7)
+      const targetSunday = new Date(targetMonday)
+      targetSunday.setDate(targetMonday.getDate() + 6)
+      return `${targetMonday.getMonth() + 1}/${targetMonday.getDate()} ~ ${targetSunday.getMonth() + 1}/${targetSunday.getDate()}`
+    }
+    const targetMonth = new Date(now.getFullYear(), now.getMonth() + offset, 1)
+    return `${targetMonth.getFullYear()}년 ${targetMonth.getMonth() + 1}월`
+  }
 
   const achieveRate = target?.target_amount ? Math.round((stats.totalSales / target.target_amount) * 100) : 0
 
@@ -92,17 +125,31 @@ export function StatsView({ stats, target }: Props) {
     <div className="space-y-4">
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
         <PageTitle>통계 · 보고서</PageTitle>
-        <Button variant="outline" size="sm" onClick={handleExcelDownload} className="bg-white text-gray-700 border-gray-300">
-          <Download className="h-4 w-4 mr-1" />엑셀
-        </Button>
+        <div className="flex items-center gap-2">
+          <div className="flex rounded-lg border border-gray-200 overflow-hidden">
+            <button className={`px-3 py-1.5 text-xs font-bold transition-colors ${period === 'weekly' ? 'bg-blue-600 text-white' : 'bg-white text-gray-600 hover:bg-gray-50'}`} onClick={() => handlePeriodChange('weekly')} disabled={loading}>주간</button>
+            <button className={`px-3 py-1.5 text-xs font-bold transition-colors ${period === 'monthly' ? 'bg-blue-600 text-white' : 'bg-white text-gray-600 hover:bg-gray-50'}`} onClick={() => handlePeriodChange('monthly')} disabled={loading}>월간</button>
+          </div>
+          <Button variant="outline" size="sm" onClick={handleExcelDownload} className="bg-white text-gray-700 border-gray-300 h-8">
+            <Download className="h-4 w-4 mr-1" />엑셀
+          </Button>
+        </div>
+      </div>
+
+      {/* 기간 네비게이션 */}
+      <div className="flex items-center justify-center gap-3">
+        <button onClick={handlePrev} disabled={loading} className="h-7 w-7 flex items-center justify-center rounded-lg bg-gray-100 hover:bg-gray-200 text-gray-700 transition-colors disabled:opacity-50 text-sm">←</button>
+        <button onClick={handleToday} disabled={loading} className="text-sm font-bold text-gray-900 hover:text-blue-600 min-w-[140px] text-center">{getPeriodLabel()}</button>
+        <button onClick={handleNext} disabled={loading || offset >= 0} className="h-7 w-7 flex items-center justify-center rounded-lg bg-gray-100 hover:bg-gray-200 text-gray-700 transition-colors disabled:opacity-30 text-sm">→</button>
+        {offset !== 0 && <button onClick={handleToday} className="text-xs text-blue-600 hover:underline font-medium">오늘</button>}
       </div>
 
       {/* OT 현황 */}
-      <Card className="bg-white border-gray-200">
+      <Card className={`bg-white border-gray-200 ${loading ? 'opacity-50' : ''}`}>
         <CardHeader className="pb-2 px-4 pt-4">
           <div className="flex items-center justify-between">
             <CardTitle className="text-sm font-bold text-gray-900">OT 현황</CardTitle>
-            <span className="text-xs text-gray-400">{new Date().getFullYear()}년 {new Date().getMonth() + 1}월</span>
+            <span className="text-xs text-gray-400">{getPeriodLabel()}</span>
           </div>
         </CardHeader>
         <CardContent className="px-4 pb-4 space-y-3">

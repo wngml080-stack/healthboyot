@@ -17,10 +17,32 @@ export interface StatsData {
   ageData: { ageGroup: string; count: number; percentage: number }[]
 }
 
-export async function getStats(): Promise<StatsData> {
+export async function getStats(period: 'weekly' | 'monthly' = 'monthly', offset: number = 0): Promise<StatsData> {
   if (isDemoMode()) return getDemoStats()
 
   const supabase = await createClient()
+
+  // 기간 계산
+  const now = new Date()
+  let periodStart: Date
+  let periodEnd: Date
+  if (period === 'weekly') {
+    const dayOfWeek = now.getDay()
+    const thisMonday = new Date(now)
+    thisMonday.setDate(now.getDate() - (dayOfWeek === 0 ? 6 : dayOfWeek - 1))
+    thisMonday.setHours(0, 0, 0, 0)
+    const targetMonday = new Date(thisMonday)
+    targetMonday.setDate(thisMonday.getDate() + offset * 7)
+    const targetSunday = new Date(targetMonday)
+    targetSunday.setDate(targetMonday.getDate() + 6)
+    targetSunday.setHours(23, 59, 59, 999)
+    periodStart = targetMonday
+    periodEnd = targetSunday
+  } else {
+    const targetMonth = new Date(now.getFullYear(), now.getMonth() + offset, 1)
+    periodStart = targetMonth
+    periodEnd = new Date(targetMonth.getFullYear(), targetMonth.getMonth() + 1, 0, 23, 59, 59, 999)
+  }
 
   const { data: assignments } = await supabase
     .from('ot_assignments')
@@ -30,8 +52,10 @@ export async function getStats(): Promise<StatsData> {
       is_sales_target, is_pt_conversion, pt_trainer_id, ppt_trainer_id,
       pt_trainer:profiles!ot_assignments_pt_trainer_id_fkey(name),
       ppt_trainer:profiles!ot_assignments_ppt_trainer_id_fkey(name),
-      sessions:ot_sessions(completed_at)
+      sessions:ot_sessions(completed_at, scheduled_at)
     `)
+    .gte('created_at', periodStart.toISOString())
+    .lte('created_at', periodEnd.toISOString())
     .limit(1000)
 
   if (!assignments || assignments.length === 0) return emptyStats()

@@ -22,7 +22,7 @@ const WeeklyCalendar = dynamic(() => import('@/components/ot/weekly-calendar').t
 })
 import { PageTitle } from '@/components/shared/page-title'
 import { NotificationBell } from '@/components/ot/notification-bell'
-import { ArrowLeft } from 'lucide-react'
+import { ArrowLeft, Loader2 } from 'lucide-react'
 import Link from 'next/link'
 
 interface OtPageProps {
@@ -82,16 +82,7 @@ async function FolderView() {
 }
 
 function FolderViewSkeleton() {
-  return (
-    <div className="space-y-4">
-      <div className="h-6 w-48 bg-gray-200 rounded animate-pulse" />
-      <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-3">
-        {Array.from({ length: 10 }).map((_, i) => (
-          <div key={i} className="aspect-square rounded-lg bg-gray-200 animate-pulse" />
-        ))}
-      </div>
-    </div>
-  )
+  return <div className="flex items-center justify-center py-20 text-muted-foreground gap-3"><Loader2 className="h-6 w-6 animate-spin" /><span className="text-sm">폴더를 불러오는 중...</span></div>
 }
 
 // ─── 트레이너 상세 뷰 ────────────────────────────────────
@@ -206,26 +197,5 @@ async function TrainerDetailView({ trainerId, tab }: { trainerId: string; tab: s
 }
 
 function TrainerDetailSkeleton() {
-  return (
-    <div className="space-y-4">
-      <div className="flex items-center gap-3">
-        <div className="h-4 w-20 bg-gray-200 rounded animate-pulse" />
-        <div className="h-6 w-32 bg-gray-200 rounded animate-pulse" />
-      </div>
-      <div className="flex flex-col md:flex-row gap-4 md:gap-6">
-        <div className="w-full md:w-44 space-y-2">
-          {Array.from({ length: 4 }).map((_, i) => (
-            <div key={i} className="h-9 bg-gray-200 rounded-lg animate-pulse" />
-          ))}
-        </div>
-        <div className="flex-1 space-y-3">
-          <div className="h-9 bg-gray-200 rounded animate-pulse" />
-          <div className="h-10 bg-gray-200 rounded-lg animate-pulse" />
-          {Array.from({ length: 5 }).map((_, i) => (
-            <div key={i} className="h-16 bg-gray-200 rounded-lg animate-pulse" />
-          ))}
-        </div>
-      </div>
-    </div>
-  )
+  return <div className="flex items-center justify-center py-20 text-muted-foreground gap-3"><Loader2 className="h-6 w-6 animate-spin" /><span className="text-sm">데이터를 불러오는 중...</span></div>
 }
