@@ -44,7 +44,7 @@ export const FULL_ACCESS_ROLES: Role[] = ['admin', '관리자']
 export const MENU_ACCESS: Record<string, Role[]> = {
   '/ot': ['admin', '관리자', '팀장', 'trainer', '강사', 'fc'],
   '/dashboard': ['admin', '관리자', 'fc'],
-  '/consultations': ['admin', '관리자', 'fc'],
+  '/consultations': ['admin', '관리자', '팀장', 'trainer', '강사', 'fc'],
   '/approvals': ['admin', '관리자'],
   '/staff': ['admin', '관리자'],
   '/stats': ['admin', '관리자'],
