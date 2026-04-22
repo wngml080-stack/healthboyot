@@ -710,8 +710,14 @@ export const OtProgramForm = forwardRef<OtProgramFormRef, Props>(function OtProg
                       : 'bg-yellow-500'
                     }`}>{session.approval_status}</Badge>
                   )}
-                  {isCompleted && <Badge className="bg-green-500 text-white text-xs">완료</Badge>}
-                  {idx === activeSessionIdx && !isCompleted && <Badge className="bg-blue-500 text-white text-xs">현재</Badge>}
+                  {(() => {
+                    const otSession = a.sessions?.find((os) => os.session_number === idx + 1)
+                    if (otSession?.completed_at) return <Badge className="bg-green-500 text-white text-xs">수업완료</Badge>
+                    if (otSession?.scheduled_at) return <Badge className="bg-blue-500 text-white text-xs">수업예정</Badge>
+                    return <Badge className="bg-gray-400 text-white text-xs">미예약</Badge>
+                  })()}
+                  {isCompleted && <Badge className="bg-green-600 text-white text-xs">프로그램완료</Badge>}
+                  {idx === activeSessionIdx && !isCompleted && <Badge className="bg-blue-400 text-white text-xs">현재</Badge>}
                 </CardTitle>
                 <div className="flex flex-wrap items-center gap-2">
                   {canEdit && !isSessionLocked(session) && (
