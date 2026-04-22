@@ -99,15 +99,16 @@ export function TrainerCardList({ assignments, trainers = [], trainerId, trainer
 
   // 필터
   const [filter, setFilter] = useState<string>('전체')
-  const FILTERS = ['전체', 'PT', 'PPT', '미진행', '1차', '2차', '3차', '4차+', '상태변경필요', '거부']
+  const FILTERS = ['전체', 'PT', 'PPT', '미진행', '1차', '2차', '3차', '4차+', '수업상태변경', '승인필요', '거부']
 
   // 펼침
   const [expandedId, setExpandedId] = useState<string | null>(null)
   const [expandedData, setExpandedData] = useState<Record<string, { card: import('@/types').ConsultationCard | null; program: OtProgram | null } | 'loading'>>({})
 
-  // 피드백 데이터 (assignment_id → [{session, feedback}])
+  // 피드백 데이터 + 승인필요 set
   const [feedbackMap, setFeedbackMap] = useState<Record<string, { session: number; feedback: string }[]>>({})
   const [feedbackPopup, setFeedbackPopup] = useState<{ title: string; feedback: string } | null>(null)
+  const [needApprovalSet, setNeedApprovalSet] = useState<Set<string>>(new Set())
 
   useEffect(() => {
     if (!trainerId) return
@@ -115,15 +116,20 @@ export function TrainerCardList({ assignments, trainers = [], trainerId, trainer
     supabase.from('ot_programs').select('ot_assignment_id, sessions').then(({ data }) => {
       if (!data) return
       const map: Record<string, { session: number; feedback: string }[]> = {}
+      const approvalNeeded = new Set<string>()
       for (const p of data) {
-        const sessions = p.sessions as { admin_feedback?: string | null }[] | null
+        const sessions = p.sessions as { admin_feedback?: string | null; completed?: boolean; approval_status?: string }[] | null
         if (!sessions) continue
         const feedbacks = sessions
           .map((s, i) => ({ session: i + 1, feedback: s.admin_feedback ?? '' }))
           .filter((f) => f.feedback)
         if (feedbacks.length > 0) map[p.ot_assignment_id] = feedbacks
+        // 승인필요: 완료된 세션 중 승인 안 된 것이 있으면
+        const hasUnapproved = sessions.some((s) => s.completed && s.approval_status !== '승인')
+        if (hasUnapproved) approvalNeeded.add(p.ot_assignment_id)
       }
       setFeedbackMap(map)
+      setNeedApprovalSet(approvalNeeded)
     })
   }, [trainerId])
 
@@ -348,12 +354,15 @@ export function TrainerCardList({ assignments, trainers = [], trainerId, trainer
       if ((done === 2 && scheduled > 0) || done === 3) counts['3차'] = (counts['3차'] ?? 0) + 1
       // 4차+: done>=3+scheduled>0 또는 done>=4
       if ((done >= 3 && scheduled > 0) || done >= 4) counts['4차+'] = (counts['4차+'] ?? 0) + 1
-      // 상태변경 필요
-      if (done > 0 && !a.sales_status && !a.is_sales_target && !a.is_pt_conversion && a.status !== '완료' && a.status !== '거부') counts['상태변경필요'] = (counts['상태변경필요'] ?? 0) + 1
+      // 수업상태변경: 스케줄 확정됐는데 수업일이 지났는데 완료 처리 안 됨
+      const pastScheduled = (a.sessions ?? []).filter((s) => s.scheduled_at && !s.completed_at && new Date(s.scheduled_at) < new Date()).length
+      if (pastScheduled > 0) counts['수업상태변경'] = (counts['수업상태변경'] ?? 0) + 1
+      // 승인필요: 수업 완료됐는데 프로그램 승인 안 된 회원
+      if (needApprovalSet.has(a.id)) counts['승인필요'] = (counts['승인필요'] ?? 0) + 1
       if (a.status === '거부') counts['거부'] = (counts['거부'] ?? 0) + 1
     }
     return counts
-  }, [assignments, trainerId])
+  }, [assignments, trainerId, needApprovalSet])
 
   // 회원관리 탭은 배정된 모든 회원 표시 (수기 등록 포함)
   const otOnlyAssignments = assignments
@@ -374,7 +383,11 @@ export function TrainerCardList({ assignments, trainers = [], trainerId, trainer
       if (filter === '2차') return (done === 1 && scheduled > 0) || done === 2
       if (filter === '3차') return (done === 2 && scheduled > 0) || done === 3
       if (filter === '4차+') return (done >= 3 && scheduled > 0) || done >= 4
-      if (filter === '상태변경필요') return done > 0 && !a.sales_status && !a.is_sales_target && !a.is_pt_conversion && a.status !== '완료' && a.status !== '거부'
+      if (filter === '수업상태변경') {
+        const pastSch = (a.sessions ?? []).filter((s) => s.scheduled_at && !s.completed_at && new Date(s.scheduled_at) < new Date()).length
+        return pastSch > 0
+      }
+      if (filter === '승인필요') return needApprovalSet.has(a.id)
       if (filter === '거부') return a.status === '거부'
       return true
     })
@@ -397,6 +410,7 @@ export function TrainerCardList({ assignments, trainers = [], trainerId, trainer
       : categoryFilter === '클로징실패' ? withDate.filter((a) => a.sales_status === '클로징실패')
       : categoryFilter === '연락두절' ? withDate.filter((a) => a.sales_status === '연락두절')
       : categoryFilter === '스케줄미확정' ? withDate.filter((a) => a.sales_status === '스케줄미확정')
+      : categoryFilter === '거부' ? withDate.filter((a) => a.status === '거부')
       : withDate
     // 검색
     const q = search.trim().toLowerCase()
@@ -657,6 +671,7 @@ export function TrainerCardList({ assignments, trainers = [], trainerId, trainer
             <option value="클로징실패">클로징실패</option>
             <option value="연락두절">연락두절</option>
             <option value="스케줄미확정">스케줄미확정</option>
+            <option value="거부">거부</option>
           </select>
         </div>
 

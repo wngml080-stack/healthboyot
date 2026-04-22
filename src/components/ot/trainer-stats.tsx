@@ -96,7 +96,7 @@ export function TrainerStats({ assignments, trainerName, programs, registrations
   const [newTargetName, setNewTargetName] = useState('')
   const [newTargetAmount, setNewTargetAmount] = useState('')
 
-  // 이미지 저장 — 섹션별 개별 캡처 후 하나로 합성
+  // 이미지 저장 — 데스크톱 너비로 확장 후 섹션별 캡처 → 합성
   const handleCapture = async () => {
     if (!captureRef.current) return
     setCapturing(true)
@@ -104,33 +104,57 @@ export function TrainerStats({ assignments, trainerName, programs, registrations
       const el = captureRef.current
       const html2canvas = (await import('html2canvas')).default
       const scale = 2
-      const gap = 16 * scale // space-y-4 = 16px
+      const gap = 16 * scale
       const pad = 24 * scale
+      const CAPTURE_WIDTH = 820 // 데스크톱 수준 너비
 
-      // 캡처 전: sticky/overflow 제거
+      // 1) 컨테이너를 데스크톱 너비로 강제 확장
+      const origWidth = el.style.width
+      const origMinWidth = el.style.minWidth
+      const origMaxWidth = el.style.maxWidth
+      el.style.width = `${CAPTURE_WIDTH}px`
+      el.style.minWidth = `${CAPTURE_WIDTH}px`
+      el.style.maxWidth = `${CAPTURE_WIDTH}px`
+
+      // 2) sticky/overflow/overflow-hidden 제거
       const stickyCells = el.querySelectorAll<HTMLElement>('.sticky')
-      const overflowEls = el.querySelectorAll<HTMLElement>('.overflow-x-auto')
+      const overflowAuto = el.querySelectorAll<HTMLElement>('.overflow-x-auto')
+      const overflowHidden = el.querySelectorAll<HTMLElement>('.overflow-hidden')
       stickyCells.forEach((c) => { c.dataset.pos = c.style.position; c.style.position = 'relative' })
-      overflowEls.forEach((c) => { c.dataset.ov = c.style.overflow; c.style.overflow = 'visible' })
+      overflowAuto.forEach((c) => { c.dataset.ov = c.style.overflow; c.style.overflow = 'visible' })
+      overflowHidden.forEach((c) => { c.dataset.ov = c.style.overflow; c.style.overflow = 'visible' })
 
-      // 인터랙티브 요소 숨기기
+      // 3) 인터랙티브 요소 숨기기
       const hideEls = el.querySelectorAll<HTMLElement>('input, .capture-hide')
       hideEls.forEach((e) => { e.dataset.vis = e.style.visibility; e.style.visibility = 'hidden' })
 
-      // 각 직계 자식(섹션)을 개별 캡처
+      // 레이아웃 재계산 대기
+      await new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r)))
+
+      // 4) 각 직계 자식(섹션)을 개별 캡처
       const children = Array.from(el.children) as HTMLElement[]
       const canvases: HTMLCanvasElement[] = []
       for (const child of children) {
-        const c = await html2canvas(child, { scale, backgroundColor: null, useCORS: true, logging: false })
+        const c = await html2canvas(child, {
+          scale,
+          backgroundColor: null,
+          useCORS: true,
+          logging: false,
+          width: CAPTURE_WIDTH,
+        })
         canvases.push(c)
       }
 
-      // 복원
+      // 5) 모든 스타일 복원
+      el.style.width = origWidth
+      el.style.minWidth = origMinWidth
+      el.style.maxWidth = origMaxWidth
       stickyCells.forEach((c) => { c.style.position = c.dataset.pos || ''; delete c.dataset.pos })
-      overflowEls.forEach((c) => { c.style.overflow = c.dataset.ov || ''; delete c.dataset.ov })
+      overflowAuto.forEach((c) => { c.style.overflow = c.dataset.ov || ''; delete c.dataset.ov })
+      overflowHidden.forEach((c) => { c.style.overflow = c.dataset.ov || ''; delete c.dataset.ov })
       hideEls.forEach((e) => { e.style.visibility = e.dataset.vis || ''; delete e.dataset.vis })
 
-      // 하나의 캔버스에 합성
+      // 6) 하나의 캔버스에 합성
       const maxW = Math.max(...canvases.map((c) => c.width))
       const totalH = canvases.reduce((s, c) => s + c.height, 0) + gap * (canvases.length - 1) + pad * 2
       const combined = document.createElement('canvas')
