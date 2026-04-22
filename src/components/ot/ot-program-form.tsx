@@ -746,6 +746,12 @@ export const OtProgramForm = forwardRef<OtProgramFormRef, Props>(function OtProg
                   )}
                   {(() => {
                     const otSession = a.sessions?.find((os) => os.session_number === idx + 1)
+                    const rc = session.result_category
+                    // result_category가 있으면 그걸 표시
+                    if (rc) {
+                      const color = rc === '수업완료' ? 'bg-green-500' : rc === '노쇼' || rc === '차감노쇼' ? 'bg-red-500' : rc === '거부자' ? 'bg-orange-500' : 'bg-purple-500'
+                      return <Badge className={`${color} text-white text-xs`}>{rc}</Badge>
+                    }
                     if (otSession?.completed_at) return <Badge className="bg-green-500 text-white text-xs">수업완료</Badge>
                     if (otSession?.scheduled_at) return <Badge className="bg-blue-500 text-white text-xs">수업예정</Badge>
                     return <Badge className="bg-gray-400 text-white text-xs">미예약</Badge>
@@ -753,8 +759,12 @@ export const OtProgramForm = forwardRef<OtProgramFormRef, Props>(function OtProg
                   {canEdit && !isSessionLocked(session) && (
                     <select
                       value={session.result_category ?? ''}
-                      onChange={(e) => updateSession(idx, 'result_category', e.target.value || null)}
-                      className="h-6 text-[10px] font-bold bg-white border border-gray-300 rounded px-1"
+                      onChange={(e) => {
+                        updateSession(idx, 'result_category', e.target.value || null)
+                        // 즉시 저장
+                        setTimeout(() => handleSave(), 100)
+                      }}
+                      className="h-7 text-xs font-medium bg-white border border-gray-300 rounded-md px-2 cursor-pointer"
                     >
                       <option value="">상태선택</option>
                       <option value="수업완료">수업완료</option>
@@ -763,11 +773,6 @@ export const OtProgramForm = forwardRef<OtProgramFormRef, Props>(function OtProg
                       <option value="거부자">거부자</option>
                       <option value="서비스수업">서비스수업</option>
                     </select>
-                  )}
-                  {!canEdit && session.result_category && (
-                    <Badge className={`text-white text-xs ${session.result_category === '수업완료' ? 'bg-green-600' : session.result_category === '노쇼' || session.result_category === '차감노쇼' ? 'bg-red-500' : 'bg-gray-500'}`}>
-                      {session.result_category}
-                    </Badge>
                   )}
                   {idx === activeSessionIdx && !isCompleted && <Badge className="bg-blue-400 text-white text-xs">현재</Badge>}
                 </CardTitle>
@@ -1090,7 +1095,42 @@ export const OtProgramForm = forwardRef<OtProgramFormRef, Props>(function OtProg
                   )}
 
                   {/* 인바디 */}
-                  <div className="rounded-lg border border-purple-200 bg-purple-50/40 p-3 space-y-2">
+                  <div
+                    className="rounded-lg border border-purple-200 bg-purple-50/40 p-3 space-y-2"
+                    tabIndex={0}
+                    onPaste={async (e) => {
+                      const items = e.clipboardData?.items
+                      if (!items) return
+                      const files: File[] = []
+                      for (const item of Array.from(items)) {
+                        if (item.type.startsWith('image/')) {
+                          const file = item.getAsFile()
+                          if (file) files.push(file)
+                        }
+                      }
+                      if (files.length === 0) return
+                      e.preventDefault()
+                      e.stopPropagation()
+                      setUploading(true)
+                      const supabase = createClient()
+                      const uploaded: string[] = []
+                      for (const file of files) {
+                        const ext = file.name.split('.').pop() || 'png'
+                        const path = `${a.id}/inbody_${Date.now()}_${Math.random().toString(36).slice(2)}.${ext}`
+                        const { error } = await supabase.storage.from('ot-images').upload(path, file)
+                        if (!error) {
+                          const { data: pub } = supabase.storage.from('ot-images').getPublicUrl(path)
+                          uploaded.push(pub.publicUrl)
+                        }
+                      }
+                      if (uploaded.length > 0) {
+                        const prev = session.inbody_images ?? []
+                        updateSession(idx, 'inbody_images', [...prev, ...uploaded])
+                        if (!session.inbody) updateSession(idx, 'inbody', true)
+                      }
+                      setUploading(false)
+                    }}
+                  >
                     <label className={`flex items-center gap-2 ${canEdit ? 'cursor-pointer' : 'cursor-not-allowed'}`}>
                       <Checkbox
                         checked={session.inbody}
@@ -1099,7 +1139,7 @@ export const OtProgramForm = forwardRef<OtProgramFormRef, Props>(function OtProg
                         className="h-5 w-5"
                       />
                       <span className="text-sm font-bold text-purple-700">인바디 측정</span>
-                      <span className="text-xs text-gray-500">· 이미지는 언제든 추가 가능</span>
+                      <span className="text-xs text-gray-500">· 클릭 후 Ctrl+V로 붙여넣기 가능</span>
                     </label>
                     <div className="flex gap-2 flex-wrap">
                       {(session.inbody_images ?? []).map((img, imgIdx) => (
@@ -1159,7 +1199,7 @@ export const OtProgramForm = forwardRef<OtProgramFormRef, Props>(function OtProg
                     </div>
                   </div>
 
-                  {/* 비포/애프터 이미지 + 영상 */}
+                  {/* 비포 / 애프터 / 운동영상 참고자료 */}
                   {(() => {
                     const records = session.image_records ?? []
                     const legacyOnly = (session.images ?? []).filter((u) => !records.some((r) => r.url === u))
@@ -1243,7 +1283,7 @@ export const OtProgramForm = forwardRef<OtProgramFormRef, Props>(function OtProg
                     return (
                       <div className="space-y-3">
                         <div className="flex items-center justify-between">
-                          <Label className="text-xs font-bold">비포 / 애프터 이미지</Label>
+                          <Label className="text-xs font-bold">비포 / 애프터 / 운동영상 참고자료</Label>
                           {canEdit && !isCompleted && (
                             <label className="text-xs font-bold text-blue-600 hover:text-blue-800 cursor-pointer">
                               + 이미지/영상 추가
