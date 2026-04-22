@@ -89,7 +89,7 @@ export function WeeklyReport({ assignments, trainerName }: Props) {
   const router = useRouter()
   const reportRef = useRef<HTMLDivElement>(null)
   const [capturing, setCapturing] = useState(false)
-  const now = new Date()
+  const [now] = useState(() => new Date())
   const weekStart = startOfWeek(now, { weekStartsOn: 1 })
   const weekEnd = endOfWeek(now, { weekStartsOn: 1 })
   const weekNum = Math.ceil(now.getDate() / 7)

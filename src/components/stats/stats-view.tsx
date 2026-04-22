@@ -32,6 +32,7 @@ export function StatsView({ stats: initialStats, target }: Props) {
   const [period, setPeriod] = useState<'weekly' | 'monthly'>('monthly')
   const [offset, setOffset] = useState(0)
   const [loading, setLoading] = useState(false)
+  const [baseDate] = useState(() => new Date())
   const [showTarget, setShowTarget] = useState(false)
   const [targetAmount, setTargetAmount] = useState(target?.target_amount ?? 0)
   const [w1, setW1] = useState(target?.week1_target ?? 0)
@@ -54,18 +55,17 @@ export function StatsView({ stats: initialStats, target }: Props) {
   const handleToday = () => { setOffset(0); fetchStats(period, 0) }
 
   const getPeriodLabel = () => {
-    const now = new Date()
     if (period === 'weekly') {
-      const dayOfWeek = now.getDay()
-      const thisMonday = new Date(now)
-      thisMonday.setDate(now.getDate() - (dayOfWeek === 0 ? 6 : dayOfWeek - 1))
+      const dayOfWeek = baseDate.getDay()
+      const thisMonday = new Date(baseDate)
+      thisMonday.setDate(baseDate.getDate() - (dayOfWeek === 0 ? 6 : dayOfWeek - 1))
       const targetMonday = new Date(thisMonday)
       targetMonday.setDate(thisMonday.getDate() + offset * 7)
       const targetSunday = new Date(targetMonday)
       targetSunday.setDate(targetMonday.getDate() + 6)
       return `${targetMonday.getMonth() + 1}/${targetMonday.getDate()} ~ ${targetSunday.getMonth() + 1}/${targetSunday.getDate()}`
     }
-    const targetMonth = new Date(now.getFullYear(), now.getMonth() + offset, 1)
+    const targetMonth = new Date(baseDate.getFullYear(), baseDate.getMonth() + offset, 1)
     return `${targetMonth.getFullYear()}년 ${targetMonth.getMonth() + 1}월`
   }
 
@@ -73,9 +73,8 @@ export function StatsView({ stats: initialStats, target }: Props) {
 
   const handleSaveTarget = async () => {
     setSaving(true)
-    const now = new Date()
     await upsertSalesTarget({
-      year: now.getFullYear(), month: now.getMonth() + 1,
+      year: baseDate.getFullYear(), month: baseDate.getMonth() + 1,
       target_amount: targetAmount, week1_target: w1, week2_target: w2, week3_target: w3, week4_target: w4,
     })
     setSaving(false)

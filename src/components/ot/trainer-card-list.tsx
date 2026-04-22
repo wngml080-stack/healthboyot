@@ -99,7 +99,7 @@ export function TrainerCardList({ assignments, trainers = [], trainerId, trainer
 
   // 필터
   const [filter, setFilter] = useState<string>('전체')
-  const FILTERS = ['전체', 'PT', 'PPT', '미진행', '1차', '2차', '3차', '4차+', '상태변경필요', '거부', '연락두절', '스케줄미확정', '클로징실패', '등록완료', '매출대상', 'PT전환']
+  const FILTERS = ['전체', 'PT', 'PPT', '미진행', '1차', '2차', '3차', '4차+', '상태변경필요', '거부']
 
   // 펼침
   const [expandedId, setExpandedId] = useState<string | null>(null)
@@ -340,23 +340,17 @@ export function TrainerCardList({ assignments, trainers = [], trainerId, trainer
       const scheduled = a.sessions?.filter((s) => s.scheduled_at && !s.completed_at).length ?? 0
       const hasAny = done > 0 || scheduled > 0
       if (!hasAny && !['거부','추후결정'].includes(a.status)) counts['미진행'] = (counts['미진행'] ?? 0) + 1
-      if (done === 0 && scheduled > 0) counts['1차'] = (counts['1차'] ?? 0) + 1
-      if (done === 1) counts['1차'] = (counts['1차'] ?? 0) + 1
-      if (done === 1 && scheduled > 0) counts['2차'] = (counts['2차'] ?? 0) + 1
-      if (done === 2) counts['2차'] = (counts['2차'] ?? 0) + 1
-      if (done === 2 && scheduled > 0) counts['3차'] = (counts['3차'] ?? 0) + 1
-      if (done >= 3) counts['3차'] = (counts['3차'] ?? 0) + 1
-      if (done >= 3 && scheduled > 0) counts['4차+'] = (counts['4차+'] ?? 0) + 1
-      if (done >= 4) counts['4차+'] = (counts['4차+'] ?? 0) + 1
-      // 수업 완료 후 상태변경 필요: 세션 완료했는데 sales_status가 아직 없는 회원
+      // 1차: 스케줄확정~완료 (done=0+scheduled>0 또는 done=1)
+      if ((done === 0 && scheduled > 0) || done === 1) counts['1차'] = (counts['1차'] ?? 0) + 1
+      // 2차: done=1+scheduled>0 또는 done=2
+      if ((done === 1 && scheduled > 0) || done === 2) counts['2차'] = (counts['2차'] ?? 0) + 1
+      // 3차: done=2+scheduled>0 또는 done=3
+      if ((done === 2 && scheduled > 0) || done === 3) counts['3차'] = (counts['3차'] ?? 0) + 1
+      // 4차+: done>=3+scheduled>0 또는 done>=4
+      if ((done >= 3 && scheduled > 0) || done >= 4) counts['4차+'] = (counts['4차+'] ?? 0) + 1
+      // 상태변경 필요
       if (done > 0 && !a.sales_status && !a.is_sales_target && !a.is_pt_conversion && a.status !== '완료' && a.status !== '거부') counts['상태변경필요'] = (counts['상태변경필요'] ?? 0) + 1
       if (a.status === '거부') counts['거부'] = (counts['거부'] ?? 0) + 1
-      if (a.sales_status === '연락두절') counts['연락두절'] = (counts['연락두절'] ?? 0) + 1
-      if (a.sales_status === '스케줄미확정') counts['스케줄미확정'] = (counts['스케줄미확정'] ?? 0) + 1
-      if (a.sales_status === '클로징실패') counts['클로징실패'] = (counts['클로징실패'] ?? 0) + 1
-      if (a.sales_status === '등록완료' || a.status === '완료') counts['등록완료'] = (counts['등록완료'] ?? 0) + 1
-      if (a.is_sales_target) counts['매출대상'] = (counts['매출대상'] ?? 0) + 1
-      if (a.is_pt_conversion) counts['PT전환'] = (counts['PT전환'] ?? 0) + 1
     }
     return counts
   }, [assignments, trainerId])
@@ -376,18 +370,12 @@ export function TrainerCardList({ assignments, trainers = [], trainerId, trainer
       if (filter === 'PT') return a.pt_trainer_id === trainerId
       if (filter === 'PPT') return a.ppt_trainer_id === trainerId
       if (filter === '미진행') return done === 0 && scheduled === 0 && !['거부','추후결정'].includes(a.status)
-      if (filter === '1차') return done <= 1 && (done === 0 ? scheduled > 0 : true) && !['거부','추후결정'].includes(a.status)
-      if (filter === '2차') return done >= 1 && done <= 2 && (done === 1 ? true : scheduled > 0)
-      if (filter === '3차') return done >= 2 && done <= 3
-      if (filter === '4차+') return done >= 3
+      if (filter === '1차') return (done === 0 && scheduled > 0) || done === 1
+      if (filter === '2차') return (done === 1 && scheduled > 0) || done === 2
+      if (filter === '3차') return (done === 2 && scheduled > 0) || done === 3
+      if (filter === '4차+') return (done >= 3 && scheduled > 0) || done >= 4
       if (filter === '상태변경필요') return done > 0 && !a.sales_status && !a.is_sales_target && !a.is_pt_conversion && a.status !== '완료' && a.status !== '거부'
       if (filter === '거부') return a.status === '거부'
-      if (filter === '연락두절') return a.sales_status === '연락두절'
-      if (filter === '스케줄미확정') return a.sales_status === '스케줄미확정'
-      if (filter === '클로징실패') return a.sales_status === '클로징실패'
-      if (filter === '등록완료') return a.sales_status === '등록완료' || a.status === '완료'
-      if (filter === '매출대상') return a.is_sales_target
-      if (filter === 'PT전환') return a.is_pt_conversion
       return true
     })
     // 기간 필터 (등록일 기준)
@@ -401,10 +389,15 @@ export function TrainerCardList({ assignments, trainers = [], trainerId, trainer
           return true
         })
       : base
-    // 카테고리 필터
+    // 세일즈 필터
     const withCategory = categoryFilter === '전체'
       ? withDate
-      : withDate.filter((a) => a.member.ot_category === categoryFilter)
+      : categoryFilter === '매출대상' ? withDate.filter((a) => a.is_sales_target)
+      : categoryFilter === 'PT전환' ? withDate.filter((a) => a.is_pt_conversion)
+      : categoryFilter === '클로징실패' ? withDate.filter((a) => a.sales_status === '클로징실패')
+      : categoryFilter === '연락두절' ? withDate.filter((a) => a.sales_status === '연락두절')
+      : categoryFilter === '스케줄미확정' ? withDate.filter((a) => a.sales_status === '스케줄미확정')
+      : withDate
     // 검색
     const q = search.trim().toLowerCase()
     if (!q) return withCategory
@@ -558,11 +551,22 @@ export function TrainerCardList({ assignments, trainers = [], trainerId, trainer
 
   const getProgressInfo = (a: OtAssignmentWithDetails) => {
     const done = a.sessions?.filter((s) => s.completed_at).length ?? 0
+    const scheduled = a.sessions?.filter((s) => s.scheduled_at && !s.completed_at).length ?? 0
     if (a.status === '거부') return { label: '거부', color: 'bg-red-100 text-red-700' }
     if (a.status === '추후결정') return { label: '추후결정', color: 'bg-orange-100 text-orange-700' }
-    if (done >= 3) return { label: `${done}차완료`, color: 'bg-green-100 text-green-700' }
-    if (done === 2) return { label: '2차완료', color: 'bg-indigo-100 text-indigo-700' }
-    if (done === 1) return { label: '1차완료', color: 'bg-blue-100 text-blue-700' }
+
+    // 승인 상태 확인 (expandedData에서 프로그램 로드됐으면)
+    const ed = expandedData[a.id]
+    const prog = ed && ed !== 'loading' ? ed.program : null
+    const lastDoneIdx = done - 1
+    const lastApproval = prog?.sessions?.[lastDoneIdx]?.approval_status
+
+    if (done === 0 && scheduled === 0) return { label: '대기', color: 'bg-gray-100 text-gray-700' }
+
+    const n = done > 0 ? done : 1
+    if (done > 0 && lastApproval === '승인') return { label: `${n}차승인완료`, color: 'bg-green-100 text-green-700' }
+    if (done > 0) return { label: `${n}차수업완료`, color: 'bg-blue-100 text-blue-700' }
+    if (scheduled > 0) return { label: `${n}차스케줄확정`, color: 'bg-yellow-100 text-yellow-700' }
     return { label: '대기', color: 'bg-gray-100 text-gray-700' }
   }
 
@@ -640,19 +644,19 @@ export function TrainerCardList({ assignments, trainers = [], trainerId, trainer
               >×</button>
             )}
           </div>
-          {/* 카테고리 필터 */}
+          {/* 세일즈 필터 */}
           <select
             value={categoryFilter}
             onChange={(e) => setCategoryFilter(e.target.value)}
             className="h-9 text-sm bg-white text-gray-900 border border-gray-300 rounded-md px-3 shrink-0"
-            aria-label="카테고리 필터"
+            aria-label="세일즈 필터"
           >
-            <option value="전체">전체 카테고리</option>
-            <option value="헬스">헬스</option>
-            <option value="필라">필라</option>
-            <option value="헬스,필라">헬스·필라</option>
-            <option value="PT등록">PT등록</option>
-            <option value="거부">거부</option>
+            <option value="전체">세일즈 전체</option>
+            <option value="매출대상">매출대상자</option>
+            <option value="PT전환">PT전환</option>
+            <option value="클로징실패">클로징실패</option>
+            <option value="연락두절">연락두절</option>
+            <option value="스케줄미확정">스케줄미확정</option>
           </select>
         </div>
 
