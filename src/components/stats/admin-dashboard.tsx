@@ -48,26 +48,35 @@ export function AdminDashboard({ data: initialData, initialPeriod }: Props) {
   const captureSection = useCallback(async (ref: React.RefObject<HTMLDivElement | null>, name: string) => {
     if (!ref.current) return
     const el = ref.current
-    const html2canvas = (await import('html2canvas')).default
+    const { toPng } = await import('html-to-image')
 
     // 카메라 버튼 숨기기
     const camBtns = el.querySelectorAll<HTMLElement>('.capture-hide')
     camBtns.forEach((b) => b.style.display = 'none')
 
-    const canvas = await html2canvas(el, {
-      backgroundColor: '#ffffff',
-      scale: 2,
-      useCORS: true,
-      logging: false,
-    })
+    // sticky, overflow 캡처 깨짐 방지: 임시로 해제
+    const stickyEls = el.querySelectorAll<HTMLElement>('.sticky')
+    const overflowEls = el.querySelectorAll<HTMLElement>('.overflow-x-auto')
+    stickyEls.forEach((s) => { s.dataset.origPos = s.style.position; s.style.position = 'static' })
+    overflowEls.forEach((o) => { o.dataset.origOv = o.style.overflow; o.style.overflow = 'visible' })
 
-    // 카메라 버튼 복원
-    camBtns.forEach((b) => b.style.display = '')
+    try {
+      const dataUrl = await toPng(el, {
+        backgroundColor: '#ffffff',
+        pixelRatio: 2,
+        style: { overflow: 'visible' },
+      })
 
-    const link = document.createElement('a')
-    link.download = `${name}_${data.periodLabel.replace(/[^가-힣0-9~/]/g, '')}.png`
-    link.href = canvas.toDataURL('image/png')
-    link.click()
+      const link = document.createElement('a')
+      link.download = `${name}_${data.periodLabel.replace(/[^가-힣0-9~/]/g, '')}.png`
+      link.href = dataUrl
+      link.click()
+    } finally {
+      // 원본 복원
+      camBtns.forEach((b) => b.style.display = '')
+      stickyEls.forEach((s) => { s.style.position = s.dataset.origPos ?? ''; delete s.dataset.origPos })
+      overflowEls.forEach((o) => { o.style.overflow = o.dataset.origOv ?? ''; delete o.dataset.origOv })
+    }
   }, [data.periodLabel])
 
   const { trainers, totals } = data

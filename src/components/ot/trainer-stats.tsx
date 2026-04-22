@@ -95,60 +95,43 @@ export function TrainerStats({ assignments, trainerName, programs, registrations
   const { targets: customTargets, add: addCustomTarget, remove: removeCustomTarget } = useCustomTargets(customTargetKey)
   const [newTargetName, setNewTargetName] = useState('')
   const [newTargetAmount, setNewTargetAmount] = useState('')
+  const [newTargetCount, setNewTargetCount] = useState('')
+  const [newTargetType, setNewTargetType] = useState('OT')
 
-  // 이미지 저장 — onclone으로 복제 DOM에서만 스타일 보정 (원본 화면 변경 없음)
+  // 이미지 저장 — html-to-image로 화면 그대로 캡처
   const handleCapture = async () => {
     if (!captureRef.current) return
     setCapturing(true)
     try {
       const el = captureRef.current
-      const html2canvas = (await import('html2canvas')).default
-      const scale = 2
-      const gap = 16 * scale
-      const pad = 20 * scale
+      const { toPng } = await import('html-to-image')
 
-      const onclone = (doc: Document) => {
-        const style = doc.createElement('style')
-        style.textContent = `
-          .capture-hide { display: none !important; }
-          input { visibility: hidden !important; }
-        `
-        doc.head.appendChild(style)
-      }
+      // 캡처 전: 카메라 버튼/input 숨기기, sticky/overflow 해제
+      const camBtns = el.querySelectorAll<HTMLElement>('.capture-hide')
+      const inputs = el.querySelectorAll<HTMLElement>('input')
+      const stickyEls = el.querySelectorAll<HTMLElement>('.sticky')
+      const overflowEls = el.querySelectorAll<HTMLElement>('.overflow-x-auto')
 
-      // 각 직계 자식(섹션)을 개별 캡처
-      const children = Array.from(el.children) as HTMLElement[]
-      const canvases: HTMLCanvasElement[] = []
-      for (const child of children) {
-        const c = await html2canvas(child, {
-          scale,
-          backgroundColor: null,
-          useCORS: true,
-          logging: false,
-          onclone: (doc) => onclone(doc),
-        })
-        canvases.push(c)
-      }
+      camBtns.forEach((b) => b.style.display = 'none')
+      inputs.forEach((inp) => { inp.dataset.origVis = inp.style.visibility; inp.style.visibility = 'hidden' })
+      stickyEls.forEach((s) => { s.dataset.origPos = s.style.position; s.style.position = 'static' })
+      overflowEls.forEach((o) => { o.dataset.origOv = o.style.overflow; o.style.overflow = 'visible' })
 
-      // 하나의 캔버스에 합성
-      const maxW = Math.max(...canvases.map((c) => c.width))
-      const totalH = canvases.reduce((s, c) => s + c.height, 0) + gap * (canvases.length - 1) + pad * 2
-      const combined = document.createElement('canvas')
-      combined.width = maxW + pad * 2
-      combined.height = totalH
-      const ctx = combined.getContext('2d')!
-      ctx.fillStyle = '#1a1a2e'
-      ctx.fillRect(0, 0, combined.width, combined.height)
+      const dataUrl = await toPng(el, {
+        backgroundColor: '#1a1a2e',
+        pixelRatio: 2,
+        style: { padding: '20px', overflow: 'visible' },
+      })
 
-      let y = pad
-      for (let i = 0; i < canvases.length; i++) {
-        ctx.drawImage(canvases[i], pad, y)
-        y += canvases[i].height + gap
-      }
+      // 원본 복원
+      camBtns.forEach((b) => b.style.display = '')
+      inputs.forEach((inp) => { inp.style.visibility = inp.dataset.origVis ?? ''; delete inp.dataset.origVis })
+      stickyEls.forEach((s) => { s.style.position = s.dataset.origPos ?? ''; delete s.dataset.origPos })
+      overflowEls.forEach((o) => { o.style.overflow = o.dataset.origOv ?? ''; delete o.dataset.origOv })
 
       const link = document.createElement('a')
       link.download = `${trainerName}_통계표_${viewMode === 'monthly' ? `${year}년${month}월` : format(selectedWeekStart, 'yyyy-MM-dd')}.png`
-      link.href = combined.toDataURL('image/png')
+      link.href = dataUrl
       link.click()
     } catch { alert('이미지 저장에 실패했습니다') }
     setCapturing(false)
@@ -669,30 +652,50 @@ export function TrainerStats({ assignments, trainerName, programs, registrations
               </div>
             )}
             {/* 수동 추가 */}
-            <div className="flex gap-2 items-center pt-1 border-t border-gray-100">
+            <div className="flex flex-wrap gap-2 items-center pt-1 border-t border-gray-100">
               <Input
                 value={newTargetName}
                 onChange={(e) => setNewTargetName(e.target.value)}
                 placeholder="이름"
-                className="text-xs h-8 bg-white flex-1"
+                className="text-xs h-8 bg-white flex-1 min-w-[80px]"
+              />
+              <Input
+                type="number"
+                inputMode="numeric"
+                value={newTargetCount}
+                onChange={(e) => setNewTargetCount(e.target.value)}
+                placeholder="횟수"
+                className="text-xs h-8 bg-white w-16"
               />
               <Input
                 type="number"
                 inputMode="numeric"
                 value={newTargetAmount}
                 onChange={(e) => setNewTargetAmount(e.target.value)}
-                placeholder="예상 (만원)"
-                className="text-xs h-8 bg-white w-24"
+                placeholder="예상(만원)"
+                className="text-xs h-8 bg-white w-20"
               />
+              <select
+                value={newTargetType}
+                onChange={(e) => setNewTargetType(e.target.value)}
+                className="h-8 text-xs bg-white border border-gray-300 rounded-md px-2"
+              >
+                <option value="OT">OT</option>
+                <option value="PT(리뉴)">PT(리뉴)</option>
+                <option value="워크인">워크인</option>
+              </select>
               <Button
                 variant="outline"
                 size="sm"
                 className="shrink-0 h-8 bg-blue-50 hover:bg-blue-100 text-blue-700 border-blue-200"
                 disabled={!newTargetName.trim()}
                 onClick={() => {
-                  addCustomTarget(newTargetName.trim(), Number(newTargetAmount) || 0)
+                  const label = `${newTargetName.trim()}${newTargetCount ? ` ${newTargetCount}회` : ''} [${newTargetType}]`
+                  addCustomTarget(label, Number(newTargetAmount) || 0)
                   setNewTargetName('')
                   setNewTargetAmount('')
+                  setNewTargetCount('')
+                  setNewTargetType('OT')
                 }}
               >
                 <Plus className="h-3.5 w-3.5 mr-1" />추가
@@ -1033,6 +1036,17 @@ function RegistrationSection({ registrations: initial, trainerId, trainerName }:
                   <div className="flex items-center gap-2 shrink-0">
                     <span className="text-xs text-gray-600">{r.registration_amount.toLocaleString()}원</span>
                     <Badge className="bg-gray-200 text-gray-700 text-[10px]">{r.ot_credit}건</Badge>
+                    {r.approval_status === '제출완료' && (
+                      <button
+                        className="text-[10px] text-red-500 hover:text-red-700 font-bold"
+                        onClick={async () => {
+                          if (!confirm('제출을 취소하시겠습니까?')) return
+                          const { deleteOtRegistration } = await import('@/actions/ot-registration')
+                          await deleteOtRegistration(r.id)
+                          setRegistrations((prev) => prev.filter((x) => x.id !== r.id))
+                        }}
+                      >취소</button>
+                    )}
                   </div>
                 </div>
               )

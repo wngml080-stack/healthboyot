@@ -730,15 +730,17 @@ export const OtProgramForm = forwardRef<OtProgramFormRef, Props>(function OtProg
                       {saving ? '저장중...' : `${idx + 1}차 저장`}
                     </Button>
                   )}
-                  <Button
-                    size="sm"
-                    className="h-7 text-xs bg-yellow-400 hover:bg-yellow-500 text-gray-900 font-bold border border-yellow-500"
-                    onClick={() => handleShareSession(idx)}
-                    disabled={sharing}
-                  >
-                    <Share2 className="h-3 w-3 mr-1" />회원님께 공유
-                  </Button>
-                  {canEdit && (
+                  {session.signature_url && (
+                    <Button
+                      size="sm"
+                      className="h-7 text-xs bg-yellow-400 hover:bg-yellow-500 text-gray-900 font-bold border border-yellow-500"
+                      onClick={() => handleShareSession(idx)}
+                      disabled={sharing}
+                    >
+                      <Share2 className="h-3 w-3 mr-1" />회원님께 공유
+                    </Button>
+                  )}
+                  {canEdit && !session.signature_url && (
                     <Button
                       size="sm"
                       className="h-7 text-xs font-bold bg-emerald-500 hover:bg-emerald-600 text-white"
@@ -1105,7 +1107,7 @@ export const OtProgramForm = forwardRef<OtProgramFormRef, Props>(function OtProg
                     </div>
                   </div>
 
-                  {/* 비포/애프터 이미지 */}
+                  {/* 비포/애프터 이미지 + 영상 */}
                   {(() => {
                     const records = session.image_records ?? []
                     const legacyOnly = (session.images ?? []).filter((u) => !records.some((r) => r.url === u))
@@ -1137,15 +1139,26 @@ export const OtProgramForm = forwardRef<OtProgramFormRef, Props>(function OtProg
                       } : s))
                     }
 
+                    const isVideo = (url: string) => /\.(mp4|mov|webm|avi)$/i.test(url)
                     const renderImage = (r: { url: string; uploaded_at: string; label?: 'before' | 'after' | null }) => (
                       <div key={r.url} className="w-28 space-y-1">
                         <div className="relative">
-                          <img
-                            src={r.url}
-                            alt=""
-                            onClick={() => setLightboxUrl(r.url)}
-                            className="w-28 h-28 object-cover rounded border cursor-zoom-in hover:opacity-80 transition"
-                          />
+                          {isVideo(r.url) ? (
+                            <video
+                              src={r.url}
+                              className="w-28 h-28 object-cover rounded border cursor-pointer hover:opacity-80 transition"
+                              onClick={() => window.open(r.url, '_blank')}
+                              muted
+                              playsInline
+                            />
+                          ) : (
+                            <img
+                              src={r.url}
+                              alt=""
+                              onClick={() => setLightboxUrl(r.url)}
+                              className="w-28 h-28 object-cover rounded border cursor-zoom-in hover:opacity-80 transition"
+                            />
+                          )}
                           {canEdit && (
                             <button type="button" className="absolute -top-1 -right-1 bg-red-500 text-white rounded-full w-5 h-5 flex items-center justify-center text-xs" onClick={() => removeByUrl(r.url)}>
                               <X className="h-3 w-3" />
@@ -1176,8 +1189,8 @@ export const OtProgramForm = forwardRef<OtProgramFormRef, Props>(function OtProg
                           <Label className="text-xs font-bold">비포 / 애프터 이미지</Label>
                           {canEdit && !isCompleted && (
                             <label className="text-xs font-bold text-blue-600 hover:text-blue-800 cursor-pointer">
-                              + 이미지 추가
-                              <input type="file" accept="image/*" multiple className="hidden" onChange={(e) => e.target.files && handleImageUpload(idx, e.target.files)} disabled={uploading} />
+                              + 이미지/영상 추가
+                              <input type="file" accept="image/*,video/*" multiple className="hidden" onChange={(e) => e.target.files && handleImageUpload(idx, e.target.files)} disabled={uploading} />
                             </label>
                           )}
                         </div>
