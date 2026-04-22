@@ -269,8 +269,17 @@ export const OtProgramForm = forwardRef<OtProgramFormRef, Props>(function OtProg
   // 클립보드 붙여넣기 → 이미지 업로드 (첫 번째 세션에 추가)
   useEffect(() => {
     const handlePaste = (e: ClipboardEvent) => {
+      // input, textarea 등 텍스트 입력 필드에서는 기본 붙여넣기 허용
+      const target = e.target as HTMLElement
+      if (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA' || target.isContentEditable) return
+
       const items = e.clipboardData?.items
       if (!items) return
+
+      // 텍스트가 포함된 클립보드는 일반 붙여넣기로 처리 (웹페이지 복사 시 이미지+텍스트 동시 포함됨)
+      const hasText = Array.from(items).some((item) => item.type.startsWith('text/'))
+      if (hasText) return
+
       const files: File[] = []
       for (const item of Array.from(items)) {
         if (item.type.startsWith('image/')) {
@@ -361,9 +370,11 @@ export const OtProgramForm = forwardRef<OtProgramFormRef, Props>(function OtProg
         alert('공유 링크를 만들 수 없습니다.')
         return
       }
+      const sessionDate = sessions[sessionIdx]?.date?.replace(/-/g, '') || new Date().toISOString().slice(0, 10).replace(/-/g, '')
+      const healthboyUrl = `${window.location.origin}/healthboy/${sessionDate}/${token}`
       const signUrl = `${window.location.origin}/sign/${token}/${sessionIdx}`
       const shareTitle = `${a.member.name}님 ${sessionIdx + 1}차 OT 수업 내용`
-      const shareText = `${shareTitle}\n\n아래 링크에서 수업 내용을 확인하고 서명해주세요:\n${signUrl}`
+      const shareText = `${shareTitle}\n\n수업 내용 확인:\n${healthboyUrl}\n\n서명하기:\n${signUrl}`
 
       const kakao = (window as unknown as { Kakao?: { isInitialized: () => boolean; Share?: { sendDefault: (opts: unknown) => void } } }).Kakao
       if (kakao?.isInitialized?.() && kakao.Share) {
@@ -373,10 +384,11 @@ export const OtProgramForm = forwardRef<OtProgramFormRef, Props>(function OtProg
             title: shareTitle,
             description: `${a.member.name}님, 아래 버튼으로 ${sessionIdx + 1}차 OT 수업 내용을 확인하고 서명해주세요.`,
             imageUrl: `${window.location.origin}/api/icon?size=512`,
-            link: { mobileWebUrl: signUrl, webUrl: signUrl },
+            link: { mobileWebUrl: healthboyUrl, webUrl: healthboyUrl },
           },
           buttons: [
-            { title: '수업 내용 보기 · 서명하기', link: { mobileWebUrl: signUrl, webUrl: signUrl } },
+            { title: '수업 내용 보기', link: { mobileWebUrl: healthboyUrl, webUrl: healthboyUrl } },
+            { title: '서명하기', link: { mobileWebUrl: signUrl, webUrl: signUrl } },
           ],
         })
       } else if (typeof navigator !== 'undefined' && navigator.share) {
@@ -738,7 +750,25 @@ export const OtProgramForm = forwardRef<OtProgramFormRef, Props>(function OtProg
                     if (otSession?.scheduled_at) return <Badge className="bg-blue-500 text-white text-xs">수업예정</Badge>
                     return <Badge className="bg-gray-400 text-white text-xs">미예약</Badge>
                   })()}
-                  {isCompleted && <Badge className="bg-green-600 text-white text-xs">프로그램완료</Badge>}
+                  {canEdit && !isSessionLocked(session) && (
+                    <select
+                      value={session.result_category ?? ''}
+                      onChange={(e) => updateSession(idx, 'result_category', e.target.value || null)}
+                      className="h-6 text-[10px] font-bold bg-white border border-gray-300 rounded px-1"
+                    >
+                      <option value="">상태선택</option>
+                      <option value="수업완료">수업완료</option>
+                      <option value="노쇼">노쇼</option>
+                      <option value="차감노쇼">차감노쇼</option>
+                      <option value="거부자">거부자</option>
+                      <option value="서비스수업">서비스수업</option>
+                    </select>
+                  )}
+                  {!canEdit && session.result_category && (
+                    <Badge className={`text-white text-xs ${session.result_category === '수업완료' ? 'bg-green-600' : session.result_category === '노쇼' || session.result_category === '차감노쇼' ? 'bg-red-500' : 'bg-gray-500'}`}>
+                      {session.result_category}
+                    </Badge>
+                  )}
                   {idx === activeSessionIdx && !isCompleted && <Badge className="bg-blue-400 text-white text-xs">현재</Badge>}
                 </CardTitle>
                 <div className="flex flex-wrap items-center gap-2">
@@ -1140,9 +1170,10 @@ export const OtProgramForm = forwardRef<OtProgramFormRef, Props>(function OtProg
                     const all = [...records, ...legacyRecords].sort((a2, b2) => a2.uploaded_at.localeCompare(b2.uploaded_at))
                     const before = all.filter((r) => r.label === 'before')
                     const after = all.filter((r) => r.label === 'after')
+                    const videos = all.filter((r) => String(r.label ?? '') === 'video')
                     const unlabeled = all.filter((r) => !r.label)
 
-                    const updateRecordLabel = (url: string, label: 'before' | 'after' | null) => {
+                    const updateRecordLabel = (url: string, label: 'before' | 'after' | 'video' | null) => {
                       setSessions((prev) => prev.map((s, i) => {
                         if (i !== idx) return s
                         const recs = s.image_records ?? []
@@ -1162,7 +1193,7 @@ export const OtProgramForm = forwardRef<OtProgramFormRef, Props>(function OtProg
                     }
 
                     const isVideo = (url: string) => /\.(mp4|mov|webm|avi)$/i.test(url)
-                    const renderImage = (r: { url: string; uploaded_at: string; label?: 'before' | 'after' | null }) => (
+                    const renderImage = (r: { url: string; uploaded_at: string; label?: 'before' | 'after' | 'video' | null }) => (
                       <div key={r.url} className="w-28 space-y-1">
                         <div className="relative">
                           {isVideo(r.url) ? (
@@ -1202,7 +1233,7 @@ export const OtProgramForm = forwardRef<OtProgramFormRef, Props>(function OtProg
                             >AFTER</button>
                             <button type="button"
                               className={`flex-1 h-6 rounded text-[9px] font-bold border ${(r.label as string) === 'video' ? 'bg-purple-500 text-white border-purple-500' : 'bg-white text-gray-500 border-gray-200'}`}
-                              onClick={() => updateRecordLabel(r.url, (r.label as string) === 'video' ? null : 'video' as 'before')}
+                              onClick={() => updateRecordLabel(r.url, (r.label as string) === 'video' ? null : 'video')}
                             >영상</button>
                           </div>
                         )}
@@ -1242,9 +1273,18 @@ export const OtProgramForm = forwardRef<OtProgramFormRef, Props>(function OtProg
                           </div>
                         )}
 
+                        {videos.length > 0 && (
+                          <div className="rounded-lg border border-purple-200 bg-purple-50/40 p-2 space-y-2">
+                            <p className="text-xs font-bold text-purple-700">운동영상 ({videos.length})</p>
+                            <div className="flex gap-2 flex-wrap">
+                              {videos.map(renderImage)}
+                            </div>
+                          </div>
+                        )}
+
                         {unlabeled.length > 0 && (
                           <div className="rounded-lg border border-gray-200 bg-gray-50/60 p-2 space-y-2">
-                            <p className="text-xs font-bold text-gray-600">미분류 ({unlabeled.length}) · BEFORE/AFTER 를 지정해주세요</p>
+                            <p className="text-xs font-bold text-gray-600">미분류 ({unlabeled.length}) · BEFORE/AFTER/영상 를 지정해주세요</p>
                             <div className="flex gap-2 flex-wrap">
                               {unlabeled.map(renderImage)}
                             </div>

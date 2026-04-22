@@ -193,10 +193,10 @@ export interface OtProgramSession {
 export interface OtSessionImageRecord {
   url: string
   uploaded_at: string
-  label?: 'before' | 'after' | null
+  label?: 'before' | 'after' | 'video' | null
 }
 
-export type OtSessionResultCategory = '매출대상' | '등록완료' | '클로징실패' | '거부자'
+export type OtSessionResultCategory = '매출대상' | '등록완료' | '클로징실패' | '거부자' | '수업완료' | '노쇼' | '차감노쇼' | '서비스수업'
 
 export interface OtSessionPlanRoadmapItem {
   week: string
