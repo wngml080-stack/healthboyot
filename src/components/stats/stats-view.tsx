@@ -82,6 +82,7 @@ export function StatsView({ stats: initialStats, target }: Props) {
     router.refresh()
   }
 
+  const statsRef = useRef<HTMLDivElement>(null)
   const otRef = useRef<HTMLDivElement>(null)
   const weeklyRef = useRef<HTMLDivElement>(null)
   const dailyRef = useRef<HTMLDivElement>(null)
@@ -150,7 +151,7 @@ export function StatsView({ stats: initialStats, target }: Props) {
   }
 
   return (
-    <div className="space-y-4">
+    <div className="space-y-4" ref={statsRef}>
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
         <PageTitle>통계 · 보고서</PageTitle>
         <div className="flex items-center gap-2">
@@ -160,6 +161,9 @@ export function StatsView({ stats: initialStats, target }: Props) {
           </div>
           <Button variant="outline" size="sm" onClick={handleExcelDownload} className="bg-white text-gray-700 border-gray-300 h-8">
             <Download className="h-4 w-4 mr-1" />엑셀
+          </Button>
+          <Button variant="outline" size="sm" onClick={() => captureSection(statsRef, '통계보고서')} className="bg-white text-gray-700 border-gray-300 h-8">
+            <Camera className="h-4 w-4 mr-1" />이미지
           </Button>
         </div>
       </div>

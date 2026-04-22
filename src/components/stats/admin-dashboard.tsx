@@ -41,6 +41,7 @@ export function AdminDashboard({ data: initialData, initialPeriod }: Props) {
   const handleNext = () => { const o = offset + 1; setOffset(o); fetchData(period, o) }
   const handleToday = () => { setOffset(0); fetchData(period, 0) }
 
+  const dashboardRef = useRef<HTMLDivElement>(null)
   const tableRef = useRef<HTMLDivElement>(null)
   const cardsRef = useRef<HTMLDivElement>(null)
 
@@ -99,7 +100,7 @@ export function AdminDashboard({ data: initialData, initialPeriod }: Props) {
   }
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-6" ref={dashboardRef}>
       {/* 헤더 + 기간 필터 */}
       <div className="flex flex-col gap-3">
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
@@ -119,6 +120,9 @@ export function AdminDashboard({ data: initialData, initialPeriod }: Props) {
             </div>
             <Button variant="outline" size="sm" onClick={handleExcel} className="bg-white text-gray-700 border-gray-300">
               <Download className="h-4 w-4 mr-1" />엑셀
+            </Button>
+            <Button variant="outline" size="sm" onClick={() => captureSection(dashboardRef, '관리자대시보드')} className="bg-white text-gray-700 border-gray-300">
+              <Camera className="h-4 w-4 mr-1" />이미지
             </Button>
           </div>
         </div>

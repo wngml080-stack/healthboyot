@@ -1,6 +1,6 @@
 'use client'
 
-import { useState } from 'react'
+import { useState, useMemo } from 'react'
 import { useRouter } from 'next/navigation'
 import { Card, CardContent } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
@@ -191,13 +191,40 @@ export function ApprovalList({ programs: initialPrograms, profile, registrations
     })
   }
 
-  const pending = programs.filter((p) => p.approval_status === '제출완료')
-  const processed = programs.filter((p) => p.approval_status !== '제출완료')
+  // 검색 + 월별 필터
+  const [search, setSearch] = useState('')
+  const [monthFilter, setMonthFilter] = useState(() => {
+    const now = new Date()
+    return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`
+  })
+
+  const filteredPrograms = useMemo(() => {
+    let list = programs
+    // 월별 필터
+    if (monthFilter) {
+      list = list.filter((p) => {
+        const date = p.submitted_at ?? p.created_at
+        return date?.startsWith(monthFilter)
+      })
+    }
+    // 검색
+    const q = search.trim().toLowerCase()
+    if (q) {
+      list = list.filter((p) =>
+        (p.member_name ?? '').toLowerCase().includes(q) ||
+        (p.trainer_name ?? '').toLowerCase().includes(q)
+      )
+    }
+    return list
+  }, [programs, search, monthFilter])
+
+  const pending = filteredPrograms.filter((p) => p.approval_status === '제출완료')
+  const processed = filteredPrograms.filter((p) => p.approval_status !== '제출완료')
 
   // 트레이너별 현황
   const trainerStats = (() => {
     const map = new Map<string, { total: number; pending: number; approved: number; inbody: number }>()
-    for (const p of programs) {
+    for (const p of filteredPrograms) {
       const name = p.trainer_name ?? '미배정'
       const e = map.get(name) ?? { total: 0, pending: 0, approved: 0, inbody: 0 }
       e.total++
@@ -213,6 +240,25 @@ export function ApprovalList({ programs: initialPrograms, profile, registrations
 
   return (
     <div className="space-y-6">
+      {/* 검색 + 월별 필터 */}
+      <div className="flex flex-col sm:flex-row gap-2">
+        <Input
+          value={search}
+          onChange={(e) => setSearch(e.target.value)}
+          placeholder="회원 또는 트레이너 이름 검색"
+          className="h-9 text-sm bg-white text-gray-900 border-gray-300 flex-1"
+        />
+        <input
+          type="month"
+          value={monthFilter}
+          onChange={(e) => setMonthFilter(e.target.value)}
+          className="h-9 text-sm bg-white text-gray-900 border border-gray-300 rounded-md px-3"
+        />
+        {monthFilter && (
+          <button onClick={() => setMonthFilter('')} className="h-9 px-3 text-xs bg-gray-100 text-gray-600 rounded-md border border-gray-300 hover:bg-gray-200 shrink-0">전체기간</button>
+        )}
+      </div>
+
       {/* 트레이너별 현황 */}
       {trainerStats.length > 0 && (
         <div>

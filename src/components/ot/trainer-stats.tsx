@@ -96,7 +96,7 @@ export function TrainerStats({ assignments, trainerName, programs, registrations
   const [newTargetName, setNewTargetName] = useState('')
   const [newTargetAmount, setNewTargetAmount] = useState('')
 
-  // 이미지 저장 — 섹션별 캡처 후 합성 (화면 너비 그대로)
+  // 이미지 저장 — onclone으로 복제 DOM에서만 스타일 보정 (원본 화면 변경 없음)
   const handleCapture = async () => {
     if (!captureRef.current) return
     setCapturing(true)
@@ -107,13 +107,21 @@ export function TrainerStats({ assignments, trainerName, programs, registrations
       const gap = 16 * scale
       const pad = 20 * scale
 
-      // 인터랙티브 요소 숨기기
-      const hideEls = el.querySelectorAll<HTMLElement>('input, .capture-hide')
-      hideEls.forEach((e) => { e.dataset.vis = e.style.visibility; e.style.visibility = 'hidden' })
-
-      // flex items-center 보정 (html2canvas 세로 정렬 버그 대응)
-      const flexCenters = el.querySelectorAll<HTMLElement>('.items-center')
-      flexCenters.forEach((e) => { e.dataset.ai = e.style.alignItems; e.style.alignItems = 'stretch' })
+      const onclone = (doc: Document, clonedEl: HTMLElement) => {
+        // 복제된 DOM에서만 스타일 보정 — 원본 화면 영향 없음
+        const style = doc.createElement('style')
+        style.textContent = `
+          .items-center { align-items: flex-start !important; }
+          .capture-hide { display: none !important; }
+          input { visibility: hidden !important; }
+          * { -webkit-text-size-adjust: 100% !important; }
+          span, p, td, th, h2, h3, label {
+            line-height: 1.3 !important;
+            vertical-align: middle !important;
+          }
+        `
+        doc.head.appendChild(style)
+      }
 
       // 각 직계 자식(섹션)을 개별 캡처
       const children = Array.from(el.children) as HTMLElement[]
@@ -124,13 +132,10 @@ export function TrainerStats({ assignments, trainerName, programs, registrations
           backgroundColor: null,
           useCORS: true,
           logging: false,
+          onclone: (doc) => onclone(doc, child),
         })
         canvases.push(c)
       }
-
-      // 복원
-      hideEls.forEach((e) => { e.style.visibility = e.dataset.vis || ''; delete e.dataset.vis })
-      flexCenters.forEach((e) => { e.style.alignItems = e.dataset.ai || ''; delete e.dataset.ai })
 
       // 하나의 캔버스에 합성
       const maxW = Math.max(...canvases.map((c) => c.width))
@@ -1048,14 +1053,12 @@ function RegistrationSection({ registrations: initial, trainerId, trainerName }:
 
 function StatPill({ label, value, color, sub }: { label: string; value: number | string; color: string; sub?: string }) {
   return (
-    <div className={`rounded-lg px-3 py-2 ${color}`} style={{ display: 'table', width: '100%' }}>
-      <div style={{ display: 'table-cell', verticalAlign: 'middle' }}>
-        <span className="text-xs font-medium leading-tight block">{label}</span>
-        {sub && <span className="text-[10px] opacity-80 leading-tight block">{sub}</span>}
+    <div className={`flex items-center justify-between rounded-lg px-3 py-2 ${color}`}>
+      <div>
+        <span className="text-xs font-medium">{label}</span>
+        {sub && <p className="text-[10px] opacity-80 mt-0.5">{sub}</p>}
       </div>
-      <div style={{ display: 'table-cell', verticalAlign: 'middle', textAlign: 'right' }}>
-        <span className="text-sm font-bold leading-tight">{value}</span>
-      </div>
+      <span className="text-sm font-bold">{value}</span>
     </div>
   )
 }
