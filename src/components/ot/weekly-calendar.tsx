@@ -1074,11 +1074,11 @@ export function WeeklyCalendar({ assignments, trainerId, profile }: Props) {
                             </p>
                           </div>
                           <button
-                            className="opacity-0 group-hover:opacity-100 transition-opacity text-red-500 hover:text-red-700 shrink-0"
+                            className="opacity-0 group-hover:opacity-100 group-active:opacity-100 [@media(pointer:coarse)]:opacity-100 transition-opacity text-red-500 hover:text-red-700 active:text-red-700 shrink-0 min-w-[28px] min-h-[28px] flex items-center justify-center"
                             onPointerDown={(e) => e.stopPropagation()}
                             onClick={(e) => { e.stopPropagation(); handleDelete(s.id) }}
                           >
-                            <X className="h-3 w-3" />
+                            <X className="h-3.5 w-3.5" />
                           </button>
                         </div>
                       </div>

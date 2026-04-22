@@ -53,8 +53,8 @@ export const MENU_ACCESS: Record<string, Role[]> = {
 // ── 네비게이션 (모든 역할에 표시, 접근 제어는 클라이언트에서) ──
 export const NAV_ITEMS = [
   { href: '/ot', label: '트레이너 관리', icon: 'ClipboardList' as const, roles: ['admin', '관리자', '팀장', 'trainer', '강사', 'fc'] as Role[] },
-  { href: '/dashboard', label: '회원관리', icon: 'LayoutDashboard' as const, roles: ['admin', '관리자', '팀장', 'trainer', '강사', 'fc'] as Role[] },
   { href: '/consultations', label: '상담카드', icon: 'FileText' as const, roles: ['admin', '관리자', '팀장', 'trainer', '강사', 'fc'] as Role[] },
+  { href: '/dashboard', label: '회원관리', icon: 'LayoutDashboard' as const, roles: ['admin', '관리자', '팀장', 'trainer', '강사', 'fc'] as Role[] },
   { href: '/approvals', label: 'OT 승인', icon: 'CheckSquare' as const, roles: ['admin', '관리자'] as Role[] },
   { href: '/staff', label: '직원 관리', icon: 'Users' as const, roles: ['admin', '관리자', '팀장', 'trainer', '강사', 'fc'] as Role[] },
   { href: '/stats', label: '통계', icon: 'BarChart3' as const, roles: ['admin', '관리자', '팀장', 'trainer', '강사', 'fc'] as Role[] },

@@ -28,9 +28,17 @@
 
   * {
     @apply border-border;
+    -webkit-tap-highlight-color: transparent;
   }
 
   body {
     @apply bg-background text-foreground;
+  }
+
+  /* 터치 기기에서 버튼/링크 active 피드백 */
+  @media (pointer: coarse) {
+    button, a, [role="button"] {
+      touch-action: manipulation;
+    }
   }
 }
