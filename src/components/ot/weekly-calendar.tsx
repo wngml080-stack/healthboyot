@@ -146,14 +146,18 @@ interface ParsedPtNote {
   isSalesTarget: boolean
   expectedAmount: string
   classResult: PtClassResult | ''
+  inOut: 'IN' | 'OUT'
   memo: string
 }
 
 function parsePtNote(note: string | null): ParsedPtNote {
-  const empty: ParsedPtNote = { phone: '', current: '', total: '', isSalesTarget: false, expectedAmount: '', classResult: '', memo: '' }
+  const empty: ParsedPtNote = { phone: '', current: '', total: '', isSalesTarget: false, expectedAmount: '', classResult: '', inOut: 'IN', memo: '' }
   if (!note) return empty
   let rest = note
   const result: ParsedPtNote = { ...empty }
+
+  // IN/OUT
+  if (rest.startsWith('[OUT]')) { result.inOut = 'OUT'; rest = rest.slice(5).replace(/^\s+/, '') }
 
   // 전화번호 prefix [010-...] 또는 숫자만
   const phoneMatch = rest.match(/^\[([\d][\d\s-]*)\]\s*/)
@@ -204,9 +208,11 @@ function buildPtNote(opts: {
   isSalesTarget?: boolean
   expectedAmount?: string | number
   classResult?: PtClassResult | ''
+  inOut?: 'IN' | 'OUT'
   memo?: string
 }): string | null {
   const parts: string[] = []
+  if (opts.inOut === 'OUT') parts.push('[OUT]')
   const phone = opts.phone?.trim()
   const cur = opts.current?.trim()
   const tot = opts.total?.trim()
@@ -239,6 +245,7 @@ export function WeeklyCalendar({ assignments, trainerId, profile }: Props) {
   // 종료 시간 (RANGE_TYPES용) — start_time + duration으로 계산하지만, 사용자는 종료 시간을 직접 지정
   const [createEndTime, setCreateEndTime] = useState('')
   const [createNote, setCreateNote] = useState('')
+  const [createInOut, setCreateInOut] = useState<'IN' | 'OUT'>('IN')
   const [createIsSalesTarget, setCreateIsSalesTarget] = useState(false)
   const [createExpectedAmount, setCreateExpectedAmount] = useState(0)
   const [createClosingProb, setCreateClosingProb] = useState(0)
@@ -547,6 +554,7 @@ export function WeeklyCalendar({ assignments, trainerId, profile }: Props) {
             phone: createMemberPhone,
             current: createPtCurrentSession,
             total: createPtTotalSession,
+            inOut: createInOut,
             memo: createNote,
           })
         : (createNote || null)
@@ -1173,7 +1181,7 @@ export function WeeklyCalendar({ assignments, trainerId, profile }: Props) {
             )}
 
             {/* PT/PPT: 신규 입력 폼 (회원 등록 없이 trainer_schedules에 텍스트로만 기록) */}
-            {(createType === 'PT' || createType === 'PPT') && (
+            {(createType === 'PT' || createType === 'PPT') && (<>
               <div className="space-y-3">
                 {/* 이름 (필수) */}
                 <div className="space-y-1.5">
@@ -1222,7 +1230,15 @@ export function WeeklyCalendar({ assignments, trainerId, profile }: Props) {
                   </div>
                 </div>
               </div>
-            )}
+              {/* IN/OUT 선택 */}
+              <div className="space-y-1.5">
+                <Label>근무구분</Label>
+                <div className="flex gap-2">
+                  <button type="button" className={`flex-1 rounded-md border py-2 text-sm font-bold transition-colors ${createInOut === 'IN' ? 'bg-blue-600 text-white border-blue-600' : 'bg-white text-gray-600 border-gray-300'}`} onClick={() => setCreateInOut('IN')}>IN (근무내)</button>
+                  <button type="button" className={`flex-1 rounded-md border py-2 text-sm font-bold transition-colors ${createInOut === 'OUT' ? 'bg-orange-500 text-white border-orange-500' : 'bg-white text-gray-600 border-gray-300'}`} onClick={() => setCreateInOut('OUT')}>OUT (근무외)</button>
+                </div>
+              </div>
+            </>)}
 
             {/* 기타 타입: 내용 선택사항 (제목 없이도 저장 가능) */}
             {createType !== 'OT' && createType !== 'PT' && createType !== 'PPT' && (
