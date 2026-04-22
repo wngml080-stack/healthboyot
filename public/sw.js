@@ -24,6 +24,11 @@ self.addEventListener('activate', (event) => {
 
 // 네트워크 우선 전략 (실시간 데이터가 중요한 관리 시스템)
 self.addEventListener('fetch', (event) => {
+  // http/https 이외의 스킴 (chrome-extension:// 등)은 무시
+  if (!event.request.url.startsWith('http')) {
+    return
+  }
+
   // API 요청이나 POST 등은 캐싱하지 않음
   if (
     event.request.method !== 'GET' ||

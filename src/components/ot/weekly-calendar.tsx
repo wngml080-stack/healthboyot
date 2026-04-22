@@ -324,6 +324,7 @@ export function WeeklyCalendar({ assignments, trainerId, profile }: Props) {
   const suppressNextClickRef = useRef(false)
   // 각 day column의 DOM 참조 (드래그 중 좌표 계산용)
   const dayColRefs = useRef<(HTMLDivElement | null)[]>([])
+  const calendarScrollRef = useRef<HTMLDivElement>(null)
 
   // 드래그 가능 여부:
   // - OT: 매칭되는 ot_session이 완료되지 않았을 때 (ot_session_id 매칭 못 찾으면 fallback으로 허용)
@@ -348,6 +349,18 @@ export function WeeklyCalendar({ assignments, trainerId, profile }: Props) {
   const weekStartStr = format(weekStart, 'yyyy-MM-dd')
   const days = useMemo(() => Array.from({ length: 7 }, (_, i) => addDays(weekStart, i)), [weekStart])
   const weekNum = Math.ceil(days[0].getDate() / 7)
+
+  // 모바일: 오늘 날짜 컬럼으로 자동 스크롤
+  useEffect(() => {
+    const container = calendarScrollRef.current
+    if (!container) return
+    const todayIdx = days.findIndex((d) => isSameDay(d, now))
+    if (todayIdx <= 0) return
+    const colWidth = 90
+    const timeAxisWidth = 56
+    const scrollTo = timeAxisWidth + colWidth * todayIdx - container.clientWidth / 2 + colWidth / 2
+    container.scrollLeft = Math.max(0, scrollTo)
+  }, [days]) // eslint-disable-line react-hooks/exhaustive-deps
 
   // OT 배정된 회원 목록 (선택용)
   const otMembers = assignments.filter((a) => !['거부', '완료'].includes(a.status))
@@ -935,7 +948,7 @@ export function WeeklyCalendar({ assignments, trainerId, profile }: Props) {
         </div>
 
         {/* 캘린더 */}
-        <div className="rounded-lg border border-gray-200 bg-white overflow-x-auto -mx-4 sm:mx-0">
+        <div ref={calendarScrollRef} className="rounded-lg border border-gray-200 bg-white overflow-x-auto -mx-4 sm:mx-0">
           {/* 헤더 */}
           <div className="flex border-b border-gray-200 sticky top-0 bg-gray-900 z-10">
             <div className="w-14 shrink-0" />

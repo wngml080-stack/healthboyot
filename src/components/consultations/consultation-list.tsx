@@ -166,14 +166,14 @@ export function ConsultationList({ cards: initialCards, members, staffList = [] 
         <table className="w-full text-sm min-w-[600px]">
           <thead>
             <tr className="bg-gray-50 border-b">
-              <th className="text-left px-4 py-2 font-medium text-gray-700">상태</th>
-              <th className="text-left px-4 py-2 font-medium text-gray-700">이름</th>
-              <th className="text-left px-4 py-2 font-medium text-gray-700">연락처</th>
-              <th className="text-left px-4 py-2 font-medium text-gray-700">성별</th>
-              <th className="text-left px-4 py-2 font-medium text-gray-700">FC</th>
-              <th className="text-left px-4 py-2 font-medium text-gray-700">운동시작일</th>
-              <th className="text-left px-4 py-2 font-medium text-gray-700">작성일</th>
-              <th className="text-center px-4 py-2 font-medium text-gray-700">액션</th>
+              <th className="text-left px-3 py-2 font-medium text-gray-700 whitespace-nowrap">상태</th>
+              <th className="text-left px-3 py-2 font-medium text-gray-700 whitespace-nowrap">이름</th>
+              <th className="text-left px-3 py-2 font-medium text-gray-700 whitespace-nowrap">연락처</th>
+              <th className="text-left px-3 py-2 font-medium text-gray-700 whitespace-nowrap">성별</th>
+              <th className="text-left px-3 py-2 font-medium text-gray-700 whitespace-nowrap">FC</th>
+              <th className="text-left px-3 py-2 font-medium text-gray-700 whitespace-nowrap">운동시작일</th>
+              <th className="text-left px-3 py-2 font-medium text-gray-700 whitespace-nowrap">작성일</th>
+              <th className="text-center px-3 py-2 font-medium text-gray-700 whitespace-nowrap">액션</th>
             </tr>
           </thead>
           <tbody>

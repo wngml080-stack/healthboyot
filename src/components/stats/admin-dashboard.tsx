@@ -156,20 +156,20 @@ export function AdminDashboard({ data: initialData, initialPeriod }: Props) {
               <Table>
                 <TableHeader>
                   <TableRow className="bg-gray-50">
-                    <TableHead className="text-center font-bold text-gray-700 sticky left-0 bg-gray-50 z-10">트레이너</TableHead>
-                    <TableHead className="text-center text-gray-600">총 인원</TableHead>
-                    <TableHead className="text-center text-green-600">진행회원</TableHead>
-                    <TableHead className="text-center text-orange-600">미진행</TableHead>
-                    <TableHead className="text-center text-gray-500">거부</TableHead>
-                    <TableHead className="text-center text-blue-600 font-bold">OT수업</TableHead>
-                    <TableHead className="text-center text-purple-600 font-bold">PT전환</TableHead>
-                    <TableHead className="text-center text-amber-600 font-bold">클로징율</TableHead>
-                    <TableHead className="text-center text-purple-600">인바디</TableHead>
-                    <TableHead className="text-center text-emerald-600 font-bold">OT이외 인정</TableHead>
-                    <TableHead className="text-center text-green-600 font-bold">등록금액</TableHead>
-                    <TableHead className="text-center text-gray-500">연락두절</TableHead>
-                    <TableHead className="text-center text-gray-500">클로징실패</TableHead>
-                    <TableHead className="text-center text-gray-500">미확정</TableHead>
+                    <TableHead className="text-center font-bold text-gray-700 sticky left-0 bg-gray-50 z-10 whitespace-nowrap">트레이너</TableHead>
+                    <TableHead className="text-center text-gray-600 whitespace-nowrap">총 인원</TableHead>
+                    <TableHead className="text-center text-green-600 whitespace-nowrap">진행회원</TableHead>
+                    <TableHead className="text-center text-orange-600 whitespace-nowrap">미진행</TableHead>
+                    <TableHead className="text-center text-gray-500 whitespace-nowrap">거부</TableHead>
+                    <TableHead className="text-center text-blue-600 font-bold whitespace-nowrap">OT수업</TableHead>
+                    <TableHead className="text-center text-purple-600 font-bold whitespace-nowrap">PT전환</TableHead>
+                    <TableHead className="text-center text-amber-600 font-bold whitespace-nowrap">클로징율</TableHead>
+                    <TableHead className="text-center text-purple-600 whitespace-nowrap">인바디</TableHead>
+                    <TableHead className="text-center text-emerald-600 font-bold whitespace-nowrap">OT이외인정</TableHead>
+                    <TableHead className="text-center text-green-600 font-bold whitespace-nowrap">등록금액</TableHead>
+                    <TableHead className="text-center text-gray-500 whitespace-nowrap">연락두절</TableHead>
+                    <TableHead className="text-center text-gray-500 whitespace-nowrap">클로징실패</TableHead>
+                    <TableHead className="text-center text-gray-500 whitespace-nowrap">미확정</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
@@ -181,11 +181,11 @@ export function AdminDashboard({ data: initialData, initialPeriod }: Props) {
                     <>
                       {trainers.map((t) => (
                         <TableRow key={t.id} className="hover:bg-gray-50">
-                          <TableCell className="text-center font-bold text-gray-900 sticky left-0 bg-white z-10">{t.name}</TableCell>
-                          <TableCell className="text-center text-sm">{t.totalMembers}</TableCell>
-                          <TableCell className="text-center text-sm text-blue-600">{t.activeMembers}</TableCell>
-                          <TableCell className="text-center text-sm text-green-600 font-bold">{t.completedMembers}</TableCell>
-                          <TableCell className="text-center text-sm text-red-500">{t.rejectedMembers || '-'}</TableCell>
+                          <TableCell className="text-center font-bold text-gray-900 sticky left-0 bg-white z-10 whitespace-nowrap">{t.name}</TableCell>
+                          <TableCell className="text-center text-sm whitespace-nowrap">{t.totalMembers}</TableCell>
+                          <TableCell className="text-center text-sm text-blue-600 whitespace-nowrap">{t.activeMembers}</TableCell>
+                          <TableCell className="text-center text-sm text-green-600 font-bold whitespace-nowrap">{t.completedMembers}</TableCell>
+                          <TableCell className="text-center text-sm text-red-500 whitespace-nowrap">{t.rejectedMembers || '-'}</TableCell>
                           <TableCell className="text-center text-sm">
                             <span className="font-bold text-blue-700">{t.otSessionsThisPeriod}</span>
                             <span className="text-gray-400 text-xs ml-1">/{t.otSessionsTotal}</span>
@@ -211,7 +211,7 @@ export function AdminDashboard({ data: initialData, initialPeriod }: Props) {
                       ))}
                       {/* 합계 행 */}
                       <TableRow className="bg-gray-100 font-bold border-t-2 border-gray-300">
-                        <TableCell className="text-center text-gray-900 sticky left-0 bg-gray-100 z-10">합계</TableCell>
+                        <TableCell className="text-center text-gray-900 sticky left-0 bg-gray-100 z-10 whitespace-nowrap">합계</TableCell>
                         <TableCell className="text-center">{totals.totalMembers}</TableCell>
                         <TableCell className="text-center text-blue-600">{totals.activeMembers}</TableCell>
                         <TableCell className="text-center text-green-600">{totals.completedMembers}</TableCell>

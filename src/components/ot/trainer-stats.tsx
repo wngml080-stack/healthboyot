@@ -61,14 +61,14 @@ function useCustomTargets(key: string) {
 }
 
 export function TrainerStats({ assignments, trainerName, programs, registrations: initialRegistrations = [], trainerId }: Props) {
-  const now = new Date()
+  const [now] = useState(() => new Date())
   const captureRef = useRef<HTMLDivElement>(null)
   const [capturing, setCapturing] = useState(false)
   const [viewMode, setViewMode] = useState<'monthly' | 'weekly'>('weekly')
 
   // 월별 상태
-  const [year, setYear] = useState(now.getFullYear())
-  const [month, setMonth] = useState(now.getMonth() + 1)
+  const [year, setYear] = useState(() => now.getFullYear())
+  const [month, setMonth] = useState(() => now.getMonth() + 1)
   const daysInMonth = getDaysInMonth(year, month)
   const todayDate = now.getDate()
   const isCurrentMonth = now.getFullYear() === year && now.getMonth() + 1 === month
@@ -1045,7 +1045,7 @@ function StatPill({ label, value, color, sub }: { label: string; value: number |
     <div className={`flex items-center justify-between rounded-lg px-3 py-2 ${color}`}>
       <div>
         <span className="text-xs font-medium">{label}</span>
-        {sub && <p className="text-[10px] opacity-60 mt-0.5">{sub}</p>}
+        {sub && <p className="text-[10px] opacity-80 mt-0.5">{sub}</p>}
       </div>
       <span className="text-sm font-bold">{value}</span>
     </div>

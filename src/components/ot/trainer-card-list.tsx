@@ -741,11 +741,11 @@ export function TrainerCardList({ assignments, trainers = [], trainerId, trainer
                             {progress.label}
                           </Badge>
                           {(() => {
-                            const completedSessions = (a.sessions ?? []).filter((s) => s.completed_at).sort((x, y) => (y.completed_at ?? '').localeCompare(x.completed_at ?? ''))
+                            const completedSessions = (a.sessions ?? []).filter((s) => s.completed_at).sort((x, y) => (y.scheduled_at ?? y.completed_at ?? '').localeCompare(x.scheduled_at ?? x.completed_at ?? ''))
                             if (completedSessions.length === 0) return null
-                            const lastDone = completedSessions[0].completed_at
-                            if (!lastDone) return null
-                            const days = Math.floor((Date.now() - new Date(lastDone).getTime()) / (1000 * 60 * 60 * 24))
+                            const lastDate = completedSessions[0].scheduled_at ?? completedSessions[0].completed_at
+                            if (!lastDate) return null
+                            const days = Math.floor((Date.now() - new Date(lastDate).getTime()) / (1000 * 60 * 60 * 24))
                             return (
                               <span className={`text-[10px] font-bold ${days >= 7 ? 'text-red-500' : days >= 3 ? 'text-orange-500' : 'text-gray-400'}`}>
                                 D+{days}
