@@ -290,7 +290,7 @@ export function ApprovalList({ programs: initialPrograms, profile, registrations
               </Card>
             ))}
             {processedRegs.length > 0 && (
-              <details className="mt-1">
+              <details className="mt-1" open>
                 <summary className="text-xs text-gray-400 cursor-pointer hover:text-gray-300">처리완료 {processedRegs.length}건 보기</summary>
                 <div className="grid gap-1.5 mt-2">
                   {processedRegs.map((r) => (

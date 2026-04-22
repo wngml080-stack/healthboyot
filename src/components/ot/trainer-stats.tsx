@@ -96,7 +96,7 @@ export function TrainerStats({ assignments, trainerName, programs, registrations
   const [newTargetName, setNewTargetName] = useState('')
   const [newTargetAmount, setNewTargetAmount] = useState('')
 
-  // 이미지 저장 — 데스크톱 너비로 확장 후 섹션별 캡처 → 합성
+  // 이미지 저장 — 섹션별 캡처 후 합성 (화면 너비 그대로)
   const handleCapture = async () => {
     if (!captureRef.current) return
     setCapturing(true)
@@ -105,33 +105,17 @@ export function TrainerStats({ assignments, trainerName, programs, registrations
       const html2canvas = (await import('html2canvas')).default
       const scale = 2
       const gap = 16 * scale
-      const pad = 24 * scale
-      const CAPTURE_WIDTH = 820 // 데스크톱 수준 너비
+      const pad = 20 * scale
 
-      // 1) 컨테이너를 데스크톱 너비로 강제 확장
-      const origWidth = el.style.width
-      const origMinWidth = el.style.minWidth
-      const origMaxWidth = el.style.maxWidth
-      el.style.width = `${CAPTURE_WIDTH}px`
-      el.style.minWidth = `${CAPTURE_WIDTH}px`
-      el.style.maxWidth = `${CAPTURE_WIDTH}px`
-
-      // 2) sticky/overflow/overflow-hidden 제거
-      const stickyCells = el.querySelectorAll<HTMLElement>('.sticky')
-      const overflowAuto = el.querySelectorAll<HTMLElement>('.overflow-x-auto')
-      const overflowHidden = el.querySelectorAll<HTMLElement>('.overflow-hidden')
-      stickyCells.forEach((c) => { c.dataset.pos = c.style.position; c.style.position = 'relative' })
-      overflowAuto.forEach((c) => { c.dataset.ov = c.style.overflow; c.style.overflow = 'visible' })
-      overflowHidden.forEach((c) => { c.dataset.ov = c.style.overflow; c.style.overflow = 'visible' })
-
-      // 3) 인터랙티브 요소 숨기기
+      // 인터랙티브 요소 숨기기
       const hideEls = el.querySelectorAll<HTMLElement>('input, .capture-hide')
       hideEls.forEach((e) => { e.dataset.vis = e.style.visibility; e.style.visibility = 'hidden' })
 
-      // 레이아웃 재계산 대기
-      await new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r)))
+      // flex items-center 보정 (html2canvas 세로 정렬 버그 대응)
+      const flexCenters = el.querySelectorAll<HTMLElement>('.items-center')
+      flexCenters.forEach((e) => { e.dataset.ai = e.style.alignItems; e.style.alignItems = 'stretch' })
 
-      // 4) 각 직계 자식(섹션)을 개별 캡처
+      // 각 직계 자식(섹션)을 개별 캡처
       const children = Array.from(el.children) as HTMLElement[]
       const canvases: HTMLCanvasElement[] = []
       for (const child of children) {
@@ -140,21 +124,15 @@ export function TrainerStats({ assignments, trainerName, programs, registrations
           backgroundColor: null,
           useCORS: true,
           logging: false,
-          width: CAPTURE_WIDTH,
         })
         canvases.push(c)
       }
 
-      // 5) 모든 스타일 복원
-      el.style.width = origWidth
-      el.style.minWidth = origMinWidth
-      el.style.maxWidth = origMaxWidth
-      stickyCells.forEach((c) => { c.style.position = c.dataset.pos || ''; delete c.dataset.pos })
-      overflowAuto.forEach((c) => { c.style.overflow = c.dataset.ov || ''; delete c.dataset.ov })
-      overflowHidden.forEach((c) => { c.style.overflow = c.dataset.ov || ''; delete c.dataset.ov })
+      // 복원
       hideEls.forEach((e) => { e.style.visibility = e.dataset.vis || ''; delete e.dataset.vis })
+      flexCenters.forEach((e) => { e.style.alignItems = e.dataset.ai || ''; delete e.dataset.ai })
 
-      // 6) 하나의 캔버스에 합성
+      // 하나의 캔버스에 합성
       const maxW = Math.max(...canvases.map((c) => c.width))
       const totalH = canvases.reduce((s, c) => s + c.height, 0) + gap * (canvases.length - 1) + pad * 2
       const combined = document.createElement('canvas')
@@ -457,6 +435,8 @@ export function TrainerStats({ assignments, trainerName, programs, registrations
   const totalNextExpected = allNextTargets.reduce((s, t) => s + t.expectedAmount, 0)
 
   return (
+    <div className="space-y-4">
+    {/* === 이미지 캡처 영역 시작 === */}
     <div ref={captureRef} className="space-y-4">
       {/* 헤더 */}
       <div className="flex items-center justify-between flex-wrap gap-2">
@@ -545,76 +525,6 @@ export function TrainerStats({ assignments, trainerName, programs, registrations
               </tr>
             </tbody>
           </table>
-        </CardContent>
-      </Card>
-
-      {/* ② 일자별 OT 그리드 */}
-      <Card className="overflow-hidden">
-        <CardContent className="p-0">
-          <div className="overflow-x-auto">
-            <table className="w-full border-collapse text-[10px]">
-              <thead>
-                <tr className="bg-gray-900 text-white">
-                  <th className="sticky left-0 z-10 bg-gray-900 px-1 py-1 text-center font-bold whitespace-nowrap w-[90px] min-w-[90px]">회원명</th>
-                  {columns.map((col, ci) => (
-                    <th key={ci} className={`px-0 py-1 text-center font-medium ${viewMode === 'weekly' ? 'w-[60px] min-w-[60px]' : 'w-[22px] min-w-[22px]'} ${col.isToday ? 'bg-yellow-500 text-black' : col.isWknd ? 'bg-gray-700' : ''}`}>
-                      <div className="leading-none">{col.label}</div>
-                    </th>
-                  ))}
-                  <th className="px-1 py-1 text-center font-bold bg-gray-800 w-[28px] min-w-[28px]">계</th>
-                </tr>
-              </thead>
-              <tbody>
-                {memberRows.length === 0 ? (
-                  <tr><td colSpan={columns.length + 2} className="py-6 text-center text-xs text-gray-400">해당 기간에 OT 데이터가 없습니다</td></tr>
-                ) : memberRows.map((row) => (
-                  <tr key={row.id} className="border-b border-gray-100 hover:bg-gray-50/50">
-                    <td className="sticky left-0 z-10 bg-white border-r border-gray-200 px-1 py-1.5 text-center font-medium text-gray-900 whitespace-nowrap text-[10px]">
-                      <div className="flex items-center justify-center gap-0.5">
-                        <span className="truncate max-w-[50px]">{row.name}</span>
-                        {row.isPtConversion && <Badge className="bg-purple-500 text-white text-[7px] px-0.5 py-0 leading-tight rounded-sm">PT전환</Badge>}
-                        {row.isSalesTarget && !row.isPtConversion && <Badge className="bg-blue-500 text-white text-[7px] px-0.5 py-0 leading-tight rounded-sm">매출대상</Badge>}
-                      </div>
-                    </td>
-                    {columns.map((col, ci) => {
-                      const key = format(col.date, 'yyyy-MM-dd')
-                      const cell = row.cells[key]
-                      if (!cell) return <td key={ci} className={`px-0 py-1.5 text-center ${col.isToday ? 'bg-yellow-50' : col.isWknd ? 'bg-gray-50/70' : ''}`} />
-                      const bg = cell.completed && cell.approved ? 'bg-amber-500 text-white' : cell.completed ? 'bg-emerald-500 text-white' : cell.pastDue ? 'bg-rose-500 text-white' : 'bg-blue-500 text-white'
-                      return (
-                        <td key={ci} className={`px-0 py-1.5 text-center ${col.isToday ? 'bg-yellow-50' : ''}`}>
-                          {viewMode === 'weekly' ? (
-                            <div className={`inline-flex flex-col items-center justify-center rounded-sm px-1 py-0.5 ${bg}`}>
-                              <span className="text-[10px] font-bold leading-none">{cell.time ?? ''}</span>
-                              <span className="text-[8px] leading-none opacity-80">{cell.sessionNumber}차</span>
-                            </div>
-                          ) : (
-                            <span className={`inline-flex items-center justify-center w-[16px] h-[16px] rounded-sm text-[8px] font-bold ${bg}`} title={`${cell.sessionNumber}차`}>{cell.sessionNumber}</span>
-                          )}
-                        </td>
-                      )
-                    })}
-                    <td className="px-1 py-1.5 text-center font-bold text-gray-900 bg-gray-50 border-l border-gray-200 text-[10px]">{row.totalSessions}</td>
-                  </tr>
-                ))}
-                <tr className="bg-gray-100 border-t-2 border-gray-300 font-bold">
-                  <td className="sticky left-0 z-10 bg-gray-100 border-r border-gray-200 px-1 py-1 text-center text-gray-900 text-[10px]">합계</td>
-                  {columns.map((col, ci) => {
-                    const key = format(col.date, 'yyyy-MM-dd')
-                    return <td key={ci} className={`px-0 py-1 text-center text-gray-900 text-[10px] ${col.isToday ? 'bg-yellow-100' : ''}`}>{dailyTotals[key] || ''}</td>
-                  })}
-                  <td className="px-1 py-1 text-center text-gray-900 bg-gray-200 border-l border-gray-300 text-[10px]">{grandTotal}</td>
-                </tr>
-              </tbody>
-            </table>
-          </div>
-          <div className="flex flex-wrap items-center gap-3 px-2 py-1.5 bg-gray-50 border-t border-gray-200 text-[10px] text-gray-600">
-            <span className="flex items-center gap-1"><span className="w-2.5 h-2.5 rounded-sm bg-emerald-500" /> 완료</span>
-            <span className="flex items-center gap-1"><span className="w-2.5 h-2.5 rounded-sm bg-amber-500" /> 완료+승인</span>
-            <span className="flex items-center gap-1"><span className="w-2.5 h-2.5 rounded-sm bg-blue-500" /> 예정</span>
-            <span className="flex items-center gap-1"><span className="w-2.5 h-2.5 rounded-sm bg-rose-500" /> 변경필요</span>
-            <span className="flex items-center gap-1"><span className="w-2.5 h-2.5 rounded-sm bg-yellow-500" /> 오늘</span>
-          </div>
         </CardContent>
       </Card>
 
@@ -927,6 +837,78 @@ export function TrainerStats({ assignments, trainerName, programs, registrations
         </CardContent>
       </Card>
     </div>
+    {/* === 이미지 캡처 영역 끝 === */}
+
+      {/* ② 일자별 OT 그리드 (캡처 영역 밖) */}
+      <Card className="overflow-hidden">
+        <CardContent className="p-0">
+          <div className="overflow-x-auto">
+            <table className="w-full border-collapse text-[10px]">
+              <thead>
+                <tr className="bg-gray-900 text-white">
+                  <th className="sticky left-0 z-10 bg-gray-900 px-1 py-1 text-center font-bold whitespace-nowrap w-[90px] min-w-[90px]">회원명</th>
+                  {columns.map((col, ci) => (
+                    <th key={ci} className={`px-0 py-1 text-center font-medium ${viewMode === 'weekly' ? 'w-[60px] min-w-[60px]' : 'w-[22px] min-w-[22px]'} ${col.isToday ? 'bg-yellow-500 text-black' : col.isWknd ? 'bg-gray-700' : ''}`}>
+                      <div className="leading-none">{col.label}</div>
+                    </th>
+                  ))}
+                  <th className="px-1 py-1 text-center font-bold bg-gray-800 w-[28px] min-w-[28px]">계</th>
+                </tr>
+              </thead>
+              <tbody>
+                {memberRows.length === 0 ? (
+                  <tr><td colSpan={columns.length + 2} className="py-6 text-center text-xs text-gray-400">해당 기간에 OT 데이터가 없습니다</td></tr>
+                ) : memberRows.map((row) => (
+                  <tr key={row.id} className="border-b border-gray-100 hover:bg-gray-50/50">
+                    <td className="sticky left-0 z-10 bg-white border-r border-gray-200 px-1 py-1.5 text-center font-medium text-gray-900 whitespace-nowrap text-[10px]">
+                      <div className="flex items-center justify-center gap-0.5">
+                        <span className="truncate max-w-[50px]">{row.name}</span>
+                        {row.isPtConversion && <Badge className="bg-purple-500 text-white text-[7px] px-0.5 py-0 leading-tight rounded-sm">PT전환</Badge>}
+                        {row.isSalesTarget && !row.isPtConversion && <Badge className="bg-blue-500 text-white text-[7px] px-0.5 py-0 leading-tight rounded-sm">매출대상</Badge>}
+                      </div>
+                    </td>
+                    {columns.map((col, ci) => {
+                      const key = format(col.date, 'yyyy-MM-dd')
+                      const cell = row.cells[key]
+                      if (!cell) return <td key={ci} className={`px-0 py-1.5 text-center ${col.isToday ? 'bg-yellow-50' : col.isWknd ? 'bg-gray-50/70' : ''}`} />
+                      const bg = cell.completed && cell.approved ? 'bg-amber-500 text-white' : cell.completed ? 'bg-emerald-500 text-white' : cell.pastDue ? 'bg-rose-500 text-white' : 'bg-blue-500 text-white'
+                      return (
+                        <td key={ci} className={`px-0 py-1.5 text-center ${col.isToday ? 'bg-yellow-50' : ''}`}>
+                          {viewMode === 'weekly' ? (
+                            <div className={`inline-flex flex-col items-center justify-center rounded-sm px-1 py-0.5 ${bg}`}>
+                              <span className="text-[10px] font-bold leading-none">{cell.time ?? ''}</span>
+                              <span className="text-[8px] leading-none opacity-80">{cell.sessionNumber}차</span>
+                            </div>
+                          ) : (
+                            <span className={`inline-flex items-center justify-center w-[16px] h-[16px] rounded-sm text-[8px] font-bold ${bg}`} title={`${cell.sessionNumber}차`}>{cell.sessionNumber}</span>
+                          )}
+                        </td>
+                      )
+                    })}
+                    <td className="px-1 py-1.5 text-center font-bold text-gray-900 bg-gray-50 border-l border-gray-200 text-[10px]">{row.totalSessions}</td>
+                  </tr>
+                ))}
+                <tr className="bg-gray-100 border-t-2 border-gray-300 font-bold">
+                  <td className="sticky left-0 z-10 bg-gray-100 border-r border-gray-200 px-1 py-1 text-center text-gray-900 text-[10px]">합계</td>
+                  {columns.map((col, ci) => {
+                    const key = format(col.date, 'yyyy-MM-dd')
+                    return <td key={ci} className={`px-0 py-1 text-center text-gray-900 text-[10px] ${col.isToday ? 'bg-yellow-100' : ''}`}>{dailyTotals[key] || ''}</td>
+                  })}
+                  <td className="px-1 py-1 text-center text-gray-900 bg-gray-200 border-l border-gray-300 text-[10px]">{grandTotal}</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+          <div className="flex flex-wrap items-center gap-3 px-2 py-1.5 bg-gray-50 border-t border-gray-200 text-[10px] text-gray-600">
+            <span className="flex items-center gap-1"><span className="w-2.5 h-2.5 rounded-sm bg-emerald-500" /> 완료</span>
+            <span className="flex items-center gap-1"><span className="w-2.5 h-2.5 rounded-sm bg-amber-500" /> 완료+승인</span>
+            <span className="flex items-center gap-1"><span className="w-2.5 h-2.5 rounded-sm bg-blue-500" /> 예정</span>
+            <span className="flex items-center gap-1"><span className="w-2.5 h-2.5 rounded-sm bg-rose-500" /> 변경필요</span>
+            <span className="flex items-center gap-1"><span className="w-2.5 h-2.5 rounded-sm bg-yellow-500" /> 오늘</span>
+          </div>
+        </CardContent>
+      </Card>
+    </div>
   )
 }
 
@@ -1066,12 +1048,14 @@ function RegistrationSection({ registrations: initial, trainerId, trainerName }:
 
 function StatPill({ label, value, color, sub }: { label: string; value: number | string; color: string; sub?: string }) {
   return (
-    <div className={`flex items-center justify-between rounded-lg px-3 py-2 ${color}`}>
-      <div>
-        <span className="text-xs font-medium">{label}</span>
-        {sub && <p className="text-[10px] opacity-80 mt-0.5">{sub}</p>}
+    <div className={`rounded-lg px-3 py-2 ${color}`} style={{ display: 'table', width: '100%' }}>
+      <div style={{ display: 'table-cell', verticalAlign: 'middle' }}>
+        <span className="text-xs font-medium leading-tight block">{label}</span>
+        {sub && <span className="text-[10px] opacity-80 leading-tight block">{sub}</span>}
       </div>
-      <span className="text-sm font-bold">{value}</span>
+      <div style={{ display: 'table-cell', verticalAlign: 'middle', textAlign: 'right' }}>
+        <span className="text-sm font-bold leading-tight">{value}</span>
+      </div>
     </div>
   )
 }
