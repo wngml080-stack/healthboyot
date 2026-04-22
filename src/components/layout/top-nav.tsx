@@ -25,6 +25,8 @@ export function TopNav({ profile }: Props) {
   const pathname = usePathname()
   const [mobileOpen, setMobileOpen] = useState(false)
   const [showNoAccess, setShowNoAccess] = useState(false)
+  const [showPricing, setShowPricing] = useState(false)
+  const [pricingTab, setPricingTab] = useState<'신규' | '재등록'>('신규')
 
   const handleMenuClick = (href: string, e: React.MouseEvent) => {
     const allowedRoles = MENU_ACCESS[href]
@@ -68,6 +70,14 @@ export function TopNav({ profile }: Props) {
               )
             })}
           </div>
+
+          {/* 회원권 금액 버튼 */}
+          <button
+            onClick={() => setShowPricing(true)}
+            className="hidden lg:flex items-center gap-1 px-4 py-1.5 bg-red-600 hover:bg-red-700 text-white text-sm font-bold rounded-lg transition-colors"
+          >
+            회원권 금액 보기
+          </button>
 
           {/* 유저 + 로그아웃 */}
           <div className="hidden lg:flex items-center gap-3">
@@ -113,6 +123,12 @@ export function TopNav({ profile }: Props) {
                 </Link>
               )
             })}
+            <button
+              onClick={() => { setShowPricing(true); setMobileOpen(false) }}
+              className="w-full py-2 bg-red-600 hover:bg-red-700 text-white text-sm font-bold rounded-lg transition-colors mt-1"
+            >
+              회원권 금액 보기
+            </button>
             <div className="flex items-center justify-between pt-2 border-t border-white/10">
               <span className="text-sm text-gray-400">{profile.name}</span>
               <form action={signOut}>
@@ -135,6 +151,31 @@ export function TopNav({ profile }: Props) {
           <Button onClick={() => setShowNoAccess(false)} className="mx-auto">
             확인
           </Button>
+        </DialogContent>
+      </Dialog>
+
+      {/* 회원권 금액 팝업 */}
+      <Dialog open={showPricing} onOpenChange={setShowPricing}>
+        <DialogContent className="max-w-lg max-h-[90vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle>회원권 금액 안내</DialogTitle>
+            <DialogDescription>탭을 선택하면 해당 회원권 이미지를 볼 수 있습니다</DialogDescription>
+          </DialogHeader>
+          <div className="space-y-3">
+            <div className="flex gap-2">
+              <button className={`flex-1 py-2 rounded-lg text-sm font-bold transition-colors ${pricingTab === '신규' ? 'bg-yellow-400 text-black' : 'bg-gray-100 text-gray-600'}`} onClick={() => setPricingTab('신규')}>신규</button>
+              <button className={`flex-1 py-2 rounded-lg text-sm font-bold transition-colors ${pricingTab === '재등록' ? 'bg-yellow-400 text-black' : 'bg-gray-100 text-gray-600'}`} onClick={() => setPricingTab('재등록')}>재등록</button>
+            </div>
+            <div className="rounded-lg border overflow-hidden">
+              <img
+                src={pricingTab === '신규' ? '/pricing-new.jpg' : '/pricing-renew.jpg'}
+                alt={`${pricingTab} 회원권`}
+                className="w-full"
+                onError={(e) => { (e.target as HTMLImageElement).style.display = 'none' }}
+              />
+              <p className="text-xs text-gray-400 text-center py-3">이미지가 없으면 관리자에게 문의하세요</p>
+            </div>
+          </div>
         </DialogContent>
       </Dialog>
     </>
