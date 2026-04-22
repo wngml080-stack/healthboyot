@@ -107,18 +107,11 @@ export function TrainerStats({ assignments, trainerName, programs, registrations
       const gap = 16 * scale
       const pad = 20 * scale
 
-      const onclone = (doc: Document, clonedEl: HTMLElement) => {
-        // 복제된 DOM에서만 스타일 보정 — 원본 화면 영향 없음
+      const onclone = (doc: Document) => {
         const style = doc.createElement('style')
         style.textContent = `
-          .items-center { align-items: flex-start !important; }
           .capture-hide { display: none !important; }
           input { visibility: hidden !important; }
-          * { -webkit-text-size-adjust: 100% !important; }
-          span, p, td, th, h2, h3, label {
-            line-height: 1.3 !important;
-            vertical-align: middle !important;
-          }
         `
         doc.head.appendChild(style)
       }
@@ -132,7 +125,7 @@ export function TrainerStats({ assignments, trainerName, programs, registrations
           backgroundColor: null,
           useCORS: true,
           logging: false,
-          onclone: (doc) => onclone(doc, child),
+          onclone: (doc) => onclone(doc),
         })
         canvases.push(c)
       }

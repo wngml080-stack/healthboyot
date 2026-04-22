@@ -249,46 +249,60 @@ export function MemberList({ initialMembers, trainers = [] }: Props) {
     const oldPtVal = a.pt_trainer_id ?? (a.pt_assign_status === 'later' ? 'later' : a.pt_assign_status === 'not_requested' ? 'not_requested' : 'none')
     const oldPptVal = a.ppt_trainer_id ?? (a.ppt_assign_status === 'later' ? 'later' : a.ppt_assign_status === 'not_requested' ? 'not_requested' : 'none')
 
+    // PT, PPT 변경을 병렬로 처리 (changeTrainer가 이미 assign_status도 업데이트하므로 중복 호출 제거)
+    const promises: Promise<unknown>[] = []
+
+    // 추후배정/미신청 등 특수 상태는 changeTrainer가 처리 못하므로 별도 업데이트
+    const statusOverrides: Record<string, string> = {}
+
     if (newPtTrainer !== oldPtVal) {
       const oldName = a.pt_trainer?.name ?? statusLabel(oldPtVal)
       const newName = isSpecialVal(newPtTrainer) ? statusLabel(newPtTrainer) : trainers.find((t) => t.id === newPtTrainer)?.name ?? newPtTrainer
-      await changeTrainer(
+      promises.push(changeTrainer(
         a.id, 'pt_trainer_id',
         isSpecialVal(newPtTrainer) ? null : newPtTrainer,
         oldName, newName, trainerChangeTarget.name,
-      )
-      // assign_status도 업데이트
-      await updateOtAssignment(a.id, {
-        pt_assign_status: isSpecialVal(newPtTrainer) ? newPtTrainer : 'assigned',
-      })
+      ))
+      // changeTrainer는 trainer_id가 null일 때 'none'으로 설정하지만, 'later'/'not_requested'는 별도 처리 필요
+      if (newPtTrainer === 'later' || newPtTrainer === 'not_requested') {
+        statusOverrides.pt_assign_status = newPtTrainer
+      }
       if (ptChangeReason) {
-        await addChangeLog({
+        promises.push(addChangeLog({
           target_type: 'ot_assignment', target_id: a.id,
           action: 'PT 변경 사유',
           old_value: oldName, new_value: newName,
           note: `[사유] ${ptChangeReason}`,
-        })
+        }))
       }
     }
     if (newPptTrainer !== oldPptVal) {
       const oldName = a.ppt_trainer?.name ?? statusLabel(oldPptVal)
       const newName = isSpecialVal(newPptTrainer) ? statusLabel(newPptTrainer) : trainers.find((t) => t.id === newPptTrainer)?.name ?? newPptTrainer
-      await changeTrainer(
+      promises.push(changeTrainer(
         a.id, 'ppt_trainer_id',
         isSpecialVal(newPptTrainer) ? null : newPptTrainer,
         oldName, newName, trainerChangeTarget.name,
-      )
-      await updateOtAssignment(a.id, {
-        ppt_assign_status: isSpecialVal(newPptTrainer) ? newPptTrainer : 'assigned',
-      })
+      ))
+      if (newPptTrainer === 'later' || newPptTrainer === 'not_requested') {
+        statusOverrides.ppt_assign_status = newPptTrainer
+      }
       if (pptChangeReason) {
-        await addChangeLog({
+        promises.push(addChangeLog({
           target_type: 'ot_assignment', target_id: a.id,
           action: 'PPT 변경 사유',
           old_value: oldName, new_value: newName,
           note: `[사유] ${pptChangeReason}`,
-        })
+        }))
       }
+    }
+
+    // 모든 변경 병렬 실행
+    await Promise.all(promises)
+
+    // 특수 상태(later/not_requested)만 별도 업데이트 (필요한 경우만)
+    if (Object.keys(statusOverrides).length > 0) {
+      await updateOtAssignment(a.id, statusOverrides)
     }
 
     setTrainerChangeTarget(null)
@@ -351,17 +365,18 @@ export function MemberList({ initialMembers, trainers = [] }: Props) {
     if (!editTarget) return
     setEditLoading(true)
 
-    // 회원 기본 정보 업데이트
-    await updateMember(editTarget.id, {
-      name: editName,
-      phone: editPhone,
-      gender: editGender as '남' | '여' | undefined || undefined,
-      exercise_time: editExerciseTime || null,
-      duration_months: editDuration || null,
-      notes: editNotes || null,
-    })
+    // 회원 기본 정보 + PT/PPT 담당자 변경을 병렬 실행
+    const promises: Promise<unknown>[] = [
+      updateMember(editTarget.id, {
+        name: editName,
+        phone: editPhone,
+        gender: editGender as '남' | '여' | undefined || undefined,
+        exercise_time: editExerciseTime || null,
+        duration_months: editDuration || null,
+        notes: editNotes || null,
+      }),
+    ]
 
-    // PT/PPT 담당자 변경 (배정이 있을 때만)
     if (editTarget.assignment) {
       const trainerUpdates: Record<string, string | null> = {}
       const newPt = editPtTrainer === 'none' ? null : editPtTrainer
@@ -375,9 +390,11 @@ export function MemberList({ initialMembers, trainers = [] }: Props) {
       }
 
       if (Object.keys(trainerUpdates).length > 0) {
-        await updateOtAssignment(editTarget.assignment.id, trainerUpdates)
+        promises.push(updateOtAssignment(editTarget.assignment.id, trainerUpdates))
       }
     }
+
+    await Promise.all(promises)
 
     setEditTarget(null)
     setEditLoading(false)

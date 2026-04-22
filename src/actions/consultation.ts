@@ -66,17 +66,20 @@ export async function upsertConsultationCard(
   const supabase = await createClient()
   const { data: { user } } = await supabase.auth.getUser()
 
-  // 회원 정보 동기화 — 상담카드에서 이름/번호/성별/운동시작일 변경 시 members 테이블도 업데이트
+  // 회원 정보 동기화 + 기존 카드 조회를 병렬 실행
   const memberUpdate: Record<string, unknown> = {}
   if (values.member_name) memberUpdate.name = values.member_name
   if (values.member_phone) memberUpdate.phone = values.member_phone
   if (values.member_gender) memberUpdate.gender = values.member_gender
   if (values.exercise_start_date) memberUpdate.start_date = values.exercise_start_date
-  if (Object.keys(memberUpdate).length > 0) {
-    await supabase.from('members').update({ ...memberUpdate, updated_at: new Date().toISOString() }).eq('id', memberId)
-  }
+  if (values.exercise_time_preference) memberUpdate.exercise_time = values.exercise_time_preference
 
-  const existing = await getConsultationCard(memberId)
+  const [, existing] = await Promise.all([
+    Object.keys(memberUpdate).length > 0
+      ? supabase.from('members').update({ ...memberUpdate, updated_at: new Date().toISOString() }).eq('id', memberId)
+      : Promise.resolve(),
+    getConsultationCard(memberId),
+  ])
 
   if (existing) {
     const { data, error } = await supabase
@@ -146,6 +149,15 @@ export async function updateStandaloneCard(
     .single()
 
   if (error) return { error: error.message }
+
+  // 회원 연결된 카드면 운동시간 동기화
+  if (data?.member_id && values.exercise_time_preference) {
+    await supabase.from('members').update({
+      exercise_time: values.exercise_time_preference,
+      updated_at: new Date().toISOString(),
+    }).eq('id', data.member_id)
+  }
+
   return { data }
 }
 
@@ -154,7 +166,7 @@ export async function linkCardToMember(cardId: string, memberId: string) {
   const supabase = await createClient()
 
   // 카드 데이터 조회 → 회원 정보 동기화
-  const { data: card } = await supabase.from('consultation_cards').select('exercise_start_date, member_name, member_phone, member_gender').eq('id', cardId).single()
+  const { data: card } = await supabase.from('consultation_cards').select('exercise_start_date, exercise_time_preference, member_name, member_phone, member_gender').eq('id', cardId).single()
 
   const { error } = await supabase
     .from('consultation_cards')
@@ -171,6 +183,7 @@ export async function linkCardToMember(cardId: string, memberId: string) {
   if (card) {
     const memberUpdate: Record<string, unknown> = {}
     if (card.exercise_start_date) memberUpdate.start_date = card.exercise_start_date
+    if (card.exercise_time_preference) memberUpdate.exercise_time = card.exercise_time_preference
     if (card.member_name) memberUpdate.name = card.member_name
     if (card.member_phone) memberUpdate.phone = card.member_phone
     if (card.member_gender) memberUpdate.gender = card.member_gender

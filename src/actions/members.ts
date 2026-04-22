@@ -347,7 +347,7 @@ export async function quickRegisterMember(values: {
         ...(expectedSessions ? { expected_sessions: expectedSessions } : {}),
         ...(actualSessions ? { actual_sessions: actualSessions } : {}),
       })
-      .select()
+      .select('id')
       .single()
 
     if (assignErr) return { error: assignErr.message }
@@ -359,7 +359,7 @@ export async function quickRegisterMember(values: {
 
   const memberData: Record<string, unknown> = {
     name: values.name,
-    phone: phone, // null 가능 (mig 028)
+    phone: phone,
     sports: values.ot_category ? [values.ot_category] : [],
     ot_category: values.ot_category || null,
     duration_months: values.duration_months || null,
@@ -378,7 +378,7 @@ export async function quickRegisterMember(values: {
   const { data: member, error: memberErr } = await supabase
     .from('members')
     .insert(memberData)
-    .select()
+    .select('id')
     .single()
 
   if (memberErr) return { error: memberErr.message }
@@ -396,7 +396,7 @@ export async function quickRegisterMember(values: {
       ...(expectedSessions ? { expected_sessions: expectedSessions } : {}),
       ...(actualSessions ? { actual_sessions: actualSessions } : {}),
     })
-    .select()
+    .select('id')
     .single()
 
   if (assignErr) return { error: assignErr.message }
