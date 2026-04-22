@@ -37,8 +37,9 @@ export function TopNav({ profile }: Props) {
       const { createClient } = await import('@/lib/supabase/client')
       const supabase = createClient()
       const urls: Record<string, string> = {}
+      const keyMap: Record<string, string> = { '신규': 'new', '재등록': 'renew' }
       for (const key of ['신규', '재등록']) {
-        const { data } = await supabase.storage.from('ot-images').list('pricing', { search: key })
+        const { data } = await supabase.storage.from('ot-images').list('pricing', { search: keyMap[key] })
         if (data && data.length > 0) {
           const latest = data.sort((a, b) => (b.created_at ?? '').localeCompare(a.created_at ?? ''))[0]
           const { data: pub } = supabase.storage.from('ot-images').getPublicUrl(`pricing/${latest.name}`)
@@ -55,7 +56,8 @@ export function TopNav({ profile }: Props) {
     const { createClient } = await import('@/lib/supabase/client')
     const supabase = createClient()
     const ext = file.name.split('.').pop() || 'jpg'
-    const path = `pricing/${tab}_${Date.now()}.${ext}`
+    const tabKey = tab === '신규' ? 'new' : 'renew'
+    const path = `pricing/${tabKey}_${Date.now()}.${ext}`
     const { error } = await supabase.storage.from('ot-images').upload(path, file)
     if (error) { alert('업로드 실패: ' + error.message); setPricingUploading(false); return }
     const { data: pub } = supabase.storage.from('ot-images').getPublicUrl(path)
@@ -76,13 +78,13 @@ export function TopNav({ profile }: Props) {
       <nav className="bg-black text-white">
         <div className="h-1 bg-yellow-500" />
 
-        <div className="flex items-center justify-between px-6 h-14">
-          <Link href="/ot" className="text-lg font-black tracking-wider italic">
+        <div className="flex items-center px-6 h-14">
+          <Link href="/ot" className="text-lg font-black tracking-wider italic shrink-0">
             HEALTHBOYGYM
           </Link>
 
-          {/* 데스크톱 메뉴 */}
-          <div className="hidden lg:flex items-center gap-6">
+          {/* 데스크톱 메뉴 (정중앙) */}
+          <div className="hidden lg:flex items-center gap-6 flex-1 justify-center">
             {NAV_ITEMS.map((item) => {
               const isActive = pathname.startsWith(item.href)
               const hasAccess = MENU_ACCESS[item.href]?.includes(profile.role) ?? true
@@ -106,16 +108,14 @@ export function TopNav({ profile }: Props) {
             })}
           </div>
 
-          {/* 회원권 금액 버튼 */}
-          <button
-            onClick={() => setShowPricing(true)}
-            className="hidden lg:flex items-center gap-1 px-4 py-1.5 bg-red-600 hover:bg-red-700 text-white text-sm font-bold rounded-lg transition-colors"
-          >
-            회원권 금액 보기
-          </button>
-
-          {/* 유저 + 로그아웃 */}
-          <div className="hidden lg:flex items-center gap-3">
+          {/* 오른쪽: 회원권 + 유저 + 로그아웃 */}
+          <div className="hidden lg:flex items-center gap-3 shrink-0">
+            <button
+              onClick={() => setShowPricing(true)}
+              className="px-3 py-1.5 bg-red-600 hover:bg-red-700 text-white text-xs font-bold rounded-lg transition-colors"
+            >
+              회원권 금액
+            </button>
             <div className="flex items-center gap-1.5 text-sm text-gray-400">
               <User className="h-4 w-4" />
               <span>{profile.name}</span>
