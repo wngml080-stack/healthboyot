@@ -1281,11 +1281,31 @@ export const OtProgramForm = forwardRef<OtProgramFormRef, Props>(function OtProg
                     )
 
                     return (
-                      <div className="space-y-3">
+                      <div
+                        className="space-y-3"
+                        tabIndex={0}
+                        onPaste={(e) => {
+                          const items = e.clipboardData?.items
+                          if (!items) return
+                          const files: File[] = []
+                          for (const item of Array.from(items)) {
+                            if (item.type.startsWith('image/') || item.type.startsWith('video/')) {
+                              const file = item.getAsFile()
+                              if (file) files.push(file)
+                            }
+                          }
+                          if (files.length === 0) return
+                          e.preventDefault()
+                          e.stopPropagation()
+                          const dt = new DataTransfer()
+                          files.forEach(f => dt.items.add(f))
+                          handleImageUpload(idx, dt.files)
+                        }}
+                      >
                         <div className="flex items-center justify-between">
-                          <Label className="text-xs font-bold">비포 / 애프터 / 운동영상 참고자료</Label>
-                          {canEdit && !isCompleted && (
-                            <label className="text-xs font-bold text-blue-600 hover:text-blue-800 cursor-pointer">
+                          <Label className="text-xs font-bold">비포 / 애프터 / 운동영상 참고자료 <span className="text-gray-400 font-normal">(Ctrl+V 붙여넣기 가능)</span></Label>
+                          {canEdit && (
+                            <label className="text-xs font-bold text-blue-600 hover:text-blue-800 cursor-pointer px-2 py-1 bg-blue-50 rounded-md border border-blue-200">
                               + 이미지/영상 추가
                               <input type="file" accept="image/*,video/*" multiple className="hidden" onChange={(e) => e.target.files && handleImageUpload(idx, e.target.files)} disabled={uploading} />
                             </label>
