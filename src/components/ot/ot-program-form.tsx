@@ -266,6 +266,28 @@ export const OtProgramForm = forwardRef<OtProgramFormRef, Props>(function OtProg
   const [sharing, setSharing] = useState(false)
   const [signOpening, setSignOpening] = useState(false)
 
+  // 클립보드 붙여넣기 → 이미지 업로드 (첫 번째 세션에 추가)
+  useEffect(() => {
+    const handlePaste = (e: ClipboardEvent) => {
+      const items = e.clipboardData?.items
+      if (!items) return
+      const files: File[] = []
+      for (const item of Array.from(items)) {
+        if (item.type.startsWith('image/')) {
+          const file = item.getAsFile()
+          if (file) files.push(file)
+        }
+      }
+      if (files.length === 0) return
+      e.preventDefault()
+      const dt = new DataTransfer()
+      files.forEach(f => dt.items.add(f))
+      handleImageUpload(0, dt.files)
+    }
+    document.addEventListener('paste', handlePaste)
+    return () => document.removeEventListener('paste', handlePaste)
+  }, []) // eslint-disable-line react-hooks/exhaustive-deps
+
   // 서명 완료 수신 (BroadcastChannel) → 세션에 반영 + 자동 저장
   const sessionsRef = useRef(sessions)
   sessionsRef.current = sessions
@@ -1169,15 +1191,19 @@ export const OtProgramForm = forwardRef<OtProgramFormRef, Props>(function OtProg
                           {new Date(r.uploaded_at).toLocaleString('ko', { month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit' })}
                         </p>
                         {canEdit && (
-                          <div className="flex gap-1">
+                          <div className="flex gap-0.5">
                             <button type="button"
-                              className={`flex-1 h-6 rounded text-[10px] font-bold border ${r.label === 'before' ? 'bg-blue-500 text-white border-blue-500' : 'bg-white text-gray-500 border-gray-200'}`}
+                              className={`flex-1 h-6 rounded text-[9px] font-bold border ${r.label === 'before' ? 'bg-blue-500 text-white border-blue-500' : 'bg-white text-gray-500 border-gray-200'}`}
                               onClick={() => updateRecordLabel(r.url, r.label === 'before' ? null : 'before')}
                             >BEFORE</button>
                             <button type="button"
-                              className={`flex-1 h-6 rounded text-[10px] font-bold border ${r.label === 'after' ? 'bg-green-500 text-white border-green-500' : 'bg-white text-gray-500 border-gray-200'}`}
+                              className={`flex-1 h-6 rounded text-[9px] font-bold border ${r.label === 'after' ? 'bg-green-500 text-white border-green-500' : 'bg-white text-gray-500 border-gray-200'}`}
                               onClick={() => updateRecordLabel(r.url, r.label === 'after' ? null : 'after')}
                             >AFTER</button>
+                            <button type="button"
+                              className={`flex-1 h-6 rounded text-[9px] font-bold border ${(r.label as string) === 'video' ? 'bg-purple-500 text-white border-purple-500' : 'bg-white text-gray-500 border-gray-200'}`}
+                              onClick={() => updateRecordLabel(r.url, (r.label as string) === 'video' ? null : 'video' as 'before')}
+                            >영상</button>
                           </div>
                         )}
                       </div>
