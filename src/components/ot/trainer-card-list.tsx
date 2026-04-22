@@ -99,7 +99,7 @@ export function TrainerCardList({ assignments, trainers = [], trainerId, trainer
 
   // 필터
   const [filter, setFilter] = useState<string>('전체')
-  const FILTERS = ['전체', 'PT', 'PPT', '1차', '2차', '3차', '거부', '연락두절', '스케줄미확정', '클로징실패', '등록완료', '매출대상', 'PT전환']
+  const FILTERS = ['전체', 'PT', 'PPT', '미진행', '1차', '2차', '3차', '4차+', '상태변경필요', '거부', '연락두절', '스케줄미확정', '클로징실패', '등록완료', '매출대상', 'PT전환']
 
   // 펼침
   const [expandedId, setExpandedId] = useState<string | null>(null)
@@ -337,9 +337,19 @@ export function TrainerCardList({ assignments, trainers = [], trainerId, trainer
         if (a.pt_trainer_id === trainerId) counts['PT'] = (counts['PT'] ?? 0) + 1
         if (a.ppt_trainer_id === trainerId) counts['PPT'] = (counts['PPT'] ?? 0) + 1
       }
-      if (done === 0 && !['거부','추후결정'].includes(a.status)) counts['1차'] = (counts['1차'] ?? 0) + 1
-      if (done === 1) counts['2차'] = (counts['2차'] ?? 0) + 1
-      if (done === 2) counts['3차'] = (counts['3차'] ?? 0) + 1
+      const scheduled = a.sessions?.filter((s) => s.scheduled_at && !s.completed_at).length ?? 0
+      const hasAny = done > 0 || scheduled > 0
+      if (!hasAny && !['거부','추후결정'].includes(a.status)) counts['미진행'] = (counts['미진행'] ?? 0) + 1
+      if (done === 0 && scheduled > 0) counts['1차'] = (counts['1차'] ?? 0) + 1
+      if (done === 1) counts['1차'] = (counts['1차'] ?? 0) + 1
+      if (done === 1 && scheduled > 0) counts['2차'] = (counts['2차'] ?? 0) + 1
+      if (done === 2) counts['2차'] = (counts['2차'] ?? 0) + 1
+      if (done === 2 && scheduled > 0) counts['3차'] = (counts['3차'] ?? 0) + 1
+      if (done >= 3) counts['3차'] = (counts['3차'] ?? 0) + 1
+      if (done >= 3 && scheduled > 0) counts['4차+'] = (counts['4차+'] ?? 0) + 1
+      if (done >= 4) counts['4차+'] = (counts['4차+'] ?? 0) + 1
+      // 수업 완료 후 상태변경 필요: 세션 완료했는데 sales_status가 아직 없는 회원
+      if (done > 0 && !a.sales_status && !a.is_sales_target && !a.is_pt_conversion && a.status !== '완료' && a.status !== '거부') counts['상태변경필요'] = (counts['상태변경필요'] ?? 0) + 1
       if (a.status === '거부') counts['거부'] = (counts['거부'] ?? 0) + 1
       if (a.sales_status === '연락두절') counts['연락두절'] = (counts['연락두절'] ?? 0) + 1
       if (a.sales_status === '스케줄미확정') counts['스케줄미확정'] = (counts['스케줄미확정'] ?? 0) + 1
@@ -362,11 +372,15 @@ export function TrainerCardList({ assignments, trainers = [], trainerId, trainer
   const filteredMembers = useMemo(() => {
     const base = filter === '전체' ? otOnlyAssignments : otOnlyAssignments.filter((a) => {
       const done = a.sessions?.filter((s) => s.completed_at).length ?? 0
+      const scheduled = a.sessions?.filter((s) => s.scheduled_at && !s.completed_at).length ?? 0
       if (filter === 'PT') return a.pt_trainer_id === trainerId
       if (filter === 'PPT') return a.ppt_trainer_id === trainerId
-      if (filter === '1차') return done === 0 && !['거부','추후결정'].includes(a.status)
-      if (filter === '2차') return done === 1
-      if (filter === '3차') return done === 2
+      if (filter === '미진행') return done === 0 && scheduled === 0 && !['거부','추후결정'].includes(a.status)
+      if (filter === '1차') return done <= 1 && (done === 0 ? scheduled > 0 : true) && !['거부','추후결정'].includes(a.status)
+      if (filter === '2차') return done >= 1 && done <= 2 && (done === 1 ? true : scheduled > 0)
+      if (filter === '3차') return done >= 2 && done <= 3
+      if (filter === '4차+') return done >= 3
+      if (filter === '상태변경필요') return done > 0 && !a.sales_status && !a.is_sales_target && !a.is_pt_conversion && a.status !== '완료' && a.status !== '거부'
       if (filter === '거부') return a.status === '거부'
       if (filter === '연락두절') return a.sales_status === '연락두절'
       if (filter === '스케줄미확정') return a.sales_status === '스케줄미확정'
@@ -726,6 +740,18 @@ export function TrainerCardList({ assignments, trainers = [], trainerId, trainer
                           <Badge variant="outline" className={`text-[10px] px-1.5 ${progress.color}`}>
                             {progress.label}
                           </Badge>
+                          {(() => {
+                            const completedSessions = (a.sessions ?? []).filter((s) => s.completed_at).sort((x, y) => (y.completed_at ?? '').localeCompare(x.completed_at ?? ''))
+                            if (completedSessions.length === 0) return null
+                            const lastDone = completedSessions[0].completed_at
+                            if (!lastDone) return null
+                            const days = Math.floor((Date.now() - new Date(lastDone).getTime()) / (1000 * 60 * 60 * 24))
+                            return (
+                              <span className={`text-[10px] font-bold ${days >= 7 ? 'text-red-500' : days >= 3 ? 'text-orange-500' : 'text-gray-400'}`}>
+                                D+{days}
+                              </span>
+                            )
+                          })()}
                           {a.is_sales_target && (
                             <Badge className="text-[10px] px-1.5 bg-red-500 text-white border-red-500 font-bold">★ 매출대상</Badge>
                           )}
