@@ -3,8 +3,8 @@
 import Link from 'next/link'
 import { usePathname } from 'next/navigation'
 import { cn } from '@/lib/utils'
-import { LogOut, Menu, X, User } from 'lucide-react'
-import { useState } from 'react'
+import { LogOut, Menu, X, User, Upload } from 'lucide-react'
+import { useState, useEffect } from 'react'
 import { signOut } from '@/actions/auth'
 import { Button } from '@/components/ui/button'
 import { NAV_ITEMS, MENU_ACCESS } from '@/lib/constants'
@@ -27,6 +27,41 @@ export function TopNav({ profile }: Props) {
   const [showNoAccess, setShowNoAccess] = useState(false)
   const [showPricing, setShowPricing] = useState(false)
   const [pricingTab, setPricingTab] = useState<'신규' | '재등록'>('신규')
+  const [pricingUrls, setPricingUrls] = useState<Record<string, string>>({})
+  const [pricingUploading, setPricingUploading] = useState(false)
+  const isAdmin = ['admin', '관리자'].includes(profile.role)
+
+  useEffect(() => {
+    if (!showPricing) return
+    const loadUrls = async () => {
+      const { createClient } = await import('@/lib/supabase/client')
+      const supabase = createClient()
+      const urls: Record<string, string> = {}
+      for (const key of ['신규', '재등록']) {
+        const { data } = await supabase.storage.from('ot-images').list('pricing', { search: key })
+        if (data && data.length > 0) {
+          const latest = data.sort((a, b) => (b.created_at ?? '').localeCompare(a.created_at ?? ''))[0]
+          const { data: pub } = supabase.storage.from('ot-images').getPublicUrl(`pricing/${latest.name}`)
+          urls[key] = pub.publicUrl + '?t=' + Date.now()
+        }
+      }
+      setPricingUrls(urls)
+    }
+    loadUrls()
+  }, [showPricing])
+
+  const handlePricingUpload = async (tab: string, file: File) => {
+    setPricingUploading(true)
+    const { createClient } = await import('@/lib/supabase/client')
+    const supabase = createClient()
+    const ext = file.name.split('.').pop() || 'jpg'
+    const path = `pricing/${tab}_${Date.now()}.${ext}`
+    const { error } = await supabase.storage.from('ot-images').upload(path, file)
+    if (error) { alert('업로드 실패: ' + error.message); setPricingUploading(false); return }
+    const { data: pub } = supabase.storage.from('ot-images').getPublicUrl(path)
+    setPricingUrls((prev) => ({ ...prev, [tab]: pub.publicUrl + '?t=' + Date.now() }))
+    setPricingUploading(false)
+  }
 
   const handleMenuClick = (href: string, e: React.MouseEvent) => {
     const allowedRoles = MENU_ACCESS[href]
@@ -167,14 +202,31 @@ export function TopNav({ profile }: Props) {
               <button className={`flex-1 py-2 rounded-lg text-sm font-bold transition-colors ${pricingTab === '재등록' ? 'bg-yellow-400 text-black' : 'bg-gray-100 text-gray-600'}`} onClick={() => setPricingTab('재등록')}>재등록</button>
             </div>
             <div className="rounded-lg border overflow-hidden">
-              <img
-                src={pricingTab === '신규' ? '/pricing-new.jpg' : '/pricing-renew.jpg'}
-                alt={`${pricingTab} 회원권`}
-                className="w-full"
-                onError={(e) => { (e.target as HTMLImageElement).style.display = 'none' }}
-              />
-              <p className="text-xs text-gray-400 text-center py-3">이미지가 없으면 관리자에게 문의하세요</p>
+              {pricingUrls[pricingTab] ? (
+                <img src={pricingUrls[pricingTab]} alt={`${pricingTab} 회원권`} className="w-full" />
+              ) : (
+                <div className="py-10 text-center text-sm text-gray-400">
+                  {pricingTab} 회원권 이미지가 없습니다
+                </div>
+              )}
             </div>
+            {isAdmin && (
+              <label className="flex items-center justify-center gap-2 w-full py-2.5 bg-blue-600 hover:bg-blue-700 text-white text-sm font-bold rounded-lg cursor-pointer transition-colors">
+                <Upload className="h-4 w-4" />
+                {pricingUploading ? '업로드 중...' : `${pricingTab} 이미지 변경`}
+                <input
+                  type="file"
+                  accept="image/*"
+                  className="hidden"
+                  disabled={pricingUploading}
+                  onChange={(e) => {
+                    const file = e.target.files?.[0]
+                    if (file) handlePricingUpload(pricingTab, file)
+                    e.target.value = ''
+                  }}
+                />
+              </label>
+            )}
           </div>
         </DialogContent>
       </Dialog>
