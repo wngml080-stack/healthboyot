@@ -502,12 +502,12 @@ export const OtProgramForm = forwardRef<OtProgramFormRef, Props>(function OtProg
 
   const handleSubmitSession = async (sessionIdx: number) => {
     const otSession = a.sessions?.find((s) => s.session_number === sessionIdx + 1)
-    if (!otSession?.completed_at) {
+    if (!otSession?.completed_at && !isAdmin) {
       alert(`${sessionIdx + 1}차 OT 수업이 완료되지 않았습니다.\n수업 완료 후 제출해주세요.`)
       return
     }
     const sessionData = sessions[sessionIdx]
-    if (!sessionData?.signature_url) {
+    if (!sessionData?.signature_url && !isAdmin) {
       alert(`회원 서명이 필요합니다.\n서명을 먼저 받아주세요.`)
       return
     }
@@ -746,12 +746,12 @@ export const OtProgramForm = forwardRef<OtProgramFormRef, Props>(function OtProg
                   {canEdit && !isSessionLocked(session) && (session.approval_status === '작성중' || !session.approval_status || session.approval_status === '반려') && (
                     <Button
                       size="sm"
-                      className={`h-7 text-xs font-bold ${session.signature_url ? 'bg-blue-600 hover:bg-blue-700 text-white' : 'bg-gray-300 text-gray-500 cursor-not-allowed'}`}
+                      className={`h-7 text-xs font-bold ${(session.signature_url || isAdmin) ? 'bg-blue-600 hover:bg-blue-700 text-white' : 'bg-gray-300 text-gray-500 cursor-not-allowed'}`}
                       onClick={() => handleSubmitSession(idx)}
-                      disabled={saving || !session.signature_url}
-                      title={!session.signature_url ? '회원 서명이 필요합니다' : ''}
+                      disabled={saving || (!session.signature_url && !isAdmin)}
+                      title={!session.signature_url && !isAdmin ? '회원 서명이 필요합니다' : ''}
                     >
-                      <Send className="h-3 w-3 mr-1" />{!session.signature_url ? '서명 필요' : `${idx + 1}차 제출`}
+                      <Send className="h-3 w-3 mr-1" />{!session.signature_url && !isAdmin ? '서명 필요' : `${idx + 1}차 제출`}
                     </Button>
                   )}
                   {canEdit && session.approval_status === '제출완료' && program?.id && (
@@ -1352,7 +1352,7 @@ export const OtProgramForm = forwardRef<OtProgramFormRef, Props>(function OtProg
                   {/* 세션별 저장 / 완료 처리 버튼 — 완료 플로우에서 해당 차수일 때만 노출 */}
                   {onCompleteSession && completingSessionIdx === idx && (
                     <div className="rounded-lg border border-gray-200 bg-gray-50 p-3 space-y-2">
-                      {!session.signature_url && (
+                      {!session.signature_url && !isAdmin && (
                         <p className="text-xs text-red-600 bg-red-50 border border-red-200 rounded p-2">
                           ⚠️ 회원 서명이 필요합니다. <span className="font-bold">현장 서명</span> 버튼으로 먼저 서명을 받아주세요.
                         </p>
@@ -1370,9 +1370,9 @@ export const OtProgramForm = forwardRef<OtProgramFormRef, Props>(function OtProg
                         <Button
                           type="button"
                           className="flex-1 h-10 bg-green-600 hover:bg-green-700 text-white font-bold disabled:bg-gray-300 disabled:text-gray-500"
-                          disabled={completeLoading || !session.signature_url}
+                          disabled={completeLoading || (!session.signature_url && !isAdmin)}
                           onClick={() => onCompleteSession(idx)}
-                          title={!session.signature_url ? '회원 서명이 필요합니다' : ''}
+                          title={!session.signature_url && !isAdmin ? '회원 서명이 필요합니다' : ''}
                         >
                           <CheckCircle className="h-4 w-4 mr-2" />
                           {completeLoading ? '처리 중...' : `${idx + 1}차 완료 처리`}
