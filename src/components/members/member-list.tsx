@@ -1,10 +1,9 @@
 'use client'
 
-import { useState, useRef, useCallback, useMemo, Fragment } from 'react'
+import { useState, useRef, useCallback, useMemo, Fragment, memo } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
 import { Search, Pencil, ChevronDown, ChevronUp, Trash2, AlertTriangle, ArrowRightLeft, ArrowUpDown, ArrowUp, ArrowDown, UserPlus } from 'lucide-react'
 import { Input } from '@/components/ui/input'
-import { Label } from '@/components/ui/label'
 import { Button } from '@/components/ui/button'
 import {
   Select,
@@ -29,10 +28,12 @@ import {
   TableHeader,
   TableRow,
 } from '@/components/ui/table'
-import { updateMember, deleteMember, quickRegisterMember } from '@/actions/members'
-import { changeTrainer } from '@/actions/ot'
+import { deleteMember } from '@/actions/members'
 import { addChangeLog } from '@/actions/change-log'
 import { updateOtAssignment } from '@/actions/ot'
+import { MemberEditDialog } from './member-edit-dialog'
+import { MemberAddDialog } from './member-add-dialog'
+import { TrainerChangeDialog } from './trainer-change-dialog'
 import type { Member, OtAssignmentWithDetails, Profile } from '@/types'
 
 export interface MemberWithOt extends Member {
@@ -56,9 +57,7 @@ function getProgressLabel(a?: OtAssignmentWithDetails | null): string {
   const scheduled = a.sessions?.filter((s) => s.scheduled_at && !s.completed_at).length ?? 0
   const total = done + scheduled
 
-  // 세션이 하나도 없으면 대기
   if (total === 0) {
-    // 배정완료 세분화
     if (a.status === '배정완료') {
       const ptReal = !!a.pt_trainer_id && a.pt_assign_status !== 'later' && a.pt_assign_status !== 'not_requested'
       const pptReal = !!a.ppt_trainer_id && a.ppt_assign_status !== 'later' && a.ppt_assign_status !== 'not_requested'
@@ -69,7 +68,6 @@ function getProgressLabel(a?: OtAssignmentWithDetails | null): string {
     return '대기'
   }
 
-  // OT 진행 현황
   if (done >= 3 || a.status === '완료') return 'OT3차완료'
   if (done === 2 && scheduled > 0) return 'OT3차예정'
   if (done === 2) return 'OT2차완료'
@@ -113,62 +111,10 @@ export function MemberList({ initialMembers, trainers = [] }: Props) {
   // 낙관적 UI 업데이트를 위한 로컬 오버라이드
   const [trainerOverrides, setTrainerOverrides] = useState<Record<string, { pt?: { id: string | null; name: string; status: string }; ppt?: { id: string | null; name: string; status: string } }>>({})
 
-
-  // 회원 추가
+  // 다이얼로그 열림 상태 (폼 state는 각 다이얼로그 컴포넌트 내부에서 관리)
   const [showAddDialog, setShowAddDialog] = useState(false)
-  const [addName, setAddName] = useState('')
-  const [addPhone, setAddPhone] = useState('')
-  const [addAssignDate, setAddAssignDate] = useState('')
-  const [addDateUnknown, setAddDateUnknown] = useState(false)
-  const [addCategory, setAddCategory] = useState<string>('')
-  const [addTrainingType, setAddTrainingType] = useState<string>('')
-  const [addDuration, setAddDuration] = useState('')
-  const [addExerciseTime, setAddExerciseTime] = useState('')
-  const [addExerciseGoal, setAddExerciseGoal] = useState('')
-  const [addNotes, setAddNotes] = useState('')
-  const [addTrainerId, setAddTrainerId] = useState('')
-  const [addLoading, setAddLoading] = useState(false)
-
-  const resetAddForm = () => {
-    setAddName(''); setAddPhone(''); setAddAssignDate(''); setAddDateUnknown(false)
-    setAddCategory(''); setAddTrainingType(''); setAddDuration('')
-    setAddExerciseTime(''); setAddExerciseGoal(''); setAddNotes(''); setAddTrainerId('')
-  }
-
-  const handleAddMember = async () => {
-    if (!addName || !addPhone || !addCategory) return
-    if (!addDateUnknown && !addAssignDate) {
-      alert('배정날짜를 입력하거나 "모름"을 체크해주세요')
-      return
-    }
-    const phone = addPhone.replace(/[^0-9]/g, '')
-    if (phone.length < 10 || phone.length > 11) {
-      alert('올바른 전화번호를 입력해주세요 (10~11자리)')
-      return
-    }
-
-    setAddLoading(true)
-    const result = await quickRegisterMember({
-      name: addName,
-      phone,
-      trainerId: addTrainerId || '',
-      registered_at: addDateUnknown ? undefined : addAssignDate || undefined,
-      ot_category: addCategory || null,
-      training_type: addTrainingType || undefined,
-      duration_months: addDuration || null,
-      exercise_time: addExerciseTime || null,
-      exercise_goal: addExerciseGoal || undefined,
-      notes: addNotes || null,
-    })
-    if (result.error) {
-      alert('등록 실패: ' + result.error)
-    } else {
-      setShowAddDialog(false)
-      resetAddForm()
-      router.refresh()
-    }
-    setAddLoading(false)
-  }
+  const [editTarget, setEditTarget] = useState<MemberWithOt | null>(null)
+  const [trainerChangeTarget, setTrainerChangeTarget] = useState<MemberWithOt | null>(null)
 
   // 정렬
   type SortKey = 'registered_at' | 'name' | 'ot_category' | 'start_date' | 'exercise_time' | 'pt_trainer' | 'ppt_trainer' | 'progress'
@@ -185,10 +131,8 @@ export function MemberList({ initialMembers, trainers = [] }: Props) {
   }
 
   const sortedMembers = useMemo(() => {
-    // 수기 회원 포함 — 모든 회원 표시 (회원 추가로 만든 수기 회원도 여기 나타남)
     const allMembers = initialMembers
 
-    // 1) 검색어로 즉시 필터링 (서버 round-trip 기다리지 않고 0ms 응답)
     const q = search.trim().toLowerCase()
     const filtered = q
       ? allMembers.filter(
@@ -196,7 +140,6 @@ export function MemberList({ initialMembers, trainers = [] }: Props) {
         )
       : allMembers
 
-    // 2) 정렬
     const collator = new Intl.Collator('ko')
     const progressCache = sortKey === 'progress'
       ? new Map(filtered.map((m) => [m.id, getProgressLabel(m.assignment)]))
@@ -221,96 +164,7 @@ export function MemberList({ initialMembers, trainers = [] }: Props) {
     return list
   }, [initialMembers, search, sortKey, sortAsc])
 
-  // 선생님 변경 팝업
-  const [trainerChangeTarget, setTrainerChangeTarget] = useState<MemberWithOt | null>(null)
-  const [newPtTrainer, setNewPtTrainer] = useState('')
-  const [newPptTrainer, setNewPptTrainer] = useState('')
-  const [ptChangeReason, setPtChangeReason] = useState('')
-  const [pptChangeReason, setPptChangeReason] = useState('')
-  const [trainerChanging, setTrainerChanging] = useState(false)
-
-  const openTrainerChange = (m: MemberWithOt) => {
-    setTrainerChangeTarget(m)
-    const ptStatus = m.assignment?.pt_assign_status
-    const pptStatus = m.assignment?.ppt_assign_status
-    setNewPtTrainer(m.assignment?.pt_trainer_id ?? (ptStatus === 'later' ? 'later' : ptStatus === 'not_requested' ? 'not_requested' : 'none'))
-    setNewPptTrainer(m.assignment?.ppt_trainer_id ?? (pptStatus === 'later' ? 'later' : pptStatus === 'not_requested' ? 'not_requested' : 'none'))
-    setPtChangeReason('')
-    setPptChangeReason('')
-  }
-
-  const isSpecialVal = (v: string) => v === 'none' || v === 'later' || v === 'not_requested'
-  const statusLabel = (v: string) => v === 'later' ? '추후배정' : v === 'not_requested' ? '미신청' : '미배정'
-
-  const handleTrainerChange = async () => {
-    if (!trainerChangeTarget?.assignment) return
-    setTrainerChanging(true)
-    const a = trainerChangeTarget.assignment
-    const oldPtVal = a.pt_trainer_id ?? (a.pt_assign_status === 'later' ? 'later' : a.pt_assign_status === 'not_requested' ? 'not_requested' : 'none')
-    const oldPptVal = a.ppt_trainer_id ?? (a.ppt_assign_status === 'later' ? 'later' : a.ppt_assign_status === 'not_requested' ? 'not_requested' : 'none')
-
-    // PT, PPT 변경을 병렬로 처리 (changeTrainer가 이미 assign_status도 업데이트하므로 중복 호출 제거)
-    const promises: Promise<unknown>[] = []
-
-    // 추후배정/미신청 등 특수 상태는 changeTrainer가 처리 못하므로 별도 업데이트
-    const statusOverrides: Record<string, string> = {}
-
-    if (newPtTrainer !== oldPtVal) {
-      const oldName = a.pt_trainer?.name ?? statusLabel(oldPtVal)
-      const newName = isSpecialVal(newPtTrainer) ? statusLabel(newPtTrainer) : trainers.find((t) => t.id === newPtTrainer)?.name ?? newPtTrainer
-      promises.push(changeTrainer(
-        a.id, 'pt_trainer_id',
-        isSpecialVal(newPtTrainer) ? null : newPtTrainer,
-        oldName, newName, trainerChangeTarget.name,
-      ))
-      // changeTrainer는 trainer_id가 null일 때 'none'으로 설정하지만, 'later'/'not_requested'는 별도 처리 필요
-      if (newPtTrainer === 'later' || newPtTrainer === 'not_requested') {
-        statusOverrides.pt_assign_status = newPtTrainer
-      }
-      if (ptChangeReason) {
-        promises.push(addChangeLog({
-          target_type: 'ot_assignment', target_id: a.id,
-          action: 'PT 변경 사유',
-          old_value: oldName, new_value: newName,
-          note: `[사유] ${ptChangeReason}`,
-        }))
-      }
-    }
-    if (newPptTrainer !== oldPptVal) {
-      const oldName = a.ppt_trainer?.name ?? statusLabel(oldPptVal)
-      const newName = isSpecialVal(newPptTrainer) ? statusLabel(newPptTrainer) : trainers.find((t) => t.id === newPptTrainer)?.name ?? newPptTrainer
-      promises.push(changeTrainer(
-        a.id, 'ppt_trainer_id',
-        isSpecialVal(newPptTrainer) ? null : newPptTrainer,
-        oldName, newName, trainerChangeTarget.name,
-      ))
-      if (newPptTrainer === 'later' || newPptTrainer === 'not_requested') {
-        statusOverrides.ppt_assign_status = newPptTrainer
-      }
-      if (pptChangeReason) {
-        promises.push(addChangeLog({
-          target_type: 'ot_assignment', target_id: a.id,
-          action: 'PPT 변경 사유',
-          old_value: oldName, new_value: newName,
-          note: `[사유] ${pptChangeReason}`,
-        }))
-      }
-    }
-
-    // 모든 변경 병렬 실행
-    await Promise.all(promises)
-
-    // 특수 상태(later/not_requested)만 별도 업데이트 (필요한 경우만)
-    if (Object.keys(statusOverrides).length > 0) {
-      await updateOtAssignment(a.id, statusOverrides)
-    }
-
-    setTrainerChangeTarget(null)
-    setTrainerChanging(false)
-    router.refresh()
-  }
-
-  // 중복 체크: 이름 + 번호 뒷자리 4개 기준 (전화번호 없는 회원은 중복 검사 제외)
+  // 중복 체크
   const duplicateIds = useMemo(() => {
     const map = new Map<string, string[]>()
     for (const m of initialMembers) {
@@ -337,70 +191,6 @@ export function MemberList({ initialMembers, trainers = [] }: Props) {
     router.refresh()
   }
 
-  // 회원 편집
-  const [editTarget, setEditTarget] = useState<MemberWithOt | null>(null)
-  const [editName, setEditName] = useState('')
-  const [editPhone, setEditPhone] = useState('')
-  const [editGender, setEditGender] = useState('')
-  const [editExerciseTime, setEditExerciseTime] = useState('')
-  const [editDuration, setEditDuration] = useState('')
-  const [editNotes, setEditNotes] = useState('')
-  const [editPtTrainer, setEditPtTrainer] = useState('')
-  const [editPptTrainer, setEditPptTrainer] = useState('')
-  const [editLoading, setEditLoading] = useState(false)
-
-  const openEdit = (m: MemberWithOt) => {
-    setEditTarget(m)
-    setEditName(m.name)
-    setEditPhone(m.phone ?? '')
-    setEditGender(m.gender ?? '')
-    setEditExerciseTime(m.exercise_time ?? '')
-    setEditDuration(m.duration_months ? String(m.duration_months) : '')
-    setEditNotes(m.notes ?? '')
-    setEditPtTrainer(m.assignment?.pt_trainer_id ?? 'none')
-    setEditPptTrainer(m.assignment?.ppt_trainer_id ?? 'none')
-  }
-
-  const handleEditSave = async () => {
-    if (!editTarget) return
-    setEditLoading(true)
-
-    // 회원 기본 정보 + PT/PPT 담당자 변경을 병렬 실행
-    const promises: Promise<unknown>[] = [
-      updateMember(editTarget.id, {
-        name: editName,
-        phone: editPhone,
-        gender: editGender as '남' | '여' | undefined || undefined,
-        exercise_time: editExerciseTime || null,
-        duration_months: editDuration || null,
-        notes: editNotes || null,
-      }),
-    ]
-
-    if (editTarget.assignment) {
-      const trainerUpdates: Record<string, string | null> = {}
-      const newPt = editPtTrainer === 'none' ? null : editPtTrainer
-      const newPpt = editPptTrainer === 'none' ? null : editPptTrainer
-
-      if (newPt !== editTarget.assignment.pt_trainer_id) {
-        trainerUpdates.pt_trainer_id = newPt
-      }
-      if (newPpt !== editTarget.assignment.ppt_trainer_id) {
-        trainerUpdates.ppt_trainer_id = newPpt
-      }
-
-      if (Object.keys(trainerUpdates).length > 0) {
-        promises.push(updateOtAssignment(editTarget.assignment.id, trainerUpdates))
-      }
-    }
-
-    await Promise.all(promises)
-
-    setEditTarget(null)
-    setEditLoading(false)
-    router.refresh()
-  }
-
   const pushFilters = useCallback((updates: Record<string, string>) => {
     const params = new URLSearchParams(searchParams.toString())
     Object.entries(updates).forEach(([k, v]) => {
@@ -416,6 +206,13 @@ export function MemberList({ initialMembers, trainers = [] }: Props) {
       pushFilters({ search: value })
     }, 300)
   }, [pushFilters])
+
+  const handleDialogSaved = useCallback(() => {
+    setEditTarget(null)
+    setTrainerChangeTarget(null)
+    setShowAddDialog(false)
+    router.refresh()
+  }, [router])
 
   return (
     <>
@@ -483,7 +280,7 @@ export function MemberList({ initialMembers, trainers = [] }: Props) {
         <Button
           size="sm"
           className="h-9 bg-blue-600 hover:bg-blue-700 text-white w-full sm:w-auto sm:ml-auto"
-          onClick={() => { resetAddForm(); setShowAddDialog(true) }}
+          onClick={() => setShowAddDialog(true)}
         >
           <UserPlus className="h-4 w-4 mr-1" />회원 추가
         </Button>
@@ -558,7 +355,6 @@ export function MemberList({ initialMembers, trainers = [] }: Props) {
                               const newTrainer = trainers.find((t) => t.id === v)
                               const newName = v === 'none' ? '미배정' : v === 'later' ? '추후배정' : v === 'not_requested' ? '미신청' : newTrainer?.name ?? v
                               const newStatus = v === 'later' ? 'later' : v === 'none' ? 'none' : v === 'not_requested' ? 'not_requested' : 'assigned'
-                              // 낙관적 업데이트: 즉시 UI 반영
                               setTrainerOverrides(prev => ({
                                 ...prev,
                                 [m.assignment!.id]: {
@@ -566,7 +362,6 @@ export function MemberList({ initialMembers, trainers = [] }: Props) {
                                   pt: { id: (v === 'none' || v === 'later' || v === 'not_requested') ? null : v, name: newName, status: newStatus },
                                 },
                               }))
-                              // 서버 호출 병렬 실행
                               await Promise.all([
                                 updateOtAssignment(m.assignment!.id, {
                                   pt_trainer_id: (v === 'none' || v === 'later' || v === 'not_requested') ? null : v,
@@ -610,7 +405,6 @@ export function MemberList({ initialMembers, trainers = [] }: Props) {
                                 const newTrainer = trainers.find((t) => t.id === v)
                                 const newName = v === 'none' ? '미배정' : v === 'later' ? '추후배정' : v === 'not_requested' ? '미신청' : newTrainer?.name ?? v
                                 const newStatus = v === 'later' ? 'later' : v === 'none' ? 'none' : v === 'not_requested' ? 'not_requested' : 'assigned'
-                                // 낙관적 업데이트: 즉시 UI 반영
                                 setTrainerOverrides(prev => ({
                                   ...prev,
                                   [m.assignment!.id]: {
@@ -618,7 +412,6 @@ export function MemberList({ initialMembers, trainers = [] }: Props) {
                                     ppt: { id: (v === 'none' || v === 'later' || v === 'not_requested') ? null : v, name: newName, status: newStatus },
                                   },
                                 }))
-                                // 서버 호출 병렬 실행
                                 await Promise.all([
                                   updateOtAssignment(m.assignment!.id, {
                                     ppt_trainer_id: (v === 'none' || v === 'later' || v === 'not_requested') ? null : v,
@@ -698,12 +491,12 @@ export function MemberList({ initialMembers, trainers = [] }: Props) {
                               삭제
                             </Button>
                             {m.assignment && (
-                              <Button size="sm" className="bg-blue-500 hover:bg-blue-600 text-white" onClick={(e) => { e.stopPropagation(); openTrainerChange(m) }}>
+                              <Button size="sm" className="bg-blue-500 hover:bg-blue-600 text-white" onClick={(e) => { e.stopPropagation(); setTrainerChangeTarget(m) }}>
                                 <ArrowRightLeft className="h-3.5 w-3.5 mr-1" />
                                 선생님 변경
                               </Button>
                             )}
-                            <Button size="sm" className="bg-gray-700 hover:bg-gray-800 text-white" onClick={(e) => { e.stopPropagation(); openEdit(m) }}>
+                            <Button size="sm" className="bg-gray-700 hover:bg-gray-800 text-white" onClick={(e) => { e.stopPropagation(); setEditTarget(m) }}>
                               <Pencil className="h-3.5 w-3.5 mr-1" />
                               수정
                             </Button>
@@ -719,95 +512,16 @@ export function MemberList({ initialMembers, trainers = [] }: Props) {
         </Table>
       </div>
 
-      {/* 회원 편집 다이얼로그 */}
-      <Dialog open={!!editTarget} onOpenChange={() => setEditTarget(null)}>
-        <DialogContent className="max-w-md max-h-[90vh] overflow-y-auto">
-          <DialogHeader>
-            <DialogTitle>회원 정보 수정</DialogTitle>
-            <DialogDescription>{editTarget?.name}</DialogDescription>
-          </DialogHeader>
-          <div className="space-y-4">
-            <div className="grid grid-cols-2 gap-3">
-              <div className="space-y-2">
-                <Label>이름</Label>
-                <Input value={editName} onChange={(e) => setEditName(e.target.value)} />
-              </div>
-              <div className="space-y-2">
-                <Label>연락처</Label>
-                <Input value={editPhone} onChange={(e) => setEditPhone(e.target.value)} />
-              </div>
-            </div>
-            <div className="grid grid-cols-2 gap-3">
-              <div className="space-y-2">
-                <Label>성별</Label>
-                <Select value={editGender || 'none'} onValueChange={(v) => setEditGender(v === 'none' ? '' : v)}>
-                  <SelectTrigger className="bg-white text-gray-900 border-gray-300"><SelectValue /></SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="none">미입력</SelectItem>
-                    <SelectItem value="남">남</SelectItem>
-                    <SelectItem value="여">여</SelectItem>
-                  </SelectContent>
-                </Select>
-              </div>
-              <div className="space-y-2">
-                <Label>운동기간</Label>
-                <Input value={editDuration} onChange={(e) => setEditDuration(e.target.value)} placeholder="예: 헬스3, 기필10" />
-              </div>
-            </div>
-            <div className="space-y-2">
-              <Label>운동시간</Label>
-              <Input value={editExerciseTime} onChange={(e) => setEditExerciseTime(e.target.value)} placeholder="예: 저녁시간" />
-            </div>
-            <div className="space-y-2">
-              <Label>특이사항</Label>
-              <textarea
-                className="flex min-h-[120px] w-full rounded-md border border-gray-300 bg-white px-3 py-2 text-sm"
-                value={editNotes}
-                onChange={(e) => setEditNotes(e.target.value)}
-              />
-            </div>
-
-            {/* PT / PPT 담당자 */}
-            <div className="border-t border-gray-100 pt-4">
-              <p className="text-sm font-medium text-gray-900 mb-3">담당자 배정</p>
-              <div className="grid grid-cols-2 gap-3">
-                <div className="space-y-2">
-                  <Label>PT 담당</Label>
-                  <Select value={editPtTrainer} onValueChange={setEditPtTrainer}>
-                    <SelectTrigger><SelectValue /></SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="none">미배정</SelectItem>
-                      <SelectItem value="not_requested">미신청</SelectItem>
-                      <SelectItem value="later">추후배정</SelectItem>
-                      {trainers.map((t) => (
-                        <SelectItem key={t.id} value={t.id}>{t.name}</SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                </div>
-                <div className="space-y-2">
-                  <Label>PPT 담당</Label>
-                  <Select value={editPptTrainer} onValueChange={setEditPptTrainer}>
-                    <SelectTrigger><SelectValue /></SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="none">미배정</SelectItem>
-                      <SelectItem value="not_requested">미신청</SelectItem>
-                      <SelectItem value="later">추후배정</SelectItem>
-                      {trainers.map((t) => (
-                        <SelectItem key={t.id} value={t.id}>{t.name}</SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                </div>
-              </div>
-            </div>
-
-            <Button className="w-full" onClick={handleEditSave} disabled={editLoading}>
-              {editLoading ? '저장 중...' : '저장'}
-            </Button>
-          </div>
-        </DialogContent>
-      </Dialog>
+      {/* 회원 편집 다이얼로그 — 별도 컴포넌트로 분리하여 입력 시 테이블 리렌더 방지 */}
+      {editTarget && (
+        <MemberEditDialog
+          key={editTarget.id}
+          member={editTarget}
+          trainers={trainers}
+          onClose={() => setEditTarget(null)}
+          onSaved={handleDialogSaved}
+        />
+      )}
 
       {/* 삭제 확인 다이얼로그 */}
       <Dialog open={!!deleteConfirm} onOpenChange={() => setDeleteConfirm(null)}>
@@ -831,193 +545,24 @@ export function MemberList({ initialMembers, trainers = [] }: Props) {
         </DialogContent>
       </Dialog>
 
-      {/* 선생님 변경 팝업 */}
-      <Dialog open={!!trainerChangeTarget} onOpenChange={() => setTrainerChangeTarget(null)}>
-        <DialogContent className="max-w-sm">
-          <DialogHeader>
-            <DialogTitle className="flex items-center gap-2 text-blue-600">
-              <ArrowRightLeft className="h-5 w-5" />
-              선생님 변경
-            </DialogTitle>
-            <DialogDescription>
-              <strong>{trainerChangeTarget?.name}</strong> 회원의 담당 선생님을 변경합니다.<br />
-              변경 시 수업 히스토리가 새 선생님 폴더로 이동됩니다.
-            </DialogDescription>
-          </DialogHeader>
-          <div className="space-y-4">
-            {trainerChangeTarget?.assignment && (
-              <div className="rounded-md bg-gray-50 p-3 text-sm space-y-1">
-                <p>현재 PT: <strong>{trainerChangeTarget.assignment.pt_trainer?.name ?? '미배정'}</strong></p>
-                <p>현재 PPT: <strong>{trainerChangeTarget.assignment.ppt_trainer?.name ?? '미배정'}</strong></p>
-              </div>
-            )}
-            <div className="space-y-4">
-              {/* PT */}
-              <div className="rounded-lg border border-blue-200 bg-blue-50/30 p-3 space-y-2">
-                <Label className="text-sm text-blue-600 font-bold">PT 담당</Label>
-                <Select value={newPtTrainer} onValueChange={setNewPtTrainer}>
-                  <SelectTrigger className="bg-white text-gray-900 border-gray-300">
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="none">미배정</SelectItem>
-                    <SelectItem value="not_requested">미신청</SelectItem>
-                    <SelectItem value="later">추후배정</SelectItem>
-                    {trainers.map((t) => (
-                      <SelectItem key={t.id} value={t.id}>{t.name}</SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-                {newPtTrainer !== (trainerChangeTarget?.assignment?.pt_trainer_id ?? 'none') && (
-                  <div className="space-y-1">
-                    <Label className="text-xs text-blue-500">변경 사유</Label>
-                    <textarea
-                      className="w-full rounded-md border border-blue-200 bg-white px-3 py-2 text-sm placeholder:text-gray-400 focus:ring-2 focus:ring-blue-400 min-h-[50px]"
-                      placeholder="PT 변경 사유를 입력해주세요"
-                      value={ptChangeReason}
-                      onChange={(e) => setPtChangeReason(e.target.value)}
-                    />
-                  </div>
-                )}
-              </div>
+      {/* 선생님 변경 팝업 — 별도 컴포넌트 */}
+      {trainerChangeTarget && (
+        <TrainerChangeDialog
+          key={trainerChangeTarget.id}
+          member={trainerChangeTarget}
+          trainers={trainers}
+          onClose={() => setTrainerChangeTarget(null)}
+          onSaved={handleDialogSaved}
+        />
+      )}
 
-              {/* PPT */}
-              <div className="rounded-lg border border-purple-200 bg-purple-50/30 p-3 space-y-2">
-                <Label className="text-sm text-purple-600 font-bold">PPT 담당</Label>
-                <Select value={newPptTrainer} onValueChange={setNewPptTrainer}>
-                  <SelectTrigger className="bg-white text-gray-900 border-gray-300">
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="none">미배정</SelectItem>
-                    <SelectItem value="not_requested">미신청</SelectItem>
-                    <SelectItem value="later">추후배정</SelectItem>
-                    {trainers.map((t) => (
-                      <SelectItem key={t.id} value={t.id}>{t.name}</SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-                {newPptTrainer !== (trainerChangeTarget?.assignment?.ppt_trainer_id ?? 'none') && (
-                  <div className="space-y-1">
-                    <Label className="text-xs text-purple-500">변경 사유</Label>
-                    <textarea
-                      className="w-full rounded-md border border-purple-200 bg-white px-3 py-2 text-sm placeholder:text-gray-400 focus:ring-2 focus:ring-purple-400 min-h-[50px]"
-                      placeholder="PPT 변경 사유를 입력해주세요"
-                      value={pptChangeReason}
-                      onChange={(e) => setPptChangeReason(e.target.value)}
-                    />
-                  </div>
-                )}
-              </div>
-            </div>
-            <Button className="w-full bg-blue-600 hover:bg-blue-700 text-white" onClick={handleTrainerChange} disabled={trainerChanging}>
-              {trainerChanging ? '변경 중...' : '선생님 변경'}
-            </Button>
-          </div>
-        </DialogContent>
-      </Dialog>
-
-      {/* 회원 추가 다이얼로그 */}
-      <Dialog open={showAddDialog} onOpenChange={setShowAddDialog}>
-        <DialogContent className="max-w-md max-h-[90vh] overflow-y-auto">
-          <DialogHeader>
-            <DialogTitle className="flex items-center gap-2">
-              <UserPlus className="h-5 w-5 text-blue-600" />
-              회원 추가
-            </DialogTitle>
-            <DialogDescription>새 회원 정보를 입력해주세요</DialogDescription>
-          </DialogHeader>
-          <div className="space-y-4">
-            {/* 이름 * */}
-            <div className="space-y-2">
-              <Label>이름 *</Label>
-              <Input value={addName} onChange={(e) => setAddName(e.target.value)} placeholder="회원 이름" />
-            </div>
-            {/* 전화번호 * */}
-            <div className="space-y-2">
-              <Label>전화번호 *</Label>
-              <Input value={addPhone} onChange={(e) => setAddPhone(e.target.value)} placeholder="01012345678" />
-            </div>
-            {/* 배정날짜 * */}
-            <div className="space-y-2">
-              <Label>배정날짜 *</Label>
-              <div className="flex gap-2 items-center">
-                <Input
-                  type="date"
-                  value={addAssignDate}
-                  onChange={(e) => setAddAssignDate(e.target.value)}
-                  disabled={addDateUnknown}
-                  className={`flex-1 ${addDateUnknown ? 'opacity-50' : ''}`}
-                />
-                <button
-                  type="button"
-                  className={`shrink-0 rounded-md border px-3 py-2 text-sm font-medium transition-colors ${
-                    addDateUnknown
-                      ? 'bg-gray-600 text-white border-gray-600'
-                      : 'bg-white text-gray-500 border-gray-300 hover:bg-gray-50'
-                  }`}
-                  onClick={() => { setAddDateUnknown(!addDateUnknown); if (!addDateUnknown) setAddAssignDate('') }}
-                >
-                  모름
-                </button>
-              </div>
-            </div>
-            {/* 담당 트레이너 */}
-            <div className="space-y-2">
-              <Label>담당 트레이너</Label>
-              <Select value={addTrainerId} onValueChange={setAddTrainerId}>
-                <SelectTrigger>
-                  <SelectValue placeholder="선택 안함 (미배정)" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="none">미배정</SelectItem>
-                  {trainers.map((t) => (
-                    <SelectItem key={t.id} value={t.id}>{t.name}</SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
-            {/* 종목 * */}
-            <div className="space-y-2">
-              <Label>종목 *</Label>
-              <Input value={addCategory} onChange={(e) => setAddCategory(e.target.value)} placeholder="예: 헬스, 필라, 헬스+필라" />
-            </div>
-            {/* 운동기간 */}
-            <div className="space-y-2">
-              <Label>운동기간</Label>
-              <Input value={addDuration} onChange={(e) => setAddDuration(e.target.value)} placeholder="예: 3개월, 6개월" />
-            </div>
-            {/* 운동 희망시간 */}
-            <div className="space-y-2">
-              <Label>운동 희망시간</Label>
-              <Input value={addExerciseTime} onChange={(e) => setAddExerciseTime(e.target.value)} placeholder="예: 평일 18시 이후" />
-            </div>
-            {/* 운동목적 */}
-            <div className="space-y-2">
-              <Label>운동목적</Label>
-              <Input value={addExerciseGoal} onChange={(e) => setAddExerciseGoal(e.target.value)} placeholder="예: 다이어트, 체력증진, 재활" />
-            </div>
-            {/* 특이사항 */}
-            <div className="space-y-2">
-              <Label>특이사항</Label>
-              <textarea
-                value={addNotes}
-                onChange={(e) => setAddNotes(e.target.value)}
-                placeholder="부상 이력, 주의사항 등"
-                className="w-full rounded-md border border-gray-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent resize-none"
-                rows={3}
-              />
-            </div>
-            <Button
-              className="w-full bg-blue-600 hover:bg-blue-700 text-white"
-              onClick={handleAddMember}
-              disabled={addLoading || !addName || !addPhone || !addCategory || (!addDateUnknown && !addAssignDate)}
-            >
-              {addLoading ? '등록 중...' : '회원 등록'}
-            </Button>
-          </div>
-        </DialogContent>
-      </Dialog>
+      {/* 회원 추가 다이얼로그 — 별도 컴포넌트 */}
+      <MemberAddDialog
+        open={showAddDialog}
+        trainers={trainers}
+        onClose={() => setShowAddDialog(false)}
+        onSaved={handleDialogSaved}
+      />
     </>
   )
 }

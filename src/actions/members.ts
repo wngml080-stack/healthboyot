@@ -155,9 +155,11 @@ export async function createMember(values: MemberFormValues) {
 
   const { data: { user } } = await supabase.auth.getUser()
 
+  // 운동시간은 상담카드 연결 시 가져오므로 자동 등록 시 빈값
+  const { exercise_time: _skipTime, ...memberValues } = values as Record<string, unknown>
   const { data, error } = await supabase
     .from('members')
-    .insert({ ...values, created_by: user?.id, registration_source: '자동' })
+    .insert({ ...memberValues, exercise_time: null, created_by: user?.id, registration_source: '자동' })
     .select()
     .single()
 
