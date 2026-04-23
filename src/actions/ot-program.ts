@@ -179,6 +179,34 @@ export async function upsertOtProgram(
     }
   }
 
+  // result_category 변경 시 ot_assignments 상태 연동
+  if (sessionsArr?.length) {
+    const assignmentUpdatesFromResult: Record<string, unknown> = {}
+    for (const s of sessionsArr) {
+      if (!s.result_category) continue
+      switch (s.result_category) {
+        case '노쇼':
+        case '차감노쇼':
+          assignmentUpdatesFromResult.status = '노쇼'
+          break
+        case '거부자':
+          assignmentUpdatesFromResult.status = '거부'
+          assignmentUpdatesFromResult.sales_status = 'OT거부자'
+          break
+        case '수업완료':
+        case '서비스수업':
+          // 모든 세션이 완료 계열이면 '완료'
+          if (sessionsArr.every((ss) => ['수업완료', '서비스수업'].includes(ss.result_category ?? ''))) {
+            assignmentUpdatesFromResult.status = '완료'
+          }
+          break
+      }
+    }
+    if (Object.keys(assignmentUpdatesFromResult).length > 0) {
+      await supabase.from('ot_assignments').update(assignmentUpdatesFromResult).eq('id', assignmentId)
+    }
+  }
+
   // 기존 프로그램이 있으면 업데이트
   const existing = await getOtProgram(assignmentId)
   if (existing) {

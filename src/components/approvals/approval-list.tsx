@@ -299,7 +299,6 @@ export function ApprovalList({ programs: initialPrograms, profile, registrations
       )}
 
       {/* 회원권 등록 OT 인정건수 */}
-      {(pendingRegs.length > 0 || processedRegs.length > 0) && (
         <div>
           <h3 className="text-lg font-bold text-white mb-3 flex items-center gap-2">
             회원권 등록 OT 인정건수
@@ -355,8 +354,14 @@ export function ApprovalList({ programs: initialPrograms, profile, registrations
               </details>
             )}
           </div>
+          {pendingRegs.length === 0 && processedRegs.length === 0 && (
+            <Card className="bg-white/5 border-gray-700">
+              <CardContent className="py-6 text-center text-sm text-gray-400">
+                등록된 인정건수가 없습니다.
+              </CardContent>
+            </Card>
+          )}
         </div>
-      )}
 
       {/* 승인 대기 (좌) / 처리 완료 (우) */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">

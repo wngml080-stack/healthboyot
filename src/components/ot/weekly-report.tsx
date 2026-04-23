@@ -161,11 +161,21 @@ export function WeeklyReport({ assignments, trainerName }: Props) {
     if (!reportRef.current) return
     setCapturing(true)
     try {
+      const el = reportRef.current
       const { toPng } = await import('html-to-image')
-      const dataUrl = await toPng(reportRef.current, {
+      const origMinW = el.style.minWidth; const origW = el.style.width; const origMaxW = el.style.maxWidth
+      el.style.minWidth = 'max-content'; el.style.width = 'max-content'; el.style.maxWidth = 'none'
+      void el.offsetHeight
+      const captureW = Math.max(el.scrollWidth, el.offsetWidth) + 48
+      const captureH = Math.max(el.scrollHeight, el.offsetHeight) + 48
+      const dataUrl = await toPng(el, {
         backgroundColor: '#ffffff',
         pixelRatio: 2,
+        width: captureW,
+        height: captureH,
+        style: { padding: '20px', overflow: 'visible' },
       })
+      el.style.minWidth = origMinW; el.style.width = origW; el.style.maxWidth = origMaxW
 
       // 모바일이면 공유, PC면 다운로드
       if (navigator.share && /Mobi|Android/i.test(navigator.userAgent)) {

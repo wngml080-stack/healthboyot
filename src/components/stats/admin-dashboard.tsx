@@ -60,11 +60,20 @@ export function AdminDashboard({ data: initialData, initialPeriod }: Props) {
     stickyEls.forEach((s) => { s.dataset.origPos = s.style.position; s.style.position = 'static' })
     overflowEls.forEach((o) => { o.dataset.origOv = o.style.overflow; o.style.overflow = 'visible' })
 
+    // 폭 제약 해제
+    const origMinW = el.style.minWidth; const origW = el.style.width; const origMaxW = el.style.maxWidth
+    el.style.minWidth = 'max-content'; el.style.width = 'max-content'; el.style.maxWidth = 'none'
+    void el.offsetHeight
+
     try {
+      const captureW = Math.max(el.scrollWidth, el.offsetWidth) + 48
+      const captureH = Math.max(el.scrollHeight, el.offsetHeight) + 48
       const dataUrl = await toPng(el, {
         backgroundColor: '#ffffff',
         pixelRatio: 2,
-        style: { overflow: 'visible' },
+        width: captureW,
+        height: captureH,
+        style: { padding: '20px', overflow: 'visible' },
       })
 
       const link = document.createElement('a')
@@ -76,6 +85,7 @@ export function AdminDashboard({ data: initialData, initialPeriod }: Props) {
       camBtns.forEach((b) => b.style.display = '')
       stickyEls.forEach((s) => { s.style.position = s.dataset.origPos ?? ''; delete s.dataset.origPos })
       overflowEls.forEach((o) => { o.style.overflow = o.dataset.origOv ?? ''; delete o.dataset.origOv })
+      el.style.minWidth = origMinW; el.style.width = origW; el.style.maxWidth = origMaxW
     }
   }, [data.periodLabel])
 

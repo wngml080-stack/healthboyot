@@ -117,13 +117,41 @@ export function TrainerStats({ assignments, trainerName, programs, registrations
       stickyEls.forEach((s) => { s.dataset.origPos = s.style.position; s.style.position = 'static' })
       overflowEls.forEach((o) => { o.dataset.origOv = o.style.overflow; o.style.overflow = 'visible' })
 
+      // 배경색·패딩을 직접 요소에 적용 + 폭 제약 해제
+      const origBg = el.style.backgroundColor
+      const origPad = el.style.padding
+      const origBorderRadius = el.style.borderRadius
+      const origMinWidth = el.style.minWidth
+      const origWidth = el.style.width
+      const origMaxWidth = el.style.maxWidth
+      el.style.backgroundColor = '#1a1a2e'
+      el.style.padding = '24px'
+      el.style.borderRadius = '12px'
+      el.style.minWidth = 'max-content'
+      el.style.width = 'max-content'
+      el.style.maxWidth = 'none'
+
+      // 리플로우 강제 (스타일 변경 후 실제 크기 반영)
+      void el.offsetHeight
+
+      const captureWidth = Math.max(el.scrollWidth, el.offsetWidth) + 48
+      const captureHeight = Math.max(el.scrollHeight, el.offsetHeight) + 48
+
       const dataUrl = await toPng(el, {
-        backgroundColor: '#1a1a2e',
         pixelRatio: 2,
-        style: { padding: '20px', overflow: 'visible' },
+        width: captureWidth,
+        height: captureHeight,
+        cacheBust: true,
+        includeQueryParams: true,
       })
 
       // 원본 복원
+      el.style.backgroundColor = origBg
+      el.style.padding = origPad
+      el.style.borderRadius = origBorderRadius
+      el.style.minWidth = origMinWidth
+      el.style.width = origWidth
+      el.style.maxWidth = origMaxWidth
       camBtns.forEach((b) => b.style.display = '')
       inputs.forEach((inp) => { inp.style.visibility = inp.dataset.origVis ?? ''; delete inp.dataset.origVis })
       stickyEls.forEach((s) => { s.style.position = s.dataset.origPos ?? ''; delete s.dataset.origPos })

@@ -84,7 +84,8 @@ function isWeekendOrHoliday(day: Date): boolean {
 const HOURS = Array.from({ length: 19 }, (_, i) => i + 6) // 06~24
 const SLOTS_PER_HOUR = 2 // 30분 단위
 const DAY_LABELS = ['일', '월', '화', '수', '목', '금', '토']
-const SLOT_HEIGHT = 40 // px per 30min
+const SLOT_HEIGHT = 40 // px per 30min (데스크톱)
+const SLOT_HEIGHT_MOBILE = 24 // px per 30min (모바일 컴팩트)
 const TOTAL_SLOTS = HOURS.length * SLOTS_PER_HOUR
 
 const TYPE_COLORS: Record<string, string> = {
@@ -272,6 +273,17 @@ export function WeeklyCalendar({ assignments, trainerId, profile, workStartTime,
   const [loading, setLoading] = useState(false)
   const supabaseRef = useRef(createClient())
 
+  // ── 모바일 감지 (640px 미만) ──
+  const [isMobile, setIsMobile] = useState(false)
+  useEffect(() => {
+    const mql = window.matchMedia('(max-width: 639px)')
+    setIsMobile(mql.matches)
+    const handler = (e: MediaQueryListEvent) => setIsMobile(e.matches)
+    mql.addEventListener('change', handler)
+    return () => mql.removeEventListener('change', handler)
+  }, [])
+  const slotH = isMobile ? SLOT_HEIGHT_MOBILE : SLOT_HEIGHT
+
   // 생성 다이얼로그
   const [showCreate, setShowCreate] = useState(false)
   const [createDate, setCreateDate] = useState('')
@@ -371,6 +383,82 @@ export function WeeklyCalendar({ assignments, trainerId, profile, workStartTime,
   const dayColRefs = useRef<(HTMLDivElement | null)[]>([])
   const calendarScrollRef = useRef<HTMLDivElement>(null)
 
+  // ── 복사/붙여넣기 ──
+  const [copiedSchedule, setCopiedSchedule] = useState<ScheduleItem | null>(null)
+  const lastClickedScheduleRef = useRef<ScheduleItem | null>(null)
+  const [pasteSaving, setPasteSaving] = useState(false)
+
+  // Ctrl+C / Ctrl+V 키보드 이벤트
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement) return
+      // Ctrl+C: 마지막 클릭한 스케줄 복사
+      if ((e.ctrlKey || e.metaKey) && e.key === 'c' && lastClickedScheduleRef.current) {
+        // OT는 복사 불가 (ot_session 연동 때문)
+        if (lastClickedScheduleRef.current.schedule_type === 'OT') return
+        setCopiedSchedule(lastClickedScheduleRef.current)
+        e.preventDefault()
+      }
+      // Escape: 복사 모드 해제
+      if (e.key === 'Escape') {
+        setCopiedSchedule(null)
+      }
+    }
+    window.addEventListener('keydown', handleKeyDown)
+    return () => window.removeEventListener('keydown', handleKeyDown)
+  }, [])
+
+  // 복사한 스케줄 붙여넣기
+  const handlePaste = async (day: Date, hour: number, half: number) => {
+    if (!copiedSchedule || pasteSaving) return
+    const dateStr = format(day, 'yyyy-MM-dd')
+    const timeStr = `${String(hour).padStart(2, '0')}:${half === 0 ? '00' : '30'}`
+
+    // 충돌 검사
+    const newStartSlot = (hour - 6) * SLOTS_PER_HOUR + half
+    const heightSlots = Math.max(1, Math.ceil(copiedSchedule.duration / 30))
+    const newEndSlot = newStartSlot + heightSlots
+    const conflict = schedules.find((s) => {
+      if (s.scheduled_date !== dateStr) return false
+      const sStart = timeToSlot(s.start_time)
+      const sEnd = sStart + Math.max(1, Math.ceil(s.duration / 30))
+      return newStartSlot < sEnd && newEndSlot > sStart
+    })
+    if (conflict) {
+      alert(`해당 시간에 이미 일정이 있습니다: ${conflict.schedule_type} ${conflict.member_name}`)
+      return
+    }
+
+    // PT/PPT인 경우 IN/OUT 자동 판별
+    let note = copiedSchedule.note
+    if (copiedSchedule.schedule_type === 'PT' || copiedSchedule.schedule_type === 'PPT') {
+      const parsed = parsePtNote(note)
+      const newInOut = getAutoInOut(dateStr, timeStr)
+      if (parsed.inOut !== newInOut) {
+        note = buildPtNote({ ...parsed, inOut: newInOut })
+      }
+    }
+
+    setPasteSaving(true)
+    const { error } = await supabaseRef.current.from('trainer_schedules').insert({
+      trainer_id: trainerId,
+      schedule_type: copiedSchedule.schedule_type,
+      member_name: copiedSchedule.member_name,
+      member_id: copiedSchedule.member_id,
+      scheduled_date: dateStr,
+      start_time: timeStr,
+      duration: copiedSchedule.duration,
+      note,
+    })
+    setPasteSaving(false)
+    if (error) {
+      alert('붙여넣기 실패: ' + error.message)
+      return
+    }
+    await fetchSchedules()
+    router.refresh()
+  }
+
   // 드래그 가능 여부:
   // - OT: 매칭되는 ot_session이 완료되지 않았을 때 (ot_session_id 매칭 못 찾으면 fallback으로 허용)
   // - 그 외 (PT/PPT/회의/식사 등): 항상 허용
@@ -394,9 +482,10 @@ export function WeeklyCalendar({ assignments, trainerId, profile, workStartTime,
     const [h, m] = workStartTime!.split(':').map(Number)
     return (h - 6) * SLOTS_PER_HOUR + (m >= 30 ? 1 : 0)
   })() : 0
+  // 종료 시간: "15시까지" → 15시대 전체 포함, 16시부터 OUT
   const workEndSlot = hasWorkHours ? (() => {
     const [h, m] = workEndTime!.split(':').map(Number)
-    return (h - 6) * SLOTS_PER_HOUR + (m >= 30 ? 1 : 0)
+    return (h - 6) * SLOTS_PER_HOUR + (m >= 30 ? 1 : 0) + SLOTS_PER_HOUR
   })() : TOTAL_SLOTS
 
   // 특정 날짜 + 슬롯이 근무시간(IN)인지 판별
@@ -823,7 +912,7 @@ export function WeeklyCalendar({ assignments, trainerId, profile, workStartTime,
     const colRect = targetCol.getBoundingClientRect()
     // 블록의 새 top edge (target column 기준) → 30분 슬롯으로 스냅
     const newTopInCol = (cur.startRect.top + dy) - colRect.top
-    const slot = Math.round(newTopInCol / SLOT_HEIGHT)
+    const slot = Math.round(newTopInCol / slotH)
 
     const heightSlots = Math.max(1, Math.ceil(cur.schedule.duration / 30))
     const clamped = Math.max(0, Math.min(TOTAL_SLOTS - heightSlots, slot))
@@ -993,29 +1082,29 @@ export function WeeklyCalendar({ assignments, trainerId, profile, workStartTime,
 
   return (
     <>
-      <div className="space-y-3">
+      <div className="space-y-1.5 sm:space-y-3">
         {/* 네비게이션 */}
-        <div className="flex items-center justify-between">
-          <div className="flex items-center gap-2">
-            <Button variant="outline" size="icon" className="h-8 w-8 bg-white text-gray-700 border-gray-300" onClick={() => setWeekOffset((p) => p - 1)}>
-              <ChevronLeft className="h-4 w-4" />
+        <div className="flex items-center justify-between gap-1">
+          <div className="flex items-center gap-1 sm:gap-2">
+            <Button variant="outline" size="icon" className="h-7 w-7 sm:h-8 sm:w-8 bg-white text-gray-700 border-gray-300" onClick={() => setWeekOffset((p) => p - 1)}>
+              <ChevronLeft className="h-3.5 w-3.5 sm:h-4 sm:w-4" />
             </Button>
-            <span className="text-sm font-bold text-white bg-gray-900 px-3 py-1 rounded-md min-w-[140px] text-center">
-              {format(weekStart, 'yyyy년 M월', { locale: ko })} {weekNum}주차
+            <span className="text-xs sm:text-sm font-bold text-white bg-gray-900 px-2 sm:px-3 py-0.5 sm:py-1 rounded-md min-w-0 sm:min-w-[140px] text-center whitespace-nowrap">
+              {format(weekStart, 'M월', { locale: ko })} {weekNum}주차
             </span>
-            <Button variant="outline" size="icon" className="h-8 w-8 bg-white text-gray-700 border-gray-300" onClick={() => setWeekOffset((p) => p + 1)}>
-              <ChevronRight className="h-4 w-4" />
+            <Button variant="outline" size="icon" className="h-7 w-7 sm:h-8 sm:w-8 bg-white text-gray-700 border-gray-300" onClick={() => setWeekOffset((p) => p + 1)}>
+              <ChevronRight className="h-3.5 w-3.5 sm:h-4 sm:w-4" />
             </Button>
           </div>
           {hasWorkHours && (
-            <span className="text-xs text-gray-500 bg-white/80 px-2 py-1 rounded">
-              근무 {workStartTime} ~ {workEndTime}
+            <span className="text-[10px] sm:text-sm font-bold text-white bg-blue-600 px-1.5 sm:px-3 py-0.5 sm:py-1.5 rounded-md shadow-sm whitespace-nowrap">
+              {workStartTime}~{workEndTime}
             </span>
           )}
         </div>
 
-        {/* 범례 */}
-        <div className="flex flex-wrap gap-3 text-xs">
+        {/* 범례 — 모바일에서 숨김 */}
+        <div className="hidden sm:flex flex-wrap gap-3 text-xs">
           <span className="flex items-center gap-1"><span className="w-3 h-3 rounded bg-emerald-300" /> OT</span>
           <span className="flex items-center gap-1"><span className="w-3 h-3 rounded bg-blue-300" /> PT</span>
           <span className="flex items-center gap-1"><span className="w-3 h-3 rounded bg-orange-300" /> 식사</span>
@@ -1032,11 +1121,26 @@ export function WeeklyCalendar({ assignments, trainerId, profile, workStartTime,
           </>)}
         </div>
 
+        {/* 복사 모드 배너 */}
+        {copiedSchedule && (
+          <div className="flex items-center justify-between rounded-lg bg-green-100 border border-green-400 px-4 py-2">
+            <p className="text-sm font-bold text-green-800">
+              {copiedSchedule.schedule_type} {copiedSchedule.member_name} ({copiedSchedule.duration}분) 복사됨 — 빈 시간을 클릭하면 붙여넣기
+            </p>
+            <button
+              onClick={() => setCopiedSchedule(null)}
+              className="text-green-600 hover:text-green-800 text-xs font-bold border border-green-400 rounded px-2 py-1"
+            >
+              취소 (ESC)
+            </button>
+          </div>
+        )}
+
         {/* 캘린더 */}
         <div ref={calendarScrollRef} className="rounded-lg border border-gray-200 bg-white overflow-x-auto -mx-4 sm:mx-0">
           {/* 헤더 */}
           <div className="flex border-b border-gray-200 sticky top-0 bg-gray-900 z-10">
-            <div className="w-14 shrink-0" />
+            <div className={`${isMobile ? 'w-8' : 'w-14'} shrink-0`} />
             {days.map((day, i) => {
               const isToday = isSameDay(day, now)
               const dateStr = format(day, 'yyyy-MM-dd')
@@ -1044,12 +1148,12 @@ export function WeeklyCalendar({ assignments, trainerId, profile, workStartTime,
               const isWeekend = i >= 5
               const isHolidayDay = isWeekend || !!holidayName
               return (
-                <div key={i} className={`flex-1 text-center py-3 border-l border-gray-700 min-w-[90px] ${isToday ? 'bg-yellow-500/20' : ''}`} style={{ height: SLOT_HEIGHT * 2 }}>
-                  <p className={`text-[10px] ${isHolidayDay ? 'text-red-400' : 'text-gray-400'}`}>
+                <div key={i} className={`flex-1 text-center ${isMobile ? 'py-1' : 'py-3'} border-l border-gray-700 ${isMobile ? 'min-w-0' : 'min-w-[90px]'} ${isToday ? 'bg-yellow-500/20' : ''}`} style={{ height: slotH * 2 }}>
+                  <p className={`${isMobile ? 'text-[8px]' : 'text-[10px]'} ${isHolidayDay ? 'text-red-400' : 'text-gray-400'}`}>
                     {DAY_LABELS[day.getDay()]}
-                    {holidayName && <span className="ml-0.5">({holidayName})</span>}
+                    {!isMobile && holidayName && <span className="ml-0.5">({holidayName})</span>}
                   </p>
-                  <p className={`text-lg font-bold ${isToday ? 'bg-yellow-400 text-black rounded-full w-8 h-8 flex items-center justify-center mx-auto' : isHolidayDay ? 'text-red-400' : 'text-white'}`}>
+                  <p className={`${isMobile ? 'text-sm' : 'text-lg'} font-bold ${isToday ? `bg-yellow-400 text-black rounded-full ${isMobile ? 'w-6 h-6 text-xs' : 'w-8 h-8'} flex items-center justify-center mx-auto` : isHolidayDay ? 'text-red-400' : 'text-white'}`}>
                     {day.getDate()}
                   </p>
                 </div>
@@ -1058,12 +1162,12 @@ export function WeeklyCalendar({ assignments, trainerId, profile, workStartTime,
           </div>
 
           {/* 바디 */}
-          <div className="flex" style={{ minWidth: 700 }}>
+          <div className="flex" style={{ minWidth: isMobile ? undefined : 700 }}>
             {/* 시간 축 */}
-            <div className="w-14 shrink-0 bg-gray-50">
+            <div className={`${isMobile ? 'w-8' : 'w-14'} shrink-0 bg-gray-50`}>
               {HOURS.map((hour) => (
-                <div key={hour} style={{ height: SLOT_HEIGHT * 2 }} className="border-b border-gray-300 px-1 text-[10px] text-gray-700 font-bold text-center flex items-center justify-center">
-                  {String(hour).padStart(2, '0')}:00
+                <div key={hour} style={{ height: slotH * 2 }} className={`border-b border-gray-300 px-0.5 ${isMobile ? 'text-[8px]' : 'text-[10px]'} text-gray-700 font-bold text-center flex items-center justify-center`}>
+                  {isMobile ? hour : `${String(hour).padStart(2, '0')}:00`}
                 </div>
               ))}
             </div>
@@ -1077,7 +1181,7 @@ export function WeeklyCalendar({ assignments, trainerId, profile, workStartTime,
                 <div
                   key={dayIdx}
                   ref={(el) => { dayColRefs.current[dayIdx] = el }}
-                  className={`flex-1 border-l border-gray-300 relative min-w-[90px] ${isToday ? 'bg-yellow-50/50' : ''}`}
+                  className={`flex-1 border-l border-gray-300 relative ${isMobile ? 'min-w-0' : 'min-w-[90px]'} ${isToday ? 'bg-yellow-50/50' : ''}`}
                 >
                   {/* 30분 단위 그리드 */}
                   {Array.from({ length: TOTAL_SLOTS }).map((_, slotIdx) => {
@@ -1087,9 +1191,9 @@ export function WeeklyCalendar({ assignments, trainerId, profile, workStartTime,
                     return (
                       <div
                         key={slotIdx}
-                        style={{ height: SLOT_HEIGHT }}
-                        className={`${half === 1 ? 'border-b border-gray-300' : 'border-b border-gray-100'} cursor-pointer hover:bg-yellow-100 transition-colors ${hasWorkHours ? (inWork ? 'bg-blue-50/60' : 'bg-gray-100/80') : ''}`}
-                        onClick={() => openCreate(day, hour, half)}
+                        style={{ height: slotH, ...(copiedSchedule ? { cursor: 'copy' } : {}) }}
+                        className={`${half === 1 ? 'border-b border-gray-300' : 'border-b border-gray-100'} ${copiedSchedule ? '' : 'cursor-pointer'} hover:bg-yellow-100 transition-colors ${hasWorkHours && !inWork ? 'bg-orange-100/70' : ''} ${copiedSchedule ? 'hover:bg-green-100' : ''}`}
+                        onClick={() => copiedSchedule ? handlePaste(day, hour, half) : openCreate(day, hour, half)}
                       />
                     )
                   })}
@@ -1098,24 +1202,27 @@ export function WeeklyCalendar({ assignments, trainerId, profile, workStartTime,
                   {daySchedules.map((s) => {
                     const slot = timeToSlot(s.start_time)
                     const heightSlots = Math.max(1, Math.ceil(s.duration / 30))
-                    const top = slot * SLOT_HEIGHT
-                    const height = heightSlots * SLOT_HEIGHT - 2
+                    const top = slot * slotH
+                    const height = heightSlots * slotH - 2
                     // 회원 정보 매칭 — OT 스케줄만 ot_assignments에서 찾음
                     // PT/PPT는 동명이인 OT 회원의 매출대상자 표시가 잘못 묻어오는 문제를 방지
                     const matched = s.schedule_type === 'OT'
                       ? assignments.find((a) => a.member.name === s.member_name)
                       : null
-                    // 색상은 schedule_type 기반으로만 (PT 신규 회원도 일반 PT와 동일하게 파란색)
-                    const color = TYPE_COLORS[s.schedule_type] ?? TYPE_COLORS.OT
                     // PT 매출대상자/금액/수업결과는 note의 prefix로 판별
                     const ptParsed = (s.schedule_type === 'PT' || s.schedule_type === 'PPT') ? parsePtNote(s.note) : null
+                    // 색상: PT/PPT 노쇼/차감노쇼는 빨간색, 나머지는 타입 기본색
+                    const ptResult = ptParsed?.classResult ?? ''
+                    const isNoShow = ptResult === '노쇼' || ptResult === '차감노쇼'
+                    const color = isNoShow
+                      ? 'bg-red-300 border-red-500 text-red-900'
+                      : (TYPE_COLORS[s.schedule_type] ?? TYPE_COLORS.OT)
                     const isSales = s.schedule_type === 'OT'
                       ? !!matched?.is_sales_target
                       : !!ptParsed?.isSalesTarget
                     const amount = s.schedule_type === 'OT'
                       ? (matched?.expected_amount ?? 0)
                       : (ptParsed?.expectedAmount ? Number(ptParsed.expectedAmount) : 0)
-                    const ptResult = ptParsed?.classResult ?? ''
                     // OT 회원의 sales_status (진행중/거부자/등록완료 등) — 캘린더 블록에 라벨로 표시
                     const otSalesStatus = s.schedule_type === 'OT' ? (matched?.sales_status as SalesStatus | null | undefined) : null
                     const draggable = canDragSchedule(s)
@@ -1125,7 +1232,7 @@ export function WeeklyCalendar({ assignments, trainerId, profile, workStartTime,
                       <div
                         key={s.id}
                         data-schedule-id={s.id}
-                        className={`absolute left-0.5 right-0.5 rounded border px-1 py-0.5 overflow-hidden group select-none ${draggable ? 'cursor-grab active:cursor-grabbing' : 'cursor-pointer'} ${isSales ? 'ring-2 ring-blue-400 ' : ''} ${isDragging ? 'shadow-2xl ring-2 ring-yellow-400 opacity-80' : ''} ${color}`}
+                        className={`absolute ${isMobile ? 'left-0 right-0' : 'left-0.5 right-0.5'} rounded border ${isMobile ? 'px-0.5 py-0' : 'px-1 py-0.5'} overflow-hidden group select-none ${draggable ? 'cursor-grab active:cursor-grabbing' : 'cursor-pointer'} ${isSales ? 'ring-2 ring-blue-400 ' : ''} ${isDragging ? 'shadow-2xl ring-2 ring-yellow-400 opacity-80' : ''} ${color}`}
                         style={{ top, height, zIndex: isDragging ? 30 : 5, touchAction: 'none' }}
                         onPointerDown={(e) => handleSchedulePointerDown(e, s)}
                         onPointerMove={handleSchedulePointerMove}
@@ -1138,11 +1245,16 @@ export function WeeklyCalendar({ assignments, trainerId, profile, workStartTime,
                             return
                           }
                           if (dragStateRef.current) return
-                          // OT 회원: 회원 상세 + 시간 수정 다이얼로그 동시 (matched 있음)
-                          // PT 수기/식사/회의 등: 시간 수정 다이얼로그만 (openMemberDetail 내부에서 matched 없으면 detail 안 띄움)
+                          lastClickedScheduleRef.current = s
                           openMemberDetail(s)
                         }}
                       >
+                        {isMobile ? (
+                          /* ── 모바일 컴팩트 블록 ── */
+                          <p className="text-[8px] font-bold leading-tight truncate">
+                            {s.schedule_type.toLowerCase()} {s.member_name || ''}
+                          </p>
+                        ) : (
                         <div className="flex items-start justify-between">
                           <div className="min-w-0">
                             <p className="text-xs font-bold truncate">
@@ -1173,6 +1285,7 @@ export function WeeklyCalendar({ assignments, trainerId, profile, workStartTime,
                             <X className="h-3.5 w-3.5" />
                           </button>
                         </div>
+                        )}
                       </div>
                     )
                   })}
@@ -1187,12 +1300,12 @@ export function WeeklyCalendar({ assignments, trainerId, profile, workStartTime,
 
       {/* 스케줄 생성 다이얼로그 */}
       <Dialog open={showCreate} onOpenChange={setShowCreate}>
-        <DialogContent className="max-w-sm max-h-[90vh] overflow-y-auto">
+        <DialogContent className="max-w-sm max-h-[85vh] overflow-y-auto">
           <DialogHeader>
-            <DialogTitle>스케줄 추가</DialogTitle>
-            <DialogDescription>{createDate} {createTime}</DialogDescription>
+            <DialogTitle className="text-base sm:text-lg">스케줄 추가</DialogTitle>
+            <DialogDescription className="text-xs sm:text-sm">{createDate} {createTime}</DialogDescription>
           </DialogHeader>
-          <div className="space-y-4">
+          <div className="space-y-3 sm:space-y-4">
             {/* 타입 선택 */}
             <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-1">
               {SCHEDULE_TYPES.map((t) => {
@@ -1490,7 +1603,7 @@ export function WeeklyCalendar({ assignments, trainerId, profile, workStartTime,
 
       {/* 회원 상세/상태변경 다이얼로그 */}
       <Dialog open={!!detailAssignment} onOpenChange={() => setDetailAssignment(null)}>
-        <DialogContent className="max-w-md max-h-[90vh] overflow-y-auto">
+        <DialogContent className="max-w-md max-h-[85vh] overflow-y-auto">
           {detailAssignment && (
             <>
               <DialogHeader>
@@ -1735,7 +1848,7 @@ export function WeeklyCalendar({ assignments, trainerId, profile, workStartTime,
 
       {/* 스케줄 수정 다이얼로그 */}
       <Dialog open={!!editSchedule && !detailAssignment} onOpenChange={() => setEditSchedule(null)}>
-        <DialogContent className="max-w-sm max-h-[90vh] overflow-y-auto">
+        <DialogContent className="max-w-sm max-h-[85vh] overflow-y-auto">
           {editSchedule && (
             <>
               <DialogHeader>
@@ -1811,7 +1924,7 @@ export function WeeklyCalendar({ assignments, trainerId, profile, workStartTime,
 
       {/* PT 수업 진행 다이얼로그 (PT/PPT 스케줄 클릭 시) */}
       <Dialog open={!!editPtSchedule} onOpenChange={() => setEditPtSchedule(null)}>
-        <DialogContent className="max-w-sm max-h-[90vh] overflow-y-auto">
+        <DialogContent className="max-w-sm max-h-[85vh] overflow-y-auto">
           {editPtSchedule && (
             <>
               <DialogHeader>
@@ -2014,7 +2127,7 @@ export function WeeklyCalendar({ assignments, trainerId, profile, workStartTime,
 
       {/* 프로그램 & 세일즈 다이얼로그 (스케줄에서 열기) */}
       <Dialog open={!!programTarget} onOpenChange={() => setProgramTarget(null)}>
-        <DialogContent className="w-[95vw] max-w-[95vw] sm:max-w-5xl max-h-[95vh] overflow-y-auto">
+        <DialogContent className="w-[calc(100%-0.5rem)] sm:w-[95vw] max-w-[95vw] sm:max-w-5xl max-h-[85vh] sm:max-h-[95vh] overflow-y-auto">
           <DialogHeader>
             <DialogTitle className="text-lg">
               {programTarget?.assignment.member.name} · 프로그램 & 세일즈

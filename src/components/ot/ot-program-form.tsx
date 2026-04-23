@@ -410,11 +410,22 @@ export const OtProgramForm = forwardRef<OtProgramFormRef, Props>(function OtProg
   const handleCapture = async () => {
     if (!captureRef.current) return
     try {
+      const el = captureRef.current
       const { toPng } = await import('html-to-image')
-      const dataUrl = await toPng(captureRef.current, {
+      // 폭 제약 해제 + 리플로우
+      const origMinW = el.style.minWidth; const origW = el.style.width; const origMaxW = el.style.maxWidth
+      el.style.minWidth = 'max-content'; el.style.width = 'max-content'; el.style.maxWidth = 'none'
+      void el.offsetHeight
+      const captureW = Math.max(el.scrollWidth, el.offsetWidth) + 48
+      const captureH = Math.max(el.scrollHeight, el.offsetHeight) + 48
+      const dataUrl = await toPng(el, {
         backgroundColor: '#ffffff',
         pixelRatio: 2,
+        width: captureW,
+        height: captureH,
+        style: { padding: '20px', overflow: 'visible' },
       })
+      el.style.minWidth = origMinW; el.style.width = origW; el.style.maxWidth = origMaxW
       const link = document.createElement('a')
       link.download = `OT_프로그램_${a.member.name}_${new Date().toISOString().split('T')[0]}.png`
       link.href = dataUrl
@@ -428,11 +439,21 @@ export const OtProgramForm = forwardRef<OtProgramFormRef, Props>(function OtProg
   const handleShare = async () => {
     if (!captureRef.current) return
     try {
+      const el = captureRef.current
       const { toPng } = await import('html-to-image')
-      const dataUrl = await toPng(captureRef.current, {
+      const origMinW = el.style.minWidth; const origW = el.style.width; const origMaxW = el.style.maxWidth
+      el.style.minWidth = 'max-content'; el.style.width = 'max-content'; el.style.maxWidth = 'none'
+      void el.offsetHeight
+      const captureW = Math.max(el.scrollWidth, el.offsetWidth) + 48
+      const captureH = Math.max(el.scrollHeight, el.offsetHeight) + 48
+      const dataUrl = await toPng(el, {
         backgroundColor: '#ffffff',
         pixelRatio: 2,
+        width: captureW,
+        height: captureH,
+        style: { padding: '20px', overflow: 'visible' },
       })
+      el.style.minWidth = origMinW; el.style.width = origW; el.style.maxWidth = origMaxW
       const blob = await (await fetch(dataUrl)).blob()
       const file = new File([blob], `OT_${a.member.name}.png`, { type: 'image/png' })
 
@@ -511,11 +532,12 @@ export const OtProgramForm = forwardRef<OtProgramFormRef, Props>(function OtProg
     if (errors.length) alert(`이미지 업로드 실패 (${errors.length}건): ${errors[0]}\n\n'ot-images' 스토리지 버킷과 Public 업로드 권한을 Supabase 대시보드에서 확인해주세요.`)
   }
 
-  const handleSave = async () => {
+  const handleSave = async (overrideSessions?: OtProgramSession[]) => {
     setSaving(true)
     setError(null)
     setSuccess(false)
     const payload = buildSavePayload()
+    if (overrideSessions) payload.sessions = overrideSessions
     const result = await upsertOtProgram(a.id, a.member_id, payload)
     setSaving(false)
     if (result.error) setError(result.error)
@@ -760,9 +782,11 @@ export const OtProgramForm = forwardRef<OtProgramFormRef, Props>(function OtProg
                     <select
                       value={session.result_category ?? ''}
                       onChange={(e) => {
-                        updateSession(idx, 'result_category', e.target.value || null)
-                        // 즉시 저장
-                        setTimeout(() => handleSave(), 100)
+                        const newValue = e.target.value || null
+                        updateSession(idx, 'result_category', newValue)
+                        // 변경된 sessions를 직접 구성하여 즉시 저장 (state 반영 대기 불필요)
+                        const updatedSessions = sessions.map((s, i) => i === idx ? { ...s, result_category: newValue } : s) as OtProgramSession[]
+                        handleSave(updatedSessions)
                       }}
                       className="h-7 text-xs font-medium bg-white border border-gray-300 rounded-md px-2 cursor-pointer"
                     >
@@ -781,7 +805,7 @@ export const OtProgramForm = forwardRef<OtProgramFormRef, Props>(function OtProg
                     <Button
                       size="sm"
                       className="h-7 text-xs font-bold bg-green-600 hover:bg-green-700 text-white"
-                      onClick={handleSave}
+                      onClick={() => handleSave()}
                       disabled={saving}
                     >
                       {saving ? '저장중...' : `${idx + 1}차 저장`}
@@ -1507,7 +1531,7 @@ export const OtProgramForm = forwardRef<OtProgramFormRef, Props>(function OtProg
                           type="button"
                           className="flex-1 h-10 bg-blue-500 hover:bg-blue-600 text-white font-bold"
                           disabled={saving || completeLoading}
-                          onClick={handleSave}
+                          onClick={() => handleSave()}
                         >
                           {saving ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : <Save className="h-4 w-4 mr-2" />}
                           저장
@@ -1573,7 +1597,7 @@ export const OtProgramForm = forwardRef<OtProgramFormRef, Props>(function OtProg
           </Button>
           {canEdit && (
             <>
-              <Button onClick={handleSave} disabled={saving} className="bg-blue-600 hover:bg-blue-700 text-white font-bold">
+              <Button onClick={() => handleSave()} disabled={saving} className="bg-blue-600 hover:bg-blue-700 text-white font-bold">
                 {saving ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : <Save className="h-4 w-4 mr-2" />}
                 저장
               </Button>
