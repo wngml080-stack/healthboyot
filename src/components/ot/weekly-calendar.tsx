@@ -41,6 +41,44 @@ interface Props {
   assignments: OtAssignmentWithDetails[]
   trainerId: string
   profile?: Profile
+  workStartTime?: string | null
+  workEndTime?: string | null
+}
+
+// ── 한국 공휴일 / 대체공휴일 (2025~2027) ──
+// 양력 고정 + 음력 연동 공휴일은 연도별로 직접 지정
+const KOREAN_HOLIDAYS: Record<string, string> = {
+  // 2025
+  '2025-01-01': '신정', '2025-01-28': '설날', '2025-01-29': '설날', '2025-01-30': '설날',
+  '2025-03-01': '삼일절', '2025-05-01': '근로자의날', '2025-05-05': '어린이날', '2025-05-06': '부처님오신날',
+  '2025-06-06': '현충일', '2025-08-15': '광복절', '2025-10-03': '개천절', '2025-10-05': '추석',
+  '2025-10-06': '추석', '2025-10-07': '추석', '2025-10-08': '대체공휴일(추석)',
+  '2025-10-09': '한글날', '2025-12-25': '성탄절',
+  // 2026
+  '2026-01-01': '신정', '2026-02-16': '설날', '2026-02-17': '설날', '2026-02-18': '설날',
+  '2026-03-01': '삼일절', '2026-03-02': '대체공휴일(삼일절)', '2026-05-01': '근로자의날',
+  '2026-05-05': '어린이날', '2026-05-24': '부처님오신날', '2026-05-25': '대체공휴일(부처님오신날)',
+  '2026-06-06': '현충일', '2026-08-15': '광복절', '2026-08-17': '대체공휴일(광복절)',
+  '2026-09-24': '추석', '2026-09-25': '추석', '2026-09-26': '추석',
+  '2026-10-03': '개천절', '2026-10-05': '대체공휴일(개천절)', '2026-10-09': '한글날',
+  '2026-12-25': '성탄절',
+  // 2027
+  '2027-01-01': '신정', '2027-02-06': '설날', '2027-02-07': '설날', '2027-02-08': '설날',
+  '2027-02-09': '대체공휴일(설날)', '2027-03-01': '삼일절', '2027-05-01': '근로자의날',
+  '2027-05-05': '어린이날', '2027-05-13': '부처님오신날', '2027-06-06': '현충일',
+  '2027-06-07': '대체공휴일(현충일)', '2027-08-15': '광복절', '2027-08-16': '대체공휴일(광복절)',
+  '2027-10-03': '개천절', '2027-10-04': '대체공휴일(개천절)', '2027-10-09': '한글날',
+  '2027-10-11': '추석', '2027-10-12': '추석', '2027-10-13': '추석', '2027-12-25': '성탄절',
+}
+
+function isHoliday(dateStr: string): boolean {
+  return !!KOREAN_HOLIDAYS[dateStr]
+}
+
+function isWeekendOrHoliday(day: Date): boolean {
+  const dow = day.getDay()
+  if (dow === 0 || dow === 6) return true
+  return isHoliday(format(day, 'yyyy-MM-dd'))
 }
 
 const HOURS = Array.from({ length: 19 }, (_, i) => i + 6) // 06~24
@@ -227,7 +265,7 @@ function buildPtNote(opts: {
   return parts.length > 0 ? parts.join(' ') : null
 }
 
-export function WeeklyCalendar({ assignments, trainerId, profile }: Props) {
+export function WeeklyCalendar({ assignments, trainerId, profile, workStartTime, workEndTime }: Props) {
   const router = useRouter()
   const [weekOffset, setWeekOffset] = useState(0)
   const [schedules, setSchedules] = useState<ScheduleItem[]>([])
@@ -350,6 +388,35 @@ export function WeeklyCalendar({ assignments, trainerId, profile }: Props) {
     return true
   }, [assignments])
 
+  // ── 근무시간 판별: 주말/공휴일은 항상 IN, 평일은 근무시간 내만 IN ──
+  const hasWorkHours = !!(workStartTime && workEndTime)
+  const workStartSlot = hasWorkHours ? (() => {
+    const [h, m] = workStartTime!.split(':').map(Number)
+    return (h - 6) * SLOTS_PER_HOUR + (m >= 30 ? 1 : 0)
+  })() : 0
+  const workEndSlot = hasWorkHours ? (() => {
+    const [h, m] = workEndTime!.split(':').map(Number)
+    return (h - 6) * SLOTS_PER_HOUR + (m >= 30 ? 1 : 0)
+  })() : TOTAL_SLOTS
+
+  // 특정 날짜 + 슬롯이 근무시간(IN)인지 판별
+  const isWorkSlot = useCallback((day: Date, slotIdx: number): boolean => {
+    if (!hasWorkHours) return true // 근무시간 미설정 시 전체 IN
+    if (isWeekendOrHoliday(day)) return true // 주말/공휴일은 전체 IN
+    return slotIdx >= workStartSlot && slotIdx < workEndSlot
+  }, [hasWorkHours, workStartSlot, workEndSlot])
+
+  // PT/PPT 생성 시 시작 시간 기준으로 IN/OUT 자동 판별
+  const getAutoInOut = useCallback((dateStr: string, time: string): 'IN' | 'OUT' => {
+    if (!hasWorkHours) return 'IN'
+    const [yyyy, mm, dd] = dateStr.split('-').map(Number)
+    const day = new Date(yyyy, mm - 1, dd)
+    if (isWeekendOrHoliday(day)) return 'IN'
+    const [h, m] = time.split(':').map(Number)
+    const slot = (h - 6) * SLOTS_PER_HOUR + (m >= 30 ? 1 : 0)
+    return (slot >= workStartSlot && slot < workEndSlot) ? 'IN' : 'OUT'
+  }, [hasWorkHours, workStartSlot, workEndSlot])
+
   const now = new Date()
   const baseWeekStart = startOfWeek(now, { weekStartsOn: 1 })
   const weekStart = useMemo(() => addDays(baseWeekStart, weekOffset * 7), [weekOffset])
@@ -420,6 +487,7 @@ export function WeeklyCalendar({ assignments, trainerId, profile }: Props) {
     setCreateOtSessionId('')
     setCreateDuration(50)
     setCreateNote('')
+    setCreateInOut(getAutoInOut(format(day, 'yyyy-MM-dd'), startTime))
     setCreateIsSalesTarget(false)
     setCreateExpectedAmount(0)
     setCreateClosingProb(0)
@@ -939,6 +1007,11 @@ export function WeeklyCalendar({ assignments, trainerId, profile }: Props) {
               <ChevronRight className="h-4 w-4" />
             </Button>
           </div>
+          {hasWorkHours && (
+            <span className="text-xs text-gray-500 bg-white/80 px-2 py-1 rounded">
+              근무 {workStartTime} ~ {workEndTime}
+            </span>
+          )}
         </div>
 
         {/* 범례 */}
@@ -953,6 +1026,10 @@ export function WeeklyCalendar({ assignments, trainerId, profile }: Props) {
           <span className="flex items-center gap-1"><span className="w-3 h-3 rounded bg-rose-300" /> 당직</span>
           <span className="flex items-center gap-1"><span className="w-3 h-3 rounded bg-gray-300" /> 기타</span>
           <span className="flex items-center gap-1"><span className="text-yellow-500">★</span> 매출대상</span>
+          {hasWorkHours && (<>
+            <span className="flex items-center gap-1"><span className="w-3 h-3 rounded bg-blue-100 border border-blue-200" /> 근무(IN)</span>
+            <span className="flex items-center gap-1"><span className="w-3 h-3 rounded bg-gray-200 border border-gray-300" /> 근무외(OUT)</span>
+          </>)}
         </div>
 
         {/* 캘린더 */}
@@ -962,11 +1039,17 @@ export function WeeklyCalendar({ assignments, trainerId, profile }: Props) {
             <div className="w-14 shrink-0" />
             {days.map((day, i) => {
               const isToday = isSameDay(day, now)
+              const dateStr = format(day, 'yyyy-MM-dd')
+              const holidayName = KOREAN_HOLIDAYS[dateStr]
               const isWeekend = i >= 5
+              const isHolidayDay = isWeekend || !!holidayName
               return (
                 <div key={i} className={`flex-1 text-center py-3 border-l border-gray-700 min-w-[90px] ${isToday ? 'bg-yellow-500/20' : ''}`} style={{ height: SLOT_HEIGHT * 2 }}>
-                  <p className={`text-[10px] ${isWeekend ? 'text-red-400' : 'text-gray-400'}`}>{DAY_LABELS[day.getDay()]}</p>
-                  <p className={`text-lg font-bold ${isToday ? 'bg-yellow-400 text-black rounded-full w-8 h-8 flex items-center justify-center mx-auto' : isWeekend ? 'text-red-400' : 'text-white'}`}>
+                  <p className={`text-[10px] ${isHolidayDay ? 'text-red-400' : 'text-gray-400'}`}>
+                    {DAY_LABELS[day.getDay()]}
+                    {holidayName && <span className="ml-0.5">({holidayName})</span>}
+                  </p>
+                  <p className={`text-lg font-bold ${isToday ? 'bg-yellow-400 text-black rounded-full w-8 h-8 flex items-center justify-center mx-auto' : isHolidayDay ? 'text-red-400' : 'text-white'}`}>
                     {day.getDate()}
                   </p>
                 </div>
@@ -1000,11 +1083,12 @@ export function WeeklyCalendar({ assignments, trainerId, profile }: Props) {
                   {Array.from({ length: TOTAL_SLOTS }).map((_, slotIdx) => {
                     const hour = Math.floor(slotIdx / 2) + 6
                     const half = slotIdx % 2
+                    const inWork = isWorkSlot(day, slotIdx)
                     return (
                       <div
                         key={slotIdx}
                         style={{ height: SLOT_HEIGHT }}
-                        className={`${half === 1 ? 'border-b border-gray-300' : 'border-b border-gray-100'} cursor-pointer hover:bg-yellow-100 transition-colors`}
+                        className={`${half === 1 ? 'border-b border-gray-300' : 'border-b border-gray-100'} cursor-pointer hover:bg-yellow-100 transition-colors ${hasWorkHours ? (inWork ? 'bg-blue-50/60' : 'bg-gray-100/80') : ''}`}
                         onClick={() => openCreate(day, hour, half)}
                       />
                     )

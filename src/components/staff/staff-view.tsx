@@ -63,6 +63,8 @@ export function StaffView({ staffList }: Props) {
   // 수정 폼
   const [editName, setEditName] = useState('')
   const [editRole, setEditRole] = useState<Role>('trainer')
+  const [editWorkStart, setEditWorkStart] = useState('')
+  const [editWorkEnd, setEditWorkEnd] = useState('')
 
   const handleCreate = async () => {
     if (!email || !password || !name) {
@@ -88,7 +90,12 @@ export function StaffView({ staffList }: Props) {
   const handleEdit = async () => {
     if (!editTarget) return
     setLoading(true)
-    await updateStaff(editTarget.id, { name: editName, role: editRole })
+    await updateStaff(editTarget.id, {
+      name: editName,
+      role: editRole,
+      work_start_time: editWorkStart || null,
+      work_end_time: editWorkEnd || null,
+    })
     setEditTarget(null)
     setLoading(false)
     router.refresh()
@@ -104,6 +111,8 @@ export function StaffView({ staffList }: Props) {
     setEditTarget(staff)
     setEditName(staff.name)
     setEditRole(staff.role)
+    setEditWorkStart(staff.work_start_time ?? '')
+    setEditWorkEnd(staff.work_end_time ?? '')
   }
 
   return (
@@ -125,6 +134,7 @@ export function StaffView({ staffList }: Props) {
                 <TableHead className="text-center">이름</TableHead>
                 <TableHead className="text-center">이메일</TableHead>
                 <TableHead className="text-center">역할</TableHead>
+                <TableHead className="text-center">근무시간</TableHead>
                 <TableHead className="text-center">승인여부</TableHead>
                 <TableHead className="text-center">관리</TableHead>
               </TableRow>
@@ -132,7 +142,7 @@ export function StaffView({ staffList }: Props) {
             <TableBody>
               {staffList.length === 0 ? (
                 <TableRow>
-                  <TableCell colSpan={5} className="h-24 text-center text-muted-foreground">
+                  <TableCell colSpan={6} className="h-24 text-center text-muted-foreground">
                     등록된 직원이 없습니다
                   </TableCell>
                 </TableRow>
@@ -145,6 +155,11 @@ export function StaffView({ staffList }: Props) {
                       <Badge variant="outline" className={ROLE_COLORS[staff.role]}>
                         {ROLE_LABEL[staff.role]}
                       </Badge>
+                    </TableCell>
+                    <TableCell className="text-center text-sm text-muted-foreground">
+                      {staff.work_start_time && staff.work_end_time
+                        ? `${staff.work_start_time} ~ ${staff.work_end_time}`
+                        : '-'}
                     </TableCell>
                     <TableCell className="text-center">
                       {staff.is_approved ? (
@@ -262,6 +277,15 @@ export function StaffView({ staffList }: Props) {
                   <SelectItem value="fc">FC</SelectItem>
                 </SelectContent>
               </Select>
+            </div>
+            <div className="space-y-2">
+              <Label>근무시간</Label>
+              <div className="flex items-center gap-2">
+                <Input type="time" value={editWorkStart} onChange={(e) => setEditWorkStart(e.target.value)} className="flex-1" />
+                <span className="text-sm text-muted-foreground">~</span>
+                <Input type="time" value={editWorkEnd} onChange={(e) => setEditWorkEnd(e.target.value)} className="flex-1" />
+              </div>
+              <p className="text-xs text-muted-foreground">스케줄표에서 근무시간 구간이 색상으로 표시됩니다</p>
             </div>
             <div className="flex justify-end gap-2">
               <Button variant="outline" className="text-gray-900 border-gray-400 bg-gray-100 hover:bg-gray-200" onClick={() => setEditTarget(null)}>취소</Button>

@@ -184,7 +184,13 @@ async function TrainerDetailView({ trainerId, tab }: { trainerId: string; tab: s
           )}
 
           {tab === 'schedule' && (
-            <WeeklyCalendar assignments={trainerAssignments} trainerId={trainerId} profile={profile ?? undefined} />
+            <WeeklyCalendar
+              assignments={trainerAssignments}
+              trainerId={trainerId}
+              profile={profile ?? undefined}
+              workStartTime={staffList.find((s) => s.id === trainerId)?.work_start_time ?? null}
+              workEndTime={staffList.find((s) => s.id === trainerId)?.work_end_time ?? null}
+            />
           )}
 
           {tab === 'stats' && (

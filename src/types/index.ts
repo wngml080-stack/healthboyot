@@ -22,6 +22,8 @@ export interface Profile {
   avatar_url: string | null
   folder_password: string | null
   is_approved: boolean
+  work_start_time: string | null
+  work_end_time: string | null
   created_at: string
   updated_at: string
 }
