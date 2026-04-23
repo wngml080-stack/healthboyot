@@ -237,48 +237,48 @@ export function ConsultationCardForm({ member, card, onSaved, isStandalone, card
             </div>
           </div>
 
-          <div className="bg-gray-50 rounded p-3 space-y-2">
+          <div className="bg-gray-50 rounded p-3 space-y-3">
             <p className="text-xs font-semibold text-gray-600 mb-2">【신규등록 회원님 작성란】</p>
-            <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+            <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-3">
               <div className="flex items-center gap-1">
-                <Label className="text-sm whitespace-nowrap">이름:</Label>
-                <Input value={memberName} onChange={(e) => setMemberName(e.target.value)} className="h-7 text-sm font-medium" />
+                <Label className="text-sm whitespace-nowrap shrink-0 w-14">이름:</Label>
+                <Input value={memberName} onChange={(e) => setMemberName(e.target.value)} className="h-8 text-sm font-medium flex-1" />
               </div>
               <div className="flex items-center gap-2">
-                <Label className="text-sm whitespace-nowrap">성별:</Label>
-                <button type="button" className={`px-3 py-0.5 rounded border text-sm font-medium transition-colors ${member.gender === '남' ? 'bg-blue-600 text-white border-blue-600' : 'bg-white text-gray-500 border-gray-300 hover:border-blue-400'}`} onClick={() => onGenderChange?.('남')}>남</button>
-                <button type="button" className={`px-3 py-0.5 rounded border text-sm font-medium transition-colors ${member.gender === '여' ? 'bg-pink-600 text-white border-pink-600' : 'bg-white text-gray-500 border-gray-300 hover:border-pink-400'}`} onClick={() => onGenderChange?.('여')}>여</button>
+                <Label className="text-sm whitespace-nowrap shrink-0">성별:</Label>
+                <button type="button" className={`px-3 py-1 rounded border text-sm font-medium transition-colors ${member.gender === '남' ? 'bg-blue-600 text-white border-blue-600' : 'bg-white text-gray-500 border-gray-300 hover:border-blue-400'}`} onClick={() => onGenderChange?.('남')}>남</button>
+                <button type="button" className={`px-3 py-1 rounded border text-sm font-medium transition-colors ${member.gender === '여' ? 'bg-pink-600 text-white border-pink-600' : 'bg-white text-gray-500 border-gray-300 hover:border-pink-400'}`} onClick={() => onGenderChange?.('여')}>여</button>
               </div>
               <div className="flex items-center gap-1">
-                <Label className="text-sm whitespace-nowrap">나이:</Label>
-                <Input value={age} onChange={(e) => setAge(e.target.value)} className="h-7 text-sm w-20" />
+                <Label className="text-sm whitespace-nowrap shrink-0 w-14">나이:</Label>
+                <Input value={age} onChange={(e) => setAge(e.target.value)} className="h-8 text-sm flex-1" />
               </div>
               <div className="flex items-center gap-1">
-                <Label className="text-sm whitespace-nowrap">직업:</Label>
-                <Input value={occupation} onChange={(e) => setOccupation(e.target.value)} className="h-7 text-sm" />
+                <Label className="text-sm whitespace-nowrap shrink-0 w-14">직업:</Label>
+                <Input value={occupation} onChange={(e) => setOccupation(e.target.value)} className="h-8 text-sm flex-1" />
               </div>
             </div>
-            <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+            <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-3">
               <div className="flex items-center gap-1">
-                <Label className="text-sm whitespace-nowrap">운동시간대:</Label>
-                <Input value={exerciseTimePref} onChange={(e) => setExerciseTimePref(e.target.value)} className="h-7 text-sm" />
+                <Label className="text-sm whitespace-nowrap shrink-0">운동시간대:</Label>
+                <Input value={exerciseTimePref} onChange={(e) => setExerciseTimePref(e.target.value)} className="h-8 text-sm flex-1" />
               </div>
               <div className="flex items-center gap-1">
-                <Label className="text-sm whitespace-nowrap">인스타:</Label>
-                <Input value={instagramId} onChange={(e) => setInstagramId(e.target.value)} className="h-7 text-sm" placeholder="@" />
+                <Label className="text-sm whitespace-nowrap shrink-0">인스타:</Label>
+                <Input value={instagramId} onChange={(e) => setInstagramId(e.target.value)} className="h-8 text-sm flex-1" placeholder="@" />
               </div>
               <div className="flex items-center gap-1">
-                <Label className="text-sm whitespace-nowrap">연락처:</Label>
-                <Input value={memberPhone} onChange={(e) => setMemberPhone(e.target.value)} className="h-7 text-sm font-medium" />
+                <Label className="text-sm whitespace-nowrap shrink-0">연락처:</Label>
+                <Input value={memberPhone} onChange={(e) => setMemberPhone(e.target.value)} className="h-8 text-sm font-medium flex-1" />
               </div>
               <div className="flex items-center gap-1">
-                <Label className="text-sm whitespace-nowrap">거주지역:</Label>
-                <Input value={residenceArea} onChange={(e) => setResidenceArea(e.target.value)} className="h-7 text-sm" />
+                <Label className="text-sm whitespace-nowrap shrink-0">거주지역:</Label>
+                <Input value={residenceArea} onChange={(e) => setResidenceArea(e.target.value)} className="h-8 text-sm flex-1" />
               </div>
             </div>
-            <div className="flex items-center gap-1">
-              <Label className="text-sm whitespace-nowrap">자신이 원하는 체형은? (구체적으로):</Label>
-              <Input value={desiredBodyType} onChange={(e) => setDesiredBodyType(e.target.value)} className="h-7 text-sm flex-1" />
+            <div className="flex flex-col sm:flex-row sm:items-center gap-1">
+              <Label className="text-sm whitespace-nowrap shrink-0">자신이 원하는 체형은? (구체적으로):</Label>
+              <Input value={desiredBodyType} onChange={(e) => setDesiredBodyType(e.target.value)} className="h-8 text-sm flex-1" />
             </div>
           </div>
         </div>
@@ -343,14 +343,16 @@ export function ConsultationCardForm({ member, card, onSaved, isStandalone, card
               <span className="text-sm">기타:</span>
               <Input value={medicalDetail} onChange={(e) => setMedicalDetail(e.target.value)} className="h-7 text-sm flex-1" />
             </div>
-            <div className="flex items-center gap-2">
-              <span className="text-sm">▶과거or최근수술 / 그외질환?</span>
-              <label className="flex items-center gap-1 text-sm cursor-pointer">
-                <Checkbox checked={surgeryHistory === '없음'} onCheckedChange={() => setSurgeryHistory(surgeryHistory === '없음' ? '' : '없음')} />
-                없음
-              </label>
-              <span className="text-sm">수술내용 or 그외병력:</span>
-              <Input value={surgeryDetail} onChange={(e) => setSurgeryDetail(e.target.value)} className="h-7 text-sm flex-1" />
+            <div className="flex flex-col sm:flex-row sm:items-center gap-2">
+              <span className="text-sm shrink-0">▶과거or최근수술 / 그외질환?</span>
+              <div className="flex items-center gap-2 flex-1">
+                <label className="flex items-center gap-1 text-sm cursor-pointer shrink-0">
+                  <Checkbox checked={surgeryHistory === '없음'} onCheckedChange={() => setSurgeryHistory(surgeryHistory === '없음' ? '' : '없음')} />
+                  없음
+                </label>
+                <span className="text-sm shrink-0">수술내용:</span>
+                <Input value={surgeryDetail} onChange={(e) => setSurgeryDetail(e.target.value)} className="h-8 text-sm flex-1" />
+              </div>
             </div>
           </div>
 

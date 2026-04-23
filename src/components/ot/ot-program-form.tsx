@@ -903,10 +903,17 @@ export const OtProgramForm = forwardRef<OtProgramFormRef, Props>(function OtProg
                                   if (!reason) return
                                   updateSession(idx, 'class_status' as keyof OtProgramSession, opt)
                                   updateSession(idx, 'result_note', reason)
+                                  // 즉시 저장
+                                  const updatedSessions = sessions.map((s, i) => i === idx ? { ...s, class_status: opt, result_note: reason } : s) as OtProgramSession[]
+                                  handleSave(updatedSessions)
                                   return
                                 }
+                                const newStatus = isActive ? null : opt
                                 // 즉시 세션 상태 반영
-                                updateSession(idx, 'class_status' as keyof OtProgramSession, isActive ? null : opt)
+                                updateSession(idx, 'class_status' as keyof OtProgramSession, newStatus)
+                                // 즉시 저장
+                                const updatedSessions = sessions.map((s, i) => i === idx ? { ...s, class_status: newStatus } : s) as OtProgramSession[]
+                                handleSave(updatedSessions)
                                 if (opt === '수업완료' && !isActive) {
                                   await upsertOtSession({
                                     ot_assignment_id: a.id,
