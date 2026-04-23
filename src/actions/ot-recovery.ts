@@ -76,7 +76,7 @@ function kstToIsoUtc(year: number, month: number, day: number, hour: number, min
 export async function recoverOtSessionsFromChangeLogs(dryRun: boolean): Promise<RecoveryResult> {
   // 1. 관리자 권한 확인
   const profile = await getCurrentProfile()
-  if (!profile || profile.role !== 'admin') {
+  if (!profile || (profile.role !== 'admin' && profile.role !== '관리자')) {
     return {
       total_assignments: 0,
       to_recover: 0,

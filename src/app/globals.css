@@ -42,3 +42,34 @@
     }
   }
 }
+
+/* ── 다이얼로그 모바일/데스크톱 위치 ── */
+
+/* 데스크톱: 기존 센터 */
+@media (min-width: 640px) {
+  .dialog-content {
+    left: 50%;
+    top: 50%;
+    transform: translate(-50%, -50%);
+    max-height: 90vh;
+  }
+  .dialog-close-btn {
+    right: 0.75rem;
+    top: 0.75rem;
+  }
+}
+
+/* 모바일: 상단 safe-area 아래에 배치 */
+@media (max-width: 639px) {
+  .dialog-content {
+    left: 50%;
+    transform: translateX(-50%);
+    top: calc(env(safe-area-inset-top, 0px) + 3.5rem);
+    max-height: calc(100vh - env(safe-area-inset-top, 0px) - 4rem);
+    padding-top: 2.5rem;
+  }
+  .dialog-close-btn {
+    right: 0.75rem;
+    top: 0.5rem;
+  }
+}

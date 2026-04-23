@@ -46,9 +46,23 @@ export async function updateSession(request: NextRequest) {
     return NextResponse.redirect(url)
   }
 
-  // 역할 기반 접근 제어 — JWT에서 role 읽기 (DB 호출 없음)
+  // 역할 기반 접근 제어 — DB에서 실시간 role 확인 (관리자 권한 변경 즉시 반영)
   if (session?.user) {
-    const role = session.user.user_metadata?.role as string | undefined
+    const { data: profile } = await supabase
+      .from('profiles')
+      .select('role, is_approved')
+      .eq('id', session.user.id)
+      .single()
+
+    const role = profile?.role as string | undefined
+
+    // 승인되지 않은 사용자 차단 (admin 제외)
+    if (profile && !profile.is_approved && role !== 'admin' && role !== '관리자') {
+      await supabase.auth.signOut()
+      const url = request.nextUrl.clone()
+      url.pathname = '/login'
+      return NextResponse.redirect(url)
+    }
 
     if (role) {
       if (role === 'fc' && pathname.startsWith('/ot')) {
@@ -57,7 +71,7 @@ export async function updateSession(request: NextRequest) {
         return NextResponse.redirect(url)
       }
 
-      if (role !== 'admin' && pathname.startsWith('/stats')) {
+      if (role !== 'admin' && role !== '관리자' && pathname.startsWith('/stats')) {
         const url = request.nextUrl.clone()
         url.pathname = '/dashboard'
         return NextResponse.redirect(url)

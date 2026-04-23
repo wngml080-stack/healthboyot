@@ -62,7 +62,7 @@ async function FolderView() {
     <div className="space-y-4">
       <div className="flex items-center justify-between">
         <PageTitle>트레이너 관리</PageTitle>
-        {profile?.role === 'admin' && (
+        {(profile?.role === 'admin' || profile?.role === '관리자') && (
           <Link
             href="/ot/recover"
             className="text-xs text-orange-600 hover:text-orange-700 underline"

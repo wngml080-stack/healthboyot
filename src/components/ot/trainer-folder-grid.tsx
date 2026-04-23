@@ -68,7 +68,7 @@ export function TrainerFolderGrid({ folders, allStaff, currentUserRole, currentU
   const existingFolderIds = folders.map((f) => f.id)
   // 승인된 + 폴더 없는 직원만 선택 가능 (admin 제외)
   const availableStaff = allStaff.filter(
-    (s) => s.role !== 'admin' && s.is_approved && !existingFolderIds.includes(s.id)
+    (s) => s.role !== 'admin' && s.role !== '관리자' && s.is_approved && !existingFolderIds.includes(s.id)
   )
 
   const handleFolderClick = (folder: TrainerFolder) => {
@@ -101,8 +101,9 @@ export function TrainerFolderGrid({ folders, allStaff, currentUserRole, currentU
 
     const ok = await verifyFolderPassword(selectedFolder.id, password)
     if (ok) {
+      const folderId = selectedFolder.id
       setSelectedFolder(null)
-      router.push(`/ot?trainer=${selectedFolder.id}`)
+      router.push(`/ot?trainer=${folderId}`)
     } else {
       setPwError('비밀번호가 일치하지 않습니다')
     }

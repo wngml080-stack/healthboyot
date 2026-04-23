@@ -181,18 +181,18 @@ export function ConsultationList({ cards: initialCards, members, staffList = [] 
               <tr><td colSpan={8} className="text-center py-8 text-gray-400">상담카드가 없습니다</td></tr>
             ) : filtered.map((card) => (
               <tr key={card.id} className="border-b hover:bg-gray-50">
-                <td className="px-4 py-2">
+                <td className="px-4 py-2 whitespace-nowrap">
                   <Badge className={card.status === '미연결' ? 'bg-orange-200 text-orange-800' : 'bg-green-200 text-green-800'}>
                     {card.status ?? '미연결'}
                   </Badge>
                 </td>
-                <td className="px-4 py-2 font-medium text-gray-900">{card.member_name ?? '-'}</td>
-                <td className="px-4 py-2 text-gray-600">{card.member_phone?.replace(/(\d{3})(\d{4})(\d{4})/, '$1-$2-$3') ?? '-'}</td>
-                <td className="px-4 py-2 text-gray-600">{card.member_gender ?? '-'}</td>
-                <td className="px-4 py-2 text-gray-600">{card.fc_name ?? '-'}</td>
-                <td className="px-4 py-2 text-gray-600 text-xs">{card.exercise_start_date ? new Date(card.exercise_start_date + 'T00:00:00').toLocaleDateString('ko') : '-'}</td>
-                <td className="px-4 py-2 text-gray-500 text-xs">{card.created_at ? new Date(card.created_at).toLocaleDateString('ko') : '-'}</td>
-                <td className="px-4 py-2 text-center">
+                <td className="px-4 py-2 font-medium text-gray-900 whitespace-nowrap">{card.member_name ?? '-'}</td>
+                <td className="px-4 py-2 text-gray-600 whitespace-nowrap">{card.member_phone?.replace(/(\d{3})(\d{4})(\d{4})/, '$1-$2-$3') ?? '-'}</td>
+                <td className="px-4 py-2 text-gray-600 whitespace-nowrap">{card.member_gender ?? '-'}</td>
+                <td className="px-4 py-2 text-gray-600 whitespace-nowrap">{card.fc_name ?? '-'}</td>
+                <td className="px-4 py-2 text-gray-600 text-xs whitespace-nowrap">{card.exercise_start_date ? new Date(card.exercise_start_date + 'T00:00:00').toLocaleDateString('ko') : '-'}</td>
+                <td className="px-4 py-2 text-gray-500 text-xs whitespace-nowrap">{card.created_at ? new Date(card.created_at).toLocaleDateString('ko') : '-'}</td>
+                <td className="px-4 py-2 text-center whitespace-nowrap">
                   <div className="flex items-center justify-center gap-1.5">
                     <Button size="sm" className="h-7 text-xs bg-gray-800 hover:bg-gray-700 text-white" onClick={() => setViewCard(card)}>
                       <ClipboardList className="h-3 w-3 mr-1" />보기

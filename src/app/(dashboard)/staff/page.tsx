@@ -5,7 +5,7 @@ import { StaffView } from '@/components/staff/staff-view'
 
 export default async function StaffPage() {
   const profile = await getCurrentProfile()
-  if (!profile || profile.role !== 'admin') redirect('/ot')
+  if (!profile || (profile.role !== 'admin' && profile.role !== '관리자')) redirect('/ot')
 
   const staffList = await getStaffList()
 

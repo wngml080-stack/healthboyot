@@ -24,6 +24,8 @@ export interface Profile {
   is_approved: boolean
   work_start_time: string | null
   work_end_time: string | null
+  has_folder?: boolean
+  folder_order?: number
   created_at: string
   updated_at: string
 }

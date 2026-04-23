@@ -178,7 +178,7 @@ export async function verifyFolderPassword(trainerId: string, password: string):
       .select('role')
       .eq('id', currentUser.user.id)
       .single()
-    if (profile?.role === 'admin') return true
+    if (profile?.role === 'admin' || profile?.role === '관리자') return true
   }
 
   if (!folderData?.folder_password) return true

@@ -263,19 +263,21 @@ export function MemberList({ initialMembers, trainers = [] }: Props) {
           </SelectContent>
         </Select>
 
-        <Input
-          type="date"
-          defaultValue={searchParams.get('from') ?? ''}
-          onChange={(e) => pushFilters({ from: e.target.value })}
-          className="w-[calc(50%-1rem)] sm:w-36 h-9 bg-white text-gray-700 border-gray-300 text-sm"
-        />
-        <span className="text-gray-400 text-sm">~</span>
-        <Input
-          type="date"
-          defaultValue={searchParams.get('to') ?? ''}
-          onChange={(e) => pushFilters({ to: e.target.value })}
-          className="w-[calc(50%-1rem)] sm:w-36 h-9 bg-white text-gray-700 border-gray-300 text-sm"
-        />
+        <div className="flex items-center gap-1 w-full sm:w-auto">
+          <Input
+            type="date"
+            defaultValue={searchParams.get('from') ?? ''}
+            onChange={(e) => pushFilters({ from: e.target.value })}
+            className="flex-1 sm:w-36 sm:flex-none h-9 bg-white text-gray-700 border-gray-300 text-sm"
+          />
+          <span className="text-gray-400 text-sm shrink-0">~</span>
+          <Input
+            type="date"
+            defaultValue={searchParams.get('to') ?? ''}
+            onChange={(e) => pushFilters({ to: e.target.value })}
+            className="flex-1 sm:w-36 sm:flex-none h-9 bg-white text-gray-700 border-gray-300 text-sm"
+          />
+        </div>
 
         <Button
           size="sm"
@@ -291,14 +293,14 @@ export function MemberList({ initialMembers, trainers = [] }: Props) {
         <Table className="min-w-[700px]">
           <TableHeader>
             <TableRow className="bg-gray-50">
-              <SortableHead label="등록일" sortKey="registered_at" currentKey={sortKey} asc={sortAsc} onSort={handleSort} width="w-[60px]" />
-              <SortableHead label="이름" sortKey="name" currentKey={sortKey} asc={sortAsc} onSort={handleSort} width="w-[90px]" />
-              <SortableHead label="종목" sortKey="ot_category" currentKey={sortKey} asc={sortAsc} onSort={handleSort} width="w-[50px]" />
-              <SortableHead label="시작일" sortKey="start_date" currentKey={sortKey} asc={sortAsc} onSort={handleSort} width="w-[60px]" />
-              <SortableHead label="운동시간" sortKey="exercise_time" currentKey={sortKey} asc={sortAsc} onSort={handleSort} width="w-[70px]" />
-              <SortableHead label="PT" sortKey="pt_trainer" currentKey={sortKey} asc={sortAsc} onSort={handleSort} width="w-[50px]" />
-              <SortableHead label="PPT" sortKey="ppt_trainer" currentKey={sortKey} asc={sortAsc} onSort={handleSort} width="w-[50px]" />
-              <SortableHead label="진행상태" sortKey="progress" currentKey={sortKey} asc={sortAsc} onSort={handleSort} width="w-[80px]" />
+              <SortableHead label="등록일" sortKey="registered_at" currentKey={sortKey} asc={sortAsc} onSort={handleSort} width="w-[72px]" />
+              <SortableHead label="이름" sortKey="name" currentKey={sortKey} asc={sortAsc} onSort={handleSort} width="w-[100px]" />
+              <SortableHead label="종목" sortKey="ot_category" currentKey={sortKey} asc={sortAsc} onSort={handleSort} width="w-[56px]" />
+              <SortableHead label="시작일" sortKey="start_date" currentKey={sortKey} asc={sortAsc} onSort={handleSort} width="w-[68px]" />
+              <SortableHead label="운동시간" sortKey="exercise_time" currentKey={sortKey} asc={sortAsc} onSort={handleSort} width="w-[80px]" />
+              <SortableHead label="PT" sortKey="pt_trainer" currentKey={sortKey} asc={sortAsc} onSort={handleSort} width="w-[60px]" />
+              <SortableHead label="PPT" sortKey="ppt_trainer" currentKey={sortKey} asc={sortAsc} onSort={handleSort} width="w-[60px]" />
+              <SortableHead label="진행상태" sortKey="progress" currentKey={sortKey} asc={sortAsc} onSort={handleSort} width="w-[84px]" />
               <TableHead className="text-center text-gray-700 w-[30px]" />
             </TableRow>
           </TableHeader>

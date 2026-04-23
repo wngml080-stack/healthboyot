@@ -147,10 +147,10 @@ export function ConsultationCardForm({ member, card, onSaved, isStandalone, card
   return (
     <div className="space-y-6 max-w-5xl mx-auto">
       <div className="border-2 border-black rounded-lg overflow-hidden">
-        <div className="bg-gray-900 text-white px-4 py-3 flex items-center justify-between">
-          <h2 className="text-lg font-bold">STEP.1 신규회원 상담 카드</h2>
-          <div className="flex items-center gap-4 text-sm">
-            <span>등록담당자 :</span>
+        <div className="bg-gray-900 text-white px-4 py-3 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2">
+          <h2 className="text-base sm:text-lg font-bold">STEP.1 신규회원 상담 카드</h2>
+          <div className="flex items-center gap-2 sm:gap-4 text-sm">
+            <span className="whitespace-nowrap">등록담당자 :</span>
             {staffList.length > 0 ? (
               <Select value={fcName || 'none'} onValueChange={(v) => setFcName(v === 'none' ? '' : v)}>
                 <SelectTrigger className="w-32 h-7 bg-white text-black text-sm">
@@ -192,7 +192,7 @@ export function ConsultationCardForm({ member, card, onSaved, isStandalone, card
             </div>
             <div className="flex items-center gap-2">
               <Label className="text-sm font-bold whitespace-nowrap shrink-0">만료일:</Label>
-              <div className="flex items-center gap-1 flex-1">
+              <div className="flex items-center gap-1 flex-1 flex-nowrap">
                 <Input
                   type="number"
                   inputMode="numeric"

@@ -102,8 +102,12 @@ export function StaffView({ staffList }: Props) {
   }
 
   const handleDelete = async (id: string, staffName: string) => {
-    if (!confirm(`${staffName} 직원을 삭제하시겠습니까?`)) return
-    await deleteStaff(id)
+    if (!confirm(`${staffName} 직원을 삭제하시겠습니까?\n\n해당 직원의 스케줄도 함께 삭제됩니다.`)) return
+    const result = await deleteStaff(id)
+    if (result && 'error' in result && result.error) {
+      alert('삭제 실패: ' + result.error)
+      return
+    }
     router.refresh()
   }
 

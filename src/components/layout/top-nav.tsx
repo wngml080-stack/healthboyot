@@ -36,15 +36,21 @@ export function TopNav({ profile }: Props) {
     const loadUrls = async () => {
       const { createClient } = await import('@/lib/supabase/client')
       const supabase = createClient()
-      const urls: Record<string, string> = {}
       const keyMap: Record<string, string> = { '신규': 'new', '재등록': 'renew' }
-      for (const key of ['신규', '재등록']) {
-        const { data } = await supabase.storage.from('ot-images').list('pricing', { search: keyMap[key] })
-        if (data && data.length > 0) {
-          const latest = data.sort((a, b) => (b.created_at ?? '').localeCompare(a.created_at ?? ''))[0]
-          const { data: pub } = supabase.storage.from('ot-images').getPublicUrl(`pricing/${latest.name}`)
-          urls[key] = pub.publicUrl + '?t=' + Date.now()
-        }
+      const entries = await Promise.all(
+        Object.entries(keyMap).map(async ([key, search]) => {
+          const { data } = await supabase.storage.from('ot-images').list('pricing', { search })
+          if (data && data.length > 0) {
+            const latest = data.sort((a, b) => (b.created_at ?? '').localeCompare(a.created_at ?? ''))[0]
+            const { data: pub } = supabase.storage.from('ot-images').getPublicUrl(`pricing/${latest.name}`)
+            return [key, pub.publicUrl + '?t=' + Date.now()] as const
+          }
+          return null
+        })
+      )
+      const urls: Record<string, string> = {}
+      for (const entry of entries) {
+        if (entry) urls[entry[0]] = entry[1]
       }
       setPricingUrls(urls)
     }

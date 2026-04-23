@@ -1326,10 +1326,10 @@ export const OtProgramForm = forwardRef<OtProgramFormRef, Props>(function OtProg
                           handleImageUpload(idx, dt.files)
                         }}
                       >
-                        <div className="flex items-center justify-between">
-                          <Label className="text-xs font-bold">비포 / 애프터 / 운동영상 참고자료 <span className="text-gray-400 font-normal">(Ctrl+V 붙여넣기 가능)</span></Label>
+                        <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2">
+                          <Label className="text-xs font-bold leading-snug">비포 / 애프터 / 운동영상 참고자료 <span className="text-gray-400 font-normal">(Ctrl+V 붙여넣기 가능)</span></Label>
                           {canEdit && (
-                            <label className="text-xs font-bold text-blue-600 hover:text-blue-800 cursor-pointer px-2 py-1 bg-blue-50 rounded-md border border-blue-200">
+                            <label className="text-xs font-bold text-blue-600 hover:text-blue-800 cursor-pointer px-3 py-1.5 bg-blue-50 rounded-md border border-blue-200 whitespace-nowrap shrink-0 text-center">
                               + 이미지/영상 추가
                               <input type="file" accept="image/*,video/*" multiple className="hidden" onChange={(e) => e.target.files && handleImageUpload(idx, e.target.files)} disabled={uploading} />
                             </label>

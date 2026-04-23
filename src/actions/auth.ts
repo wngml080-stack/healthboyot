@@ -44,7 +44,7 @@ export async function signIn(formData: { email: string; password: string }) {
       .single()
 
     // admin은 항상 승인
-    if (profile && !profile.is_approved && profile.role !== 'admin') {
+    if (profile && !profile.is_approved && profile.role !== 'admin' && profile.role !== '관리자') {
       await supabase.auth.signOut()
       return { error: 'NOT_APPROVED' }
     }
@@ -83,38 +83,19 @@ export async function signUp(formData: { email: string; password: string; name: 
     return { error: error.message }
   }
 
-  // 가입 즉시 자동 승인 + 본인 폴더 자동 활성화
-  // → 트레이너가 가입 직후 본인 계정으로 로그인해서 본인 폴더에 들어갈 수 있음
-  // → admin은 staff 페이지에서 role을 trainer로 변경하거나 권한 조정 가능
+  // 가입 후 관리자 승인 필요 — is_approved: false로 생성
+  // 승인 전까지 로그인 불가 (signIn에서 차단)
   if (data.user) {
-    // 다음 folder_order 계산 (기존 폴더가 있으면 max + 1, 없으면 1)
-    const { data: maxOrder } = await supabase
-      .from('profiles')
-      .select('folder_order')
-      .eq('has_folder', true)
-      .order('folder_order', { ascending: false })
-      .limit(1)
-      .maybeSingle()
-    const nextOrder = (maxOrder?.folder_order ?? 0) + 1
-
     await supabase.from('profiles').upsert({
       id: data.user.id,
       name: formData.name,
       email: formData.email,
-      // 가입자는 트레이너로 시작 (FC 직원은 admin이 staff 페이지에서 role 변경 필요)
-      // fc role은 미들웨어에서 /ot 접근이 막혀 본인 폴더에 못 들어감
       role: 'trainer',
-      is_approved: true,
-      has_folder: true,
-      folder_order: nextOrder,
-      folder_password: formData.password,
+      is_approved: false,
     })
-
-    // 미들웨어가 JWT의 user_metadata.role로 권한 체크 → 새 role 즉시 반영되도록 갱신
-    await supabase.auth.updateUser({ data: { role: 'trainer' } })
   }
 
-  // 가입 후 바로 로그아웃 → 본인이 직접 다시 로그인하도록 안내
+  // 가입 후 바로 로그아웃 → 관리자 승인 후 로그인 가능
   await supabase.auth.signOut()
 
   return { success: true }

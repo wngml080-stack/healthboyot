@@ -288,6 +288,12 @@ export function PublicConsultationForm({ card: initialCard, cardId }: Props) {
           outline: none;
           transition: border-color 0.2s;
           background: white;
+          color: #111827;
+          -webkit-text-fill-color: #111827;
+        }
+        .form-input::placeholder {
+          color: #9ca3af;
+          -webkit-text-fill-color: #9ca3af;
         }
         .form-input:focus {
           border-color: #facc15;

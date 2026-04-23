@@ -7,7 +7,7 @@ import { ArrowLeft } from 'lucide-react'
 
 export default async function OtRecoverPage() {
   const profile = await getCurrentProfile()
-  if (!profile || profile.role !== 'admin') {
+  if (!profile || (profile.role !== 'admin' && profile.role !== '관리자')) {
     redirect('/ot')
   }
 

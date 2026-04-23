@@ -1263,17 +1263,17 @@ export function WeeklyCalendar({ assignments, trainerId, profile, workStartTime,
                               {isSales && <span className="text-yellow-500">★ </span>}
                               {s.schedule_type}
                               {s.member_name ? ` ${s.member_name}` : ''}
-                              {ptResult && (
-                                <span className={`ml-1 ${PT_RESULT_TEXT_COLORS[ptResult as PtClassResult] ?? 'text-gray-700'}`}>
-                                  [{ptResult}]
-                                </span>
-                              )}
-                              {otSalesStatus && (
-                                <span className={`ml-1 ${OT_SALES_TEXT_COLORS[otSalesStatus] ?? 'text-gray-700'}`}>
-                                  [{OT_SALES_LABEL[otSalesStatus]}]
-                                </span>
-                              )}
                             </p>
+                            {ptResult && (
+                              <p className={`text-[10px] font-bold ${PT_RESULT_TEXT_COLORS[ptResult as PtClassResult] ?? 'text-gray-700'}`}>
+                                [{ptResult}]
+                              </p>
+                            )}
+                            {otSalesStatus && (
+                              <p className={`text-[10px] font-bold ${OT_SALES_TEXT_COLORS[otSalesStatus] ?? 'text-gray-700'}`}>
+                                [{OT_SALES_LABEL[otSalesStatus]}]
+                              </p>
+                            )}
                             <p className="text-[10px] opacity-70">
                               {s.start_time} · {s.duration}분
                               {amount ? ` · ${amount}만` : ''}
@@ -1320,11 +1320,16 @@ export function WeeklyCalendar({ assignments, trainerId, profile, workStartTime,
           }
           const meetingTypes = new Set(['간부회의', '팀회의', '전체회의', '간담회'])
 
-          // 일별 집계
-          type DayStat = { ptIn: number; ptOut: number; pptIn: number; pptOut: number; ot: number; meetingMin: number; otherMin: Record<string, number> }
+          // 일별 집계 (노쇼/차감노쇼 별도 카운트)
+          type DayStat = {
+            ptIn: number; ptOut: number; pptIn: number; pptOut: number
+            ptInNoshow: number; ptOutNoshow: number; pptInNoshow: number; pptOutNoshow: number
+            ot: number; meetingMin: number; otherMin: Record<string, number>
+          }
+          const emptyStat = (): DayStat => ({ ptIn: 0, ptOut: 0, pptIn: 0, pptOut: 0, ptInNoshow: 0, ptOutNoshow: 0, pptInNoshow: 0, pptOutNoshow: 0, ot: 0, meetingMin: 0, otherMin: {} })
           const dayStats = new Map<string, DayStat>()
           for (const d of days) {
-            dayStats.set(format(d, 'yyyy-MM-dd'), { ptIn: 0, ptOut: 0, pptIn: 0, pptOut: 0, ot: 0, meetingMin: 0, otherMin: {} })
+            dayStats.set(format(d, 'yyyy-MM-dd'), emptyStat())
           }
           for (const s of schedules) {
             const st = dayStats.get(s.scheduled_date)
@@ -1332,8 +1337,12 @@ export function WeeklyCalendar({ assignments, trainerId, profile, workStartTime,
             if (s.schedule_type === 'PT' || s.schedule_type === 'PPT') {
               const parsed = parsePtNote(s.note)
               const isPt = s.schedule_type === 'PT'
-              if (parsed.inOut === 'OUT') { if (isPt) st.ptOut++; else st.pptOut++ }
-              else { if (isPt) st.ptIn++; else st.pptIn++ }
+              const isNoshow = parsed.classResult === '노쇼' || parsed.classResult === '차감노쇼'
+              if (parsed.inOut === 'OUT') {
+                if (isPt) { st.ptOut++; if (isNoshow) st.ptOutNoshow++ } else { st.pptOut++; if (isNoshow) st.pptOutNoshow++ }
+              } else {
+                if (isPt) { st.ptIn++; if (isNoshow) st.ptInNoshow++ } else { st.pptIn++; if (isNoshow) st.pptInNoshow++ }
+              }
             } else if (s.schedule_type === 'OT') {
               st.ot++
             } else if (meetingTypes.has(s.schedule_type)) {
@@ -1344,10 +1353,12 @@ export function WeeklyCalendar({ assignments, trainerId, profile, workStartTime,
           }
 
           // 합계
-          const total: DayStat = { ptIn: 0, ptOut: 0, pptIn: 0, pptOut: 0, ot: 0, meetingMin: 0, otherMin: {} }
+          const total: DayStat = emptyStat()
           Array.from(dayStats.values()).forEach((st) => {
             total.ptIn += st.ptIn; total.ptOut += st.ptOut
             total.pptIn += st.pptIn; total.pptOut += st.pptOut
+            total.ptInNoshow += st.ptInNoshow; total.ptOutNoshow += st.ptOutNoshow
+            total.pptInNoshow += st.pptInNoshow; total.pptOutNoshow += st.pptOutNoshow
             total.ot += st.ot; total.meetingMin += st.meetingMin
             Object.entries(st.otherMin).forEach(([k, v]) => { total.otherMin[k] = (total.otherMin[k] ?? 0) + (v as number) })
           })
@@ -1358,73 +1369,160 @@ export function WeeklyCalendar({ assignments, trainerId, profile, workStartTime,
             Object.keys(st.otherMin).forEach((k) => { if (!allOtherTypes.includes(k)) allOtherTypes.push(k) })
           })
 
-          const renderCell = (val: number | string, bold = false) => (
-            <td className={`text-center py-1.5 px-1 text-xs ${bold ? 'font-bold' : ''} ${val === 0 || val === '-' ? 'text-gray-300' : 'text-gray-700'}`}>
-              {val === 0 ? '-' : val}
-            </td>
-          )
+          // 셀 렌더링 (노쇼 괄호 표시 포함)
+          const cell = (val: number | string, isTotal = false) => {
+            const empty = val === 0 || val === '-'
+            return (
+              <td className={`text-center py-2.5 px-1 text-xs border-r border-gray-100 last:border-r-0 ${isTotal ? 'font-black bg-gray-50' : 'font-semibold'} ${empty ? 'text-gray-300' : isTotal ? 'text-gray-900' : 'text-gray-700'}`}>
+                {empty ? '-' : val}
+              </td>
+            )
+          }
+          // 수업 건수 + 노쇼 표시 셀: "3 (1)" 형태, 합계는 노쇼 제외
+          const classCell = (count: number, noshow: number, isTotal = false) => {
+            const effective = count - noshow
+            const empty = effective === 0 && noshow === 0
+            return (
+              <td className={`text-center py-2.5 px-1 text-xs border-r border-gray-100 last:border-r-0 ${isTotal ? 'font-black bg-gray-50' : 'font-semibold'}`}>
+                {empty ? <span className="text-gray-300">-</span> : (
+                  <>
+                    <span className={isTotal ? 'text-gray-900' : 'text-gray-700'}>{effective}</span>
+                    {noshow > 0 && <span className="text-red-500 font-bold ml-0.5">({noshow})</span>}
+                  </>
+                )}
+              </td>
+            )
+          }
+
+          // 일별 총 수업 건수 (노쇼 제외)
+          const dayTotalClass = (dateStr: string) => {
+            const st = dayStats.get(dateStr)!
+            return (st.ptIn - st.ptInNoshow) + (st.ptOut - st.ptOutNoshow) + (st.pptIn - st.pptInNoshow) + (st.pptOut - st.pptOutNoshow) + st.ot
+          }
+          const dayTotalNoshow = (dateStr: string) => {
+            const st = dayStats.get(dateStr)!
+            return st.ptInNoshow + st.ptOutNoshow + st.pptInNoshow + st.pptOutNoshow
+          }
+          const weekTotalClass = (total.ptIn - total.ptInNoshow) + (total.ptOut - total.ptOutNoshow) + (total.pptIn - total.pptInNoshow) + (total.pptOut - total.pptOutNoshow) + total.ot
+          const weekTotalNoshow = total.ptInNoshow + total.ptOutNoshow + total.pptInNoshow + total.pptOutNoshow
 
           return (
-            <div className="rounded-lg border border-gray-200 bg-white overflow-x-auto -mx-4 sm:mx-0">
-              <table className="w-full min-w-[500px] text-xs">
-                <thead>
-                  <tr className="bg-gray-900 text-white">
-                    <th className="py-2 px-2 text-left font-bold">항목</th>
-                    {days.map((d, i) => (
-                      <th key={i} className={`py-2 px-1 text-center font-bold ${i >= 5 ? 'text-red-300' : ''}`}>
-                        {DAY_LABELS[d.getDay()]} {d.getDate()}
-                      </th>
-                    ))}
-                    <th className="py-2 px-2 text-center font-bold bg-gray-800">합계</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {/* PT IN */}
-                  <tr className="border-b border-gray-100 bg-blue-50/50">
-                    <td className="py-1.5 px-2 font-bold text-blue-700">PT IN</td>
-                    {days.map((d, i) => { const st = dayStats.get(format(d, 'yyyy-MM-dd'))!; return <React.Fragment key={i}>{renderCell(st.ptIn)}</React.Fragment> })}
-                    {renderCell(total.ptIn, true)}
-                  </tr>
-                  {/* PT OUT */}
-                  <tr className="border-b border-gray-100 bg-blue-50/30">
-                    <td className="py-1.5 px-2 font-bold text-orange-500">PT OUT</td>
-                    {days.map((d, i) => { const st = dayStats.get(format(d, 'yyyy-MM-dd'))!; return <React.Fragment key={i}>{renderCell(st.ptOut)}</React.Fragment> })}
-                    {renderCell(total.ptOut, true)}
-                  </tr>
-                  {/* PPT IN */}
-                  <tr className="border-b border-gray-100 bg-purple-50/50">
-                    <td className="py-1.5 px-2 font-bold text-purple-700">PPT IN</td>
-                    {days.map((d, i) => { const st = dayStats.get(format(d, 'yyyy-MM-dd'))!; return <React.Fragment key={i}>{renderCell(st.pptIn)}</React.Fragment> })}
-                    {renderCell(total.pptIn, true)}
-                  </tr>
-                  {/* PPT OUT */}
-                  <tr className="border-b border-gray-100 bg-purple-50/30">
-                    <td className="py-1.5 px-2 font-bold text-orange-500">PPT OUT</td>
-                    {days.map((d, i) => { const st = dayStats.get(format(d, 'yyyy-MM-dd'))!; return <React.Fragment key={i}>{renderCell(st.pptOut)}</React.Fragment> })}
-                    {renderCell(total.pptOut, true)}
-                  </tr>
-                  {/* OT */}
-                  <tr className="border-b border-gray-100 bg-emerald-50/50">
-                    <td className="py-1.5 px-2 font-bold text-emerald-700">OT</td>
-                    {days.map((d, i) => { const st = dayStats.get(format(d, 'yyyy-MM-dd'))!; return <React.Fragment key={i}>{renderCell(st.ot)}</React.Fragment> })}
-                    {renderCell(total.ot, true)}
-                  </tr>
-                  {/* 회의 */}
-                  <tr className="border-b border-gray-100 bg-yellow-50/50">
-                    <td className="py-1.5 px-2 font-bold text-yellow-700">회의</td>
-                    {days.map((d, i) => { const st = dayStats.get(format(d, 'yyyy-MM-dd'))!; return <React.Fragment key={i}>{renderCell(formatMin(st.meetingMin))}</React.Fragment> })}
-                    {renderCell(formatMin(total.meetingMin), true)}
-                  </tr>
-                  {/* 기타 타입들 */}
-                  {allOtherTypes.sort().map((t) => (
-                    <tr key={t} className="border-b border-gray-100">
-                      <td className="py-1.5 px-2 font-bold text-gray-600">{t}</td>
-                      {days.map((d, i) => { const st = dayStats.get(format(d, 'yyyy-MM-dd'))!; return <React.Fragment key={i}>{renderCell(formatMin(st.otherMin[t] ?? 0))}</React.Fragment> })}
-                      {renderCell(formatMin(total.otherMin[t] ?? 0), true)}
+            <div className="rounded-xl border border-gray-200 bg-white overflow-hidden shadow-sm -mx-4 sm:mx-0">
+              {/* 타이틀 */}
+              <div className="bg-gray-900 px-4 py-3 flex items-center justify-between">
+                <p className="text-sm font-bold text-white">일별 통계</p>
+                <p className="text-xs text-gray-400">총 수업 <span className="text-yellow-400 font-black text-sm">{weekTotalClass}</span>건</p>
+              </div>
+              <div className="overflow-x-auto">
+                <table className="w-full min-w-[540px]">
+                  <thead>
+                    <tr className="bg-gray-50 border-b border-gray-200">
+                      <th className="py-2.5 px-3 text-left text-[11px] font-bold text-gray-500 min-w-[90px] w-[90px]" />
+                      {days.map((d, i) => {
+                        const isWe = i >= 5
+                        const isHol = !!KOREAN_HOLIDAYS[format(d, 'yyyy-MM-dd')]
+                        return (
+                          <th key={i} className={`py-2.5 px-1 text-center text-[11px] font-bold border-r border-gray-100 last:border-r-0 ${isWe || isHol ? 'text-red-400' : 'text-gray-500'}`}>
+                            <span className="block">{DAY_LABELS[d.getDay()]}</span>
+                            <span className="block text-sm">{d.getDate()}일</span>
+                          </th>
+                        )
+                      })}
+                      <th className="py-2.5 px-2 text-center text-[11px] font-bold text-gray-900 bg-gray-100 w-[52px]">합계</th>
                     </tr>
-                  ))}
-                </tbody>
-              </table>
+                  </thead>
+                  <tbody>
+                    {/* 총 수업 (노쇼 제외) */}
+                    <tr className="border-b-2 border-gray-200 bg-yellow-50/60">
+                      <td className="py-2.5 px-3 text-[11px] font-black text-gray-900">수업 합계</td>
+                      {days.map((d, i) => {
+                        const ds = format(d, 'yyyy-MM-dd')
+                        const v = dayTotalClass(ds)
+                        const ns = dayTotalNoshow(ds)
+                        return <React.Fragment key={i}>{classCell(v + ns, ns)}</React.Fragment>
+                      })}
+                      <td className="text-center py-2.5 px-1 font-black text-sm bg-yellow-100">
+                        <span className="text-gray-900">{weekTotalClass}</span>
+                        {weekTotalNoshow > 0 && <span className="text-red-500 text-[10px] ml-0.5">({weekTotalNoshow})</span>}
+                      </td>
+                    </tr>
+                    {/* PT IN */}
+                    <tr className="border-b border-gray-100 hover:bg-blue-50/30 transition-colors">
+                      <td className="py-2.5 px-3">
+                        <span className="inline-flex items-center gap-1 text-[11px] font-bold text-blue-700">
+                          <span className="w-2 h-2 rounded-full bg-blue-400" />PT IN
+                        </span>
+                      </td>
+                      {days.map((d, i) => { const st = dayStats.get(format(d, 'yyyy-MM-dd'))!; return <React.Fragment key={i}>{classCell(st.ptIn, st.ptInNoshow)}</React.Fragment> })}
+                      {classCell(total.ptIn, total.ptInNoshow, true)}
+                    </tr>
+                    {/* PT OUT */}
+                    <tr className="border-b border-gray-100 hover:bg-orange-50/30 transition-colors">
+                      <td className="py-2.5 px-3">
+                        <span className="inline-flex items-center gap-1 text-[11px] font-bold text-orange-500">
+                          <span className="w-2 h-2 rounded-full bg-orange-400" />PT OUT
+                        </span>
+                      </td>
+                      {days.map((d, i) => { const st = dayStats.get(format(d, 'yyyy-MM-dd'))!; return <React.Fragment key={i}>{classCell(st.ptOut, st.ptOutNoshow)}</React.Fragment> })}
+                      {classCell(total.ptOut, total.ptOutNoshow, true)}
+                    </tr>
+                    {/* PPT IN */}
+                    <tr className="border-b border-gray-100 hover:bg-purple-50/30 transition-colors">
+                      <td className="py-2.5 px-3">
+                        <span className="inline-flex items-center gap-1 text-[11px] font-bold text-purple-700">
+                          <span className="w-2 h-2 rounded-full bg-purple-400" />PPT IN
+                        </span>
+                      </td>
+                      {days.map((d, i) => { const st = dayStats.get(format(d, 'yyyy-MM-dd'))!; return <React.Fragment key={i}>{classCell(st.pptIn, st.pptInNoshow)}</React.Fragment> })}
+                      {classCell(total.pptIn, total.pptInNoshow, true)}
+                    </tr>
+                    {/* PPT OUT */}
+                    <tr className="border-b border-gray-100 hover:bg-orange-50/30 transition-colors">
+                      <td className="py-2.5 px-3">
+                        <span className="inline-flex items-center gap-1 text-[11px] font-bold text-orange-500">
+                          <span className="w-2 h-2 rounded-full bg-orange-400" />PPT OUT
+                        </span>
+                      </td>
+                      {days.map((d, i) => { const st = dayStats.get(format(d, 'yyyy-MM-dd'))!; return <React.Fragment key={i}>{classCell(st.pptOut, st.pptOutNoshow)}</React.Fragment> })}
+                      {classCell(total.pptOut, total.pptOutNoshow, true)}
+                    </tr>
+                    {/* OT */}
+                    <tr className="border-b border-gray-200 hover:bg-emerald-50/30 transition-colors">
+                      <td className="py-2.5 px-3">
+                        <span className="inline-flex items-center gap-1 text-[11px] font-bold text-emerald-700">
+                          <span className="w-2 h-2 rounded-full bg-emerald-400" />OT
+                        </span>
+                      </td>
+                      {days.map((d, i) => <React.Fragment key={i}>{cell(dayStats.get(format(d, 'yyyy-MM-dd'))!.ot)}</React.Fragment>)}
+                      {cell(total.ot, true)}
+                    </tr>
+                    {/* 회의 */}
+                    {total.meetingMin > 0 && (
+                      <tr className="border-b border-gray-100 hover:bg-yellow-50/30 transition-colors">
+                        <td className="py-2.5 px-3">
+                          <span className="inline-flex items-center gap-1 text-[11px] font-bold text-yellow-700">
+                            <span className="w-2 h-2 rounded-full bg-yellow-400" />회의
+                          </span>
+                        </td>
+                        {days.map((d, i) => <React.Fragment key={i}>{cell(formatMin(dayStats.get(format(d, 'yyyy-MM-dd'))!.meetingMin))}</React.Fragment>)}
+                        {cell(formatMin(total.meetingMin), true)}
+                      </tr>
+                    )}
+                    {/* 기타 타입들 */}
+                    {allOtherTypes.sort().map((t) => (
+                      <tr key={t} className="border-b border-gray-100 hover:bg-gray-50 transition-colors">
+                        <td className="py-2.5 px-3">
+                          <span className="inline-flex items-center gap-1 text-[11px] font-bold text-gray-600">
+                            <span className="w-2 h-2 rounded-full bg-gray-400" />{t}
+                          </span>
+                        </td>
+                        {days.map((d, i) => <React.Fragment key={i}>{cell(formatMin(dayStats.get(format(d, 'yyyy-MM-dd'))!.otherMin[t] ?? 0))}</React.Fragment>)}
+                        {cell(formatMin(total.otherMin[t] ?? 0), true)}
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
             </div>
           )
         })()}

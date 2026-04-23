@@ -19,7 +19,7 @@ interface Props {
 export function OtDetailView({ assignment, profile }: Props) {
   const router = useRouter()
   const a = assignment
-  const isAdmin = profile.role === 'admin'
+  const isAdmin = profile.role === 'admin' || profile.role === '관리자'
   const isAssignedTrainer =
     profile.id === a.pt_trainer_id || profile.id === a.ppt_trainer_id
   const canEdit = isAdmin || isAssignedTrainer
