@@ -23,8 +23,12 @@ export interface TrainerFolder {
 // 직무별 색상
 const ROLE_COLORS: Record<string, string> = {
   trainer: 'bg-blue-500',
+  '트레이너': 'bg-blue-500',
   fc: 'bg-emerald-500',
   admin: 'bg-yellow-500',
+  '관리자': 'bg-yellow-500',
+  '팀장': 'bg-yellow-500',
+  '강사': 'bg-pink-500',
 }
 
 export async function getTrainerFolders(): Promise<TrainerFolder[]> {
