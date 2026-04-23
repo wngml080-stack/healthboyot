@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useRef, useCallback, useMemo, Fragment, memo } from 'react'
+import { useState, useRef, useCallback, useMemo, useEffect, Fragment, memo } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
 import { Search, Pencil, ChevronDown, ChevronUp, Trash2, AlertTriangle, ArrowRightLeft, ArrowUpDown, ArrowUp, ArrowDown, UserPlus } from 'lucide-react'
 import { Input } from '@/components/ui/input'
@@ -29,12 +29,13 @@ import {
   TableRow,
 } from '@/components/ui/table'
 import { deleteMember } from '@/actions/members'
+import { getConsultationCard } from '@/actions/consultation'
 import { addChangeLog } from '@/actions/change-log'
 import { updateOtAssignment } from '@/actions/ot'
 import { MemberEditDialog } from './member-edit-dialog'
 import { MemberAddDialog } from './member-add-dialog'
 import { TrainerChangeDialog } from './trainer-change-dialog'
-import type { Member, OtAssignmentWithDetails, Profile } from '@/types'
+import type { Member, OtAssignmentWithDetails, Profile, ConsultationCard } from '@/types'
 
 export interface MemberWithOt extends Member {
   assignment?: OtAssignmentWithDetails | null
@@ -107,6 +108,19 @@ export function MemberList({ initialMembers, trainers = [] }: Props) {
   const [expandedId, setExpandedId] = useState<string | null>(null)
   const [deleteConfirm, setDeleteConfirm] = useState<MemberWithOt | null>(null)
   const [deleting, setDeleting] = useState(false)
+
+  // 상담카드 캐시 (펼침 시 로딩)
+  const [cardCache, setCardCache] = useState<Record<string, ConsultationCard | null>>({})
+  const [cardLoading, setCardLoading] = useState<Record<string, boolean>>({})
+
+  useEffect(() => {
+    if (!expandedId || expandedId in cardCache) return
+    setCardLoading((prev) => ({ ...prev, [expandedId]: true }))
+    getConsultationCard(expandedId).then((card) => {
+      setCardCache((prev) => ({ ...prev, [expandedId]: card }))
+      setCardLoading((prev) => ({ ...prev, [expandedId]: false }))
+    })
+  }, [expandedId, cardCache])
 
   // 낙관적 UI 업데이트를 위한 로컬 오버라이드
   const [trainerOverrides, setTrainerOverrides] = useState<Record<string, { pt?: { id: string | null; name: string; status: string }; ppt?: { id: string | null; name: string; status: string } }>>({})
@@ -289,8 +303,8 @@ export function MemberList({ initialMembers, trainers = [] }: Props) {
       </div>
 
       {/* 테이블 */}
-      <div className="rounded-lg border border-gray-200 bg-white overflow-x-auto -mx-4 sm:mx-0">
-        <Table className="min-w-[700px]">
+      <div className="rounded-lg border border-gray-200 bg-white overflow-x-auto sm:mx-0">
+        <Table className="min-w-[750px]">
           <TableHeader>
             <TableRow className="bg-gray-50">
               <SortableHead label="등록일" sortKey="registered_at" currentKey={sortKey} asc={sortAsc} onSort={handleSort} width="w-[72px]" />
@@ -323,8 +337,8 @@ export function MemberList({ initialMembers, trainers = [] }: Props) {
                       className="hover:bg-gray-50 cursor-pointer"
                       onClick={() => setExpandedId(isExpanded ? null : m.id)}
                     >
-                      <TableCell className="text-center text-xs text-gray-900">{m.registered_at && m.registered_at > '1900-01-01' ? m.registered_at : '미상'}</TableCell>
-                      <TableCell className="text-center text-sm font-medium text-gray-900">
+                      <TableCell className="text-center text-xs text-gray-900 whitespace-nowrap">{m.registered_at && m.registered_at > '1900-01-01' ? m.registered_at : '미상'}</TableCell>
+                      <TableCell className="text-center text-sm font-medium text-gray-900 whitespace-nowrap">
                         <span className={`inline-flex items-center rounded px-1 py-0.5 text-[10px] font-bold mr-1 ${m.is_renewal ? 'bg-purple-100 text-purple-600' : m.is_existing_member ? 'bg-orange-100 text-orange-600' : 'bg-green-100 text-green-600'}`}>
                           {m.is_renewal ? '리뉴' : m.is_existing_member ? '이전' : '신규'}
                         </span>
@@ -339,12 +353,12 @@ export function MemberList({ initialMembers, trainers = [] }: Props) {
                           <span className="ml-1 inline-flex items-center rounded px-1 py-0.5 text-[10px] font-bold bg-red-100 text-red-600">중복</span>
                         )}
                       </TableCell>
-                      <TableCell className="text-center">
+                      <TableCell className="text-center whitespace-nowrap">
                         <OtCategoryBadge category={m.ot_category} />
                       </TableCell>
-                      <TableCell className="text-center text-xs text-gray-900">{m.start_date ? new Date(m.start_date).toLocaleDateString('ko', { year: '2-digit', month: '2-digit', day: '2-digit' }).replace(/\.\s*$/, '') : '-'}</TableCell>
-                      <TableCell className="text-center text-xs text-gray-900">{m.exercise_time ?? '-'}</TableCell>
-                      <TableCell className="text-center text-xs" onClick={(e) => e.stopPropagation()}>
+                      <TableCell className="text-center text-xs text-gray-900 whitespace-nowrap">{m.start_date ? new Date(m.start_date).toLocaleDateString('ko', { year: '2-digit', month: '2-digit', day: '2-digit' }).replace(/\.\s*$/, '') : '-'}</TableCell>
+                      <TableCell className="text-center text-xs text-gray-900 whitespace-nowrap">{m.exercise_time ?? '-'}</TableCell>
+                      <TableCell className="text-center text-xs whitespace-nowrap" onClick={(e) => e.stopPropagation()}>
                         {m.assignment ? (() => {
                           const override = trainerOverrides[m.assignment!.id]?.pt
                           const ptStatus = override?.status ?? m.assignment.pt_assign_status ?? (m.assignment.pt_trainer_id ? 'assigned' : 'none')
@@ -394,7 +408,7 @@ export function MemberList({ initialMembers, trainers = [] }: Props) {
                           )
                         })() : '-'}
                       </TableCell>
-                      <TableCell className="text-center text-xs" onClick={(e) => e.stopPropagation()}>
+                      <TableCell className="text-center text-xs whitespace-nowrap" onClick={(e) => e.stopPropagation()}>
                         {m.assignment ? (() => {
                           const override = trainerOverrides[m.assignment!.id]?.ppt
                           const pptStatus = override?.status ?? m.assignment.ppt_assign_status ?? (m.assignment.ppt_trainer_id ? 'assigned' : 'none')
@@ -444,12 +458,12 @@ export function MemberList({ initialMembers, trainers = [] }: Props) {
                           )
                         })() : '-'}
                       </TableCell>
-                      <TableCell className="text-center">
+                      <TableCell className="text-center whitespace-nowrap">
                         <span className={`inline-flex items-center rounded px-2 py-0.5 text-[10px] font-semibold ${progressColor}`}>
                           {progressLabel}
                         </span>
                       </TableCell>
-                      <TableCell className="text-center">
+                      <TableCell className="text-center whitespace-nowrap">
                         {isExpanded ? <ChevronUp className="h-4 w-4 text-gray-400" /> : <ChevronDown className="h-4 w-4 text-gray-400" />}
                       </TableCell>
                     </TableRow>
@@ -487,6 +501,69 @@ export function MemberList({ initialMembers, trainers = [] }: Props) {
                               <p className="text-sm text-gray-900 mt-0.5">{m.notes}</p>
                             </div>
                           )}
+                          {/* 상담카드 요약 */}
+                          {cardLoading[m.id] ? (
+                            <div className="mt-3 text-xs text-gray-400">상담카드 로딩 중...</div>
+                          ) : cardCache[m.id] && (() => {
+                            const card = cardCache[m.id]!
+                            const hasContent = card.exercise_goals?.length || card.medical_conditions?.length || card.exercise_experiences?.length || card.desired_body_type || card.body_correction_area || card.exercise_duration || card.age || card.occupation
+                            if (!hasContent) return null
+                            return (
+                              <div className="mt-3 pt-3 border-t border-gray-200">
+                                <p className="text-xs font-semibold text-gray-600 mb-2">상담카드 요약</p>
+                                <div className="grid grid-cols-2 gap-2 text-sm">
+                                  {card.exercise_goals?.length > 0 && (
+                                    <div>
+                                      <p className="text-xs text-gray-500">운동목표</p>
+                                      <p className="font-medium text-gray-900">{card.exercise_goals.join(', ')}{card.exercise_goal_detail ? ` (${card.exercise_goal_detail})` : ''}</p>
+                                    </div>
+                                  )}
+                                  {card.body_correction_area && (
+                                    <div>
+                                      <p className="text-xs text-gray-500">체형교정 부위</p>
+                                      <p className="font-medium text-gray-900">{card.body_correction_area}</p>
+                                    </div>
+                                  )}
+                                  {card.desired_body_type && (
+                                    <div>
+                                      <p className="text-xs text-gray-500">원하는 체형</p>
+                                      <p className="font-medium text-gray-900">{card.desired_body_type}</p>
+                                    </div>
+                                  )}
+                                  {card.exercise_experiences?.length > 0 && (
+                                    <div>
+                                      <p className="text-xs text-gray-500">운동경력</p>
+                                      <p className="font-medium text-gray-900">{card.exercise_experiences.join(', ')}{card.exercise_duration ? ` · ${card.exercise_duration}` : ''}</p>
+                                    </div>
+                                  )}
+                                  {card.medical_conditions?.length > 0 && card.medical_conditions[0] !== '없음' && (
+                                    <div>
+                                      <p className="text-xs text-gray-500">질환</p>
+                                      <p className="font-medium text-gray-900">{card.medical_conditions.join(', ')}{card.medical_detail ? ` (${card.medical_detail})` : ''}</p>
+                                    </div>
+                                  )}
+                                  {card.surgery_history && (
+                                    <div>
+                                      <p className="text-xs text-gray-500">수술이력</p>
+                                      <p className="font-medium text-gray-900">{card.surgery_history}{card.surgery_detail ? ` (${card.surgery_detail})` : ''}</p>
+                                    </div>
+                                  )}
+                                  {(card.age || card.occupation) && (
+                                    <div>
+                                      <p className="text-xs text-gray-500">{card.age && card.occupation ? '나이 / 직업' : card.age ? '나이' : '직업'}</p>
+                                      <p className="font-medium text-gray-900">{[card.age, card.occupation].filter(Boolean).join(' / ')}</p>
+                                    </div>
+                                  )}
+                                  {card.exercise_personality?.length > 0 && (
+                                    <div>
+                                      <p className="text-xs text-gray-500">운동성향</p>
+                                      <p className="font-medium text-gray-900">{card.exercise_personality.join(', ')}</p>
+                                    </div>
+                                  )}
+                                </div>
+                              </div>
+                            )
+                          })()}
                           <div className="mt-3 flex flex-wrap justify-end gap-2">
                             <Button size="sm" className="bg-red-500 hover:bg-red-600 text-white" onClick={(e) => { e.stopPropagation(); setDeleteConfirm(m) }}>
                               <Trash2 className="h-3.5 w-3.5 mr-1" />
