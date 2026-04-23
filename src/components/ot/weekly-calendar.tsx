@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect, useCallback, useMemo, useRef } from 'react'
+import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react'
 import { useRouter } from 'next/navigation'
 import { format, addDays, startOfWeek, isSameDay } from 'date-fns'
 import { ko } from 'date-fns/locale'
@@ -11,7 +11,7 @@ import { Textarea } from '@/components/ui/textarea'
 import {
   Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription,
 } from '@/components/ui/dialog'
-import { ChevronLeft, ChevronRight, X, Search } from 'lucide-react'
+import { ChevronLeft, ChevronRight, X, Search, Copy } from 'lucide-react'
 import { createClient } from '@/lib/supabase/client'
 import { updateOtAssignment, upsertOtSession, moveOtSchedule } from '@/actions/ot'
 // import { OtStatusBadge } from './ot-status-badge'
@@ -480,12 +480,14 @@ export function WeeklyCalendar({ assignments, trainerId, profile, workStartTime,
   const hasWorkHours = !!(workStartTime && workEndTime)
   const workStartSlot = hasWorkHours ? (() => {
     const [h, m] = workStartTime!.split(':').map(Number)
-    return (h - 6) * SLOTS_PER_HOUR + (m >= 30 ? 1 : 0)
+    return Math.max(0, (h - 6) * SLOTS_PER_HOUR + (m >= 30 ? 1 : 0))
   })() : 0
   // 종료 시간: "15시까지" → 15시대 전체 포함, 16시부터 OUT
+  // "00:00" (자정) = 24시로 처리
   const workEndSlot = hasWorkHours ? (() => {
     const [h, m] = workEndTime!.split(':').map(Number)
-    return (h - 6) * SLOTS_PER_HOUR + (m >= 30 ? 1 : 0) + SLOTS_PER_HOUR
+    const effectiveH = h === 0 ? 24 : h
+    return (effectiveH - 6) * SLOTS_PER_HOUR + (m >= 30 ? 1 : 0) + SLOTS_PER_HOUR
   })() : TOTAL_SLOTS
 
   // 특정 날짜 + 슬롯이 근무시간(IN)인지 판별
@@ -1277,13 +1279,24 @@ export function WeeklyCalendar({ assignments, trainerId, profile, workStartTime,
                               {amount ? ` · ${amount}만` : ''}
                             </p>
                           </div>
-                          <button
-                            className="opacity-0 group-hover:opacity-100 group-active:opacity-100 [@media(pointer:coarse)]:opacity-100 transition-opacity text-red-500 hover:text-red-700 active:text-red-700 shrink-0 min-w-[28px] min-h-[28px] flex items-center justify-center"
-                            onPointerDown={(e) => e.stopPropagation()}
-                            onClick={(e) => { e.stopPropagation(); handleDelete(s.id) }}
-                          >
-                            <X className="h-3.5 w-3.5" />
-                          </button>
+                          <div className="flex shrink-0">
+                            {s.schedule_type !== 'OT' && (
+                              <button
+                                className="opacity-0 group-hover:opacity-100 group-active:opacity-100 [@media(pointer:coarse)]:opacity-100 transition-opacity text-green-600 hover:text-green-800 active:text-green-800 shrink-0 min-w-[28px] min-h-[28px] flex items-center justify-center"
+                                onPointerDown={(e) => e.stopPropagation()}
+                                onClick={(e) => { e.stopPropagation(); setCopiedSchedule(s) }}
+                              >
+                                <Copy className="h-3 w-3" />
+                              </button>
+                            )}
+                            <button
+                              className="opacity-0 group-hover:opacity-100 group-active:opacity-100 [@media(pointer:coarse)]:opacity-100 transition-opacity text-red-500 hover:text-red-700 active:text-red-700 shrink-0 min-w-[28px] min-h-[28px] flex items-center justify-center"
+                              onPointerDown={(e) => e.stopPropagation()}
+                              onClick={(e) => { e.stopPropagation(); handleDelete(s.id) }}
+                            >
+                              <X className="h-3.5 w-3.5" />
+                            </button>
+                          </div>
                         </div>
                         )}
                       </div>
@@ -1296,6 +1309,125 @@ export function WeeklyCalendar({ assignments, trainerId, profile, workStartTime,
         </div>
 
         {loading && <p className="text-xs text-gray-400 text-center">로딩 중...</p>}
+
+        {/* ── 일별 통계표 ── */}
+        {schedules.length > 0 && (() => {
+          const formatMin = (min: number) => {
+            if (min === 0) return '-'
+            const h = Math.floor(min / 60)
+            const m = min % 60
+            return h > 0 ? (m > 0 ? `${h}h${m}m` : `${h}h`) : `${m}m`
+          }
+          const meetingTypes = new Set(['간부회의', '팀회의', '전체회의', '간담회'])
+
+          // 일별 집계
+          type DayStat = { ptIn: number; ptOut: number; pptIn: number; pptOut: number; ot: number; meetingMin: number; otherMin: Record<string, number> }
+          const dayStats = new Map<string, DayStat>()
+          for (const d of days) {
+            dayStats.set(format(d, 'yyyy-MM-dd'), { ptIn: 0, ptOut: 0, pptIn: 0, pptOut: 0, ot: 0, meetingMin: 0, otherMin: {} })
+          }
+          for (const s of schedules) {
+            const st = dayStats.get(s.scheduled_date)
+            if (!st) continue
+            if (s.schedule_type === 'PT' || s.schedule_type === 'PPT') {
+              const parsed = parsePtNote(s.note)
+              const isPt = s.schedule_type === 'PT'
+              if (parsed.inOut === 'OUT') { if (isPt) st.ptOut++; else st.pptOut++ }
+              else { if (isPt) st.ptIn++; else st.pptIn++ }
+            } else if (s.schedule_type === 'OT') {
+              st.ot++
+            } else if (meetingTypes.has(s.schedule_type)) {
+              st.meetingMin += s.duration
+            } else {
+              st.otherMin[s.schedule_type] = (st.otherMin[s.schedule_type] ?? 0) + s.duration
+            }
+          }
+
+          // 합계
+          const total: DayStat = { ptIn: 0, ptOut: 0, pptIn: 0, pptOut: 0, ot: 0, meetingMin: 0, otherMin: {} }
+          Array.from(dayStats.values()).forEach((st) => {
+            total.ptIn += st.ptIn; total.ptOut += st.ptOut
+            total.pptIn += st.pptIn; total.pptOut += st.pptOut
+            total.ot += st.ot; total.meetingMin += st.meetingMin
+            Object.entries(st.otherMin).forEach(([k, v]) => { total.otherMin[k] = (total.otherMin[k] ?? 0) + (v as number) })
+          })
+
+          // 기타 타입 목록
+          const allOtherTypes: string[] = []
+          Array.from(dayStats.values()).forEach((st) => {
+            Object.keys(st.otherMin).forEach((k) => { if (!allOtherTypes.includes(k)) allOtherTypes.push(k) })
+          })
+
+          const renderCell = (val: number | string, bold = false) => (
+            <td className={`text-center py-1.5 px-1 text-xs ${bold ? 'font-bold' : ''} ${val === 0 || val === '-' ? 'text-gray-300' : 'text-gray-700'}`}>
+              {val === 0 ? '-' : val}
+            </td>
+          )
+
+          return (
+            <div className="rounded-lg border border-gray-200 bg-white overflow-x-auto -mx-4 sm:mx-0">
+              <table className="w-full min-w-[500px] text-xs">
+                <thead>
+                  <tr className="bg-gray-900 text-white">
+                    <th className="py-2 px-2 text-left font-bold">항목</th>
+                    {days.map((d, i) => (
+                      <th key={i} className={`py-2 px-1 text-center font-bold ${i >= 5 ? 'text-red-300' : ''}`}>
+                        {DAY_LABELS[d.getDay()]} {d.getDate()}
+                      </th>
+                    ))}
+                    <th className="py-2 px-2 text-center font-bold bg-gray-800">합계</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {/* PT IN */}
+                  <tr className="border-b border-gray-100 bg-blue-50/50">
+                    <td className="py-1.5 px-2 font-bold text-blue-700">PT IN</td>
+                    {days.map((d, i) => { const st = dayStats.get(format(d, 'yyyy-MM-dd'))!; return <React.Fragment key={i}>{renderCell(st.ptIn)}</React.Fragment> })}
+                    {renderCell(total.ptIn, true)}
+                  </tr>
+                  {/* PT OUT */}
+                  <tr className="border-b border-gray-100 bg-blue-50/30">
+                    <td className="py-1.5 px-2 font-bold text-orange-500">PT OUT</td>
+                    {days.map((d, i) => { const st = dayStats.get(format(d, 'yyyy-MM-dd'))!; return <React.Fragment key={i}>{renderCell(st.ptOut)}</React.Fragment> })}
+                    {renderCell(total.ptOut, true)}
+                  </tr>
+                  {/* PPT IN */}
+                  <tr className="border-b border-gray-100 bg-purple-50/50">
+                    <td className="py-1.5 px-2 font-bold text-purple-700">PPT IN</td>
+                    {days.map((d, i) => { const st = dayStats.get(format(d, 'yyyy-MM-dd'))!; return <React.Fragment key={i}>{renderCell(st.pptIn)}</React.Fragment> })}
+                    {renderCell(total.pptIn, true)}
+                  </tr>
+                  {/* PPT OUT */}
+                  <tr className="border-b border-gray-100 bg-purple-50/30">
+                    <td className="py-1.5 px-2 font-bold text-orange-500">PPT OUT</td>
+                    {days.map((d, i) => { const st = dayStats.get(format(d, 'yyyy-MM-dd'))!; return <React.Fragment key={i}>{renderCell(st.pptOut)}</React.Fragment> })}
+                    {renderCell(total.pptOut, true)}
+                  </tr>
+                  {/* OT */}
+                  <tr className="border-b border-gray-100 bg-emerald-50/50">
+                    <td className="py-1.5 px-2 font-bold text-emerald-700">OT</td>
+                    {days.map((d, i) => { const st = dayStats.get(format(d, 'yyyy-MM-dd'))!; return <React.Fragment key={i}>{renderCell(st.ot)}</React.Fragment> })}
+                    {renderCell(total.ot, true)}
+                  </tr>
+                  {/* 회의 */}
+                  <tr className="border-b border-gray-100 bg-yellow-50/50">
+                    <td className="py-1.5 px-2 font-bold text-yellow-700">회의</td>
+                    {days.map((d, i) => { const st = dayStats.get(format(d, 'yyyy-MM-dd'))!; return <React.Fragment key={i}>{renderCell(formatMin(st.meetingMin))}</React.Fragment> })}
+                    {renderCell(formatMin(total.meetingMin), true)}
+                  </tr>
+                  {/* 기타 타입들 */}
+                  {allOtherTypes.sort().map((t) => (
+                    <tr key={t} className="border-b border-gray-100">
+                      <td className="py-1.5 px-2 font-bold text-gray-600">{t}</td>
+                      {days.map((d, i) => { const st = dayStats.get(format(d, 'yyyy-MM-dd'))!; return <React.Fragment key={i}>{renderCell(formatMin(st.otherMin[t] ?? 0))}</React.Fragment> })}
+                      {renderCell(formatMin(total.otherMin[t] ?? 0), true)}
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )
+        })()}
       </div>
 
       {/* 스케줄 생성 다이얼로그 */}
