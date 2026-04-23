@@ -129,7 +129,7 @@ export function TopNav({ profile }: Props) {
 
           {/* 모바일 메뉴 버튼 */}
           <button
-            className="lg:hidden text-gray-300"
+            className="lg:hidden ml-auto text-gray-300"
             onClick={() => setMobileOpen(!mobileOpen)}
           >
             {mobileOpen ? <X className="h-5 w-5" /> : <Menu className="h-5 w-5" />}
