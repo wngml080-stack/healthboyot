@@ -75,7 +75,7 @@ export function TopNav({ profile }: Props) {
 
   return (
     <>
-      <nav className="bg-black text-white">
+      <nav className="bg-black text-white" style={{ paddingTop: 'env(safe-area-inset-top, 0px)' }}>
         <div className="h-1 bg-yellow-500" />
 
         <div className="flex items-center px-6 h-14">
