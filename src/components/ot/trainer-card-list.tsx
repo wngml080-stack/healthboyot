@@ -105,7 +105,7 @@ export function TrainerCardList({ assignments, trainers = [], trainerId, trainer
 
   // 필터
   const [filter, setFilter] = useState<string>('미진행')
-  const FILTERS = ['미진행', '1차', '2차', '3차', '4차+', '수업상태변경', '승인필요', '거부']
+  const FILTERS = ['미진행', '1차', '2차', '3차', '4차+', '수업상태변경', '승인필요', '연락두절', '스케줄미확정', '수업후 거부']
 
   // 펼침
   const [expandedId, setExpandedId] = useState<string | null>(null)
@@ -234,6 +234,8 @@ export function TrainerCardList({ assignments, trainers = [], trainerId, trainer
   const [quickStatusValue, setQuickStatusValue] = useState<string>('')
   const [quickStatusReason, setQuickStatusReason] = useState('')
   const [quickStatusLoading, setQuickStatusLoading] = useState(false)
+  // 낙관적 UI: 미진행 처리 후 즉시 목록에서 숨김
+  const [hiddenIds, setHiddenIds] = useState<Set<string>>(new Set())
 
   // 회원 퀵뷰
   const [quickViewTarget, setQuickViewTarget] = useState<OtAssignmentWithDetails | null>(null)
@@ -389,7 +391,7 @@ export function TrainerCardList({ assignments, trainers = [], trainerId, trainer
       }
       const scheduled = a.sessions?.filter((s) => s.scheduled_at && !s.completed_at).length ?? 0
       const hasAny = done > 0 || scheduled > 0
-      if (!hasAny && !['거부','추후결정'].includes(a.status)) counts['미진행'] = (counts['미진행'] ?? 0) + 1
+      if (!hasAny && !['거부','추후결정'].includes(a.status) && !['연락두절','스케줄미확정','OT거부자','수업후거부'].includes(a.sales_status) && !a.is_excluded) counts['미진행'] = (counts['미진행'] ?? 0) + 1
       // 필터 로직과 동일하게 맞춤
       if ((done === 0 && scheduled > 0) || (done === 1 && scheduled === 0)) counts['1차'] = (counts['1차'] ?? 0) + 1
       if ((done === 1 && scheduled > 0) || (done === 2 && scheduled === 0)) counts['2차'] = (counts['2차'] ?? 0) + 1
@@ -400,13 +402,16 @@ export function TrainerCardList({ assignments, trainers = [], trainerId, trainer
       if (pastScheduled > 0) counts['수업상태변경'] = (counts['수업상태변경'] ?? 0) + 1
       // 승인필요: 수업 완료됐는데 프로그램 승인 안 된 회원
       if (needApprovalSet.has(a.id)) counts['승인필요'] = (counts['승인필요'] ?? 0) + 1
-      if (a.status === '거부') counts['거부'] = (counts['거부'] ?? 0) + 1
+      if (a.status === '거부' || a.is_excluded) counts['거부/제외'] = (counts['거부/제외'] ?? 0) + 1
+      if (a.sales_status === '연락두절') counts['연락두절'] = (counts['연락두절'] ?? 0) + 1
+      if (a.sales_status === '스케줄미확정') counts['스케줄미확정'] = (counts['스케줄미확정'] ?? 0) + 1
+      if (a.sales_status === '수업후거부') counts['수업후 거부'] = (counts['수업후 거부'] ?? 0) + 1
     }
     return counts
   }, [assignments, trainerId, needApprovalSet])
 
-  // 회원관리 탭은 배정된 모든 회원 표시 (수기 등록 포함)
-  const otOnlyAssignments = assignments
+  // 회원관리 탭은 배정된 모든 회원 표시 (수기 등록 포함), 낙관적 숨김 적용
+  const otOnlyAssignments = useMemo(() => assignments.filter((a) => !hiddenIds.has(a.id)), [assignments, hiddenIds])
 
   // 필터링된 회원
   const [search, setSearch] = useState('')
@@ -419,7 +424,7 @@ export function TrainerCardList({ assignments, trainers = [], trainerId, trainer
       const scheduled = a.sessions?.filter((s) => s.scheduled_at && !s.completed_at).length ?? 0
       if (filter === 'PT') return a.pt_trainer_id === trainerId
       if (filter === 'PPT') return a.ppt_trainer_id === trainerId
-      if (filter === '미진행') return done === 0 && scheduled === 0 && !['거부','추후결정'].includes(a.status)
+      if (filter === '미진행') return done === 0 && scheduled === 0 && !['거부','추후결정'].includes(a.status) && !['연락두절','스케줄미확정','OT거부자','수업후거부'].includes(a.sales_status) && !a.is_excluded
       if (filter === '1차') return (done === 0 && scheduled > 0) || (done === 1 && scheduled === 0)
       if (filter === '2차') return (done === 1 && scheduled > 0) || (done === 2 && scheduled === 0)
       if (filter === '3차') return (done === 2 && scheduled > 0) || (done === 3 && scheduled === 0)
@@ -429,7 +434,10 @@ export function TrainerCardList({ assignments, trainers = [], trainerId, trainer
         return pastSch > 0
       }
       if (filter === '승인필요') return needApprovalSet.has(a.id)
-      if (filter === '거부') return a.status === '거부'
+      if (filter === '거부/제외') return a.status === '거부' || a.is_excluded
+      if (filter === '연락두절') return a.sales_status === '연락두절'
+      if (filter === '스케줄미확정') return a.sales_status === '스케줄미확정'
+      if (filter === '수업후 거부') return a.sales_status === '수업후거부'
       return true
     })
     // 기간 필터 (등록일 기준)
@@ -502,7 +510,8 @@ export function TrainerCardList({ assignments, trainers = [], trainerId, trainer
     return completed + 1
   }
 
-  const handleCompleteOpen = async (a: OtAssignmentWithDetails, sessionNumber: number) => {
+  const handleCompleteOpen = (a: OtAssignmentWithDetails, sessionNumber: number) => {
+    // 다이얼로그를 즉시 열고, 프로그램 데이터는 백그라운드 로딩
     setCompleteTarget({ assignment: a, sessionNumber })
     setExercises([{ name: '', sets: 3, reps: 12 }])
     setTrainerTip('')
@@ -512,15 +521,17 @@ export function TrainerCardList({ assignments, trainers = [], trainerId, trainer
     setNextTime('')
     setCompleteResult('')
     setCompleteFailReason('')
-    // OT 프로그램 데이터 — 캐시 우선, 없으면 fetch
+    // OT 프로그램 데이터 — 캐시 우선, 없으면 비동기 fetch
     const cached = expandedData[a.id]
     if (cached && cached !== 'loading' && cached.program) {
       setCompleteProgramData(cached.program)
     } else {
       setCompleteProgramLoading(true)
-      const prog = await getOtProgram(a.id)
-      setCompleteProgramData(prog)
-      setCompleteProgramLoading(false)
+      setCompleteProgramData(null)
+      getOtProgram(a.id).then((prog) => {
+        setCompleteProgramData(prog)
+        setCompleteProgramLoading(false)
+      })
     }
   }
 
@@ -620,6 +631,9 @@ export function TrainerCardList({ assignments, trainers = [], trainerId, trainer
       let info = { label: '대기', color: 'bg-gray-100 text-gray-700' }
       if (a.status === '거부') info = { label: '거부', color: 'bg-red-100 text-red-700' }
       else if (a.status === '추후결정') info = { label: '추후결정', color: 'bg-orange-100 text-orange-700' }
+      else if (a.sales_status === '수업후거부') info = { label: '수업후 거부', color: 'bg-red-200 text-red-800' }
+      else if (a.sales_status === '연락두절') info = { label: '연락두절', color: 'bg-gray-300 text-gray-800' }
+      else if (a.sales_status === '스케줄미확정') info = { label: '스케줄미확정', color: 'bg-yellow-200 text-yellow-800' }
       else if (done === 0 && scheduled === 0) info = { label: '대기', color: 'bg-gray-100 text-gray-700' }
       else if (scheduled > 0) info = { label: `${done + 1}차스케줄확정`, color: 'bg-yellow-100 text-yellow-700' }
       else {
@@ -670,9 +684,11 @@ export function TrainerCardList({ assignments, trainers = [], trainerId, trainer
           const daysUntil = Math.floor((nextStart.getTime() - todayStart.getTime()) / (1000 * 60 * 60 * 24))
           ddayMap.set(a.id, { text: `수업예정 D${daysUntil <= 0 ? daysUntil : `-${daysUntil}`}`, color: 'text-blue-600' })
         } else {
-          const completedSessions = (a.sessions ?? []).filter((s) => s.completed_at).sort((x, y) => (y.completed_at ?? '').localeCompare(x.completed_at ?? ''))
-          if (completedSessions.length > 0 && completedSessions[0].completed_at) {
-            const lastStart = new Date(completedSessions[0].completed_at); lastStart.setHours(0, 0, 0, 0)
+          const completedSessions = (a.sessions ?? []).filter((s) => s.completed_at).sort((x, y) => (y.scheduled_at ?? y.completed_at ?? '').localeCompare(x.scheduled_at ?? x.completed_at ?? ''))
+          if (completedSessions.length > 0) {
+            // 수업일(scheduled_at) 기준, 없으면 완료일(completed_at) fallback
+            const lastDate = completedSessions[0].scheduled_at ?? completedSessions[0].completed_at
+            const lastStart = new Date(lastDate!); lastStart.setHours(0, 0, 0, 0)
             const days = Math.floor((todayStart.getTime() - lastStart.getTime()) / (1000 * 60 * 60 * 24))
             ddayMap.set(a.id, { text: `마지막수업일 D+${days}`, color: days >= 7 ? 'text-red-500' : days >= 3 ? 'text-orange-500' : 'text-gray-400' })
           } else {
@@ -711,81 +727,91 @@ export function TrainerCardList({ assignments, trainers = [], trainerId, trainer
         )}
 
         {/* 회원 검색 + 기간/카테고리 필터 */}
-        <div className="flex flex-col sm:flex-row gap-2 items-stretch">
-          {/* 전체 필터 버튼 */}
-          <button
-            onClick={() => setFilter('전체')}
-            className={`h-9 px-4 rounded-md text-xs font-bold transition-colors shrink-0 ${
-              filter === '전체'
-                ? 'bg-yellow-400 text-black border-2 border-yellow-500'
-                : 'bg-yellow-300 text-black border border-yellow-400 hover:bg-yellow-400'
-            }`}
-          >
-            전체 {(filterCounts['전체'] ?? 0) > 0 && <span className="ml-1 text-[10px]">{filterCounts['전체']}</span>}
-          </button>
-          {/* 검색창 */}
-          <div className="relative flex-1 min-w-0">
-            <Input
-              value={search}
-              onChange={(e) => setSearch(e.target.value)}
-              placeholder="회원 이름 또는 전화번호로 검색"
-              className="h-9 text-sm pl-9 pr-9 bg-white text-gray-900 placeholder:text-gray-400 border border-gray-300"
-            />
-            <svg className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-gray-500 pointer-events-none" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-              <circle cx="11" cy="11" r="8" />
-              <path d="m21 21-4.35-4.35" />
-            </svg>
-            {search && (
-              <button
-                type="button"
-                onClick={() => setSearch('')}
-                className="absolute right-2 top-1/2 -translate-y-1/2 h-6 w-6 rounded-full bg-gray-200 text-gray-700 hover:bg-gray-300 flex items-center justify-center text-xs font-bold"
-                aria-label="검색 지우기"
-              >×</button>
-            )}
+        <div className="flex flex-col gap-2">
+          <div className="flex flex-col sm:flex-row gap-2 items-stretch">
+            {/* 검색창 */}
+            <div className="relative flex-1 min-w-0">
+              <Input
+                value={search}
+                onChange={(e) => setSearch(e.target.value)}
+                placeholder="회원 이름 또는 전화번호로 검색"
+                className="h-9 text-sm pl-9 pr-9 bg-white text-gray-900 placeholder:text-gray-400 border border-gray-300"
+              />
+              <svg className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-gray-500 pointer-events-none" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                <circle cx="11" cy="11" r="8" />
+                <path d="m21 21-4.35-4.35" />
+              </svg>
+              {search && (
+                <button
+                  type="button"
+                  onClick={() => setSearch('')}
+                  className="absolute right-2 top-1/2 -translate-y-1/2 h-6 w-6 rounded-full bg-gray-200 text-gray-700 hover:bg-gray-300 flex items-center justify-center text-xs font-bold"
+                  aria-label="검색 지우기"
+                >×</button>
+              )}
+            </div>
+            {/* 기간 필터 */}
+            <div className="flex items-center justify-center gap-1.5 bg-white border border-gray-300 rounded-md px-3 h-9 shrink-0">
+              <span className="text-[10px] text-gray-500 font-medium shrink-0">기간</span>
+              <Input
+                type="date"
+                value={dateFrom}
+                onChange={(e) => setDateFrom(e.target.value)}
+                className="h-7 text-xs border-0 p-0 bg-white text-gray-900 w-[140px] text-center"
+                aria-label="시작일"
+              />
+              <span className="text-gray-400 text-xs shrink-0">~</span>
+              <Input
+                type="date"
+                value={dateTo}
+                onChange={(e) => setDateTo(e.target.value)}
+                className="h-7 text-xs border-0 p-0 bg-white text-gray-900 w-[140px] text-center"
+                aria-label="종료일"
+              />
+              {(dateFrom || dateTo) && (
+                <button
+                  type="button"
+                  onClick={() => { setDateFrom(''); setDateTo('') }}
+                  className="h-5 w-5 rounded-full bg-gray-200 text-gray-700 hover:bg-gray-300 flex items-center justify-center text-[10px] font-bold ml-1 shrink-0"
+                  aria-label="기간 초기화"
+                >×</button>
+              )}
+            </div>
+            {/* 세일즈 필터 */}
+            <select
+              value={categoryFilter}
+              onChange={(e) => setCategoryFilter(e.target.value)}
+              className="h-9 text-sm bg-white text-gray-900 border border-gray-300 rounded-md pl-3 pr-7 shrink-0 appearance-none bg-[url('data:image/svg+xml;charset=utf-8,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20width%3D%2212%22%20height%3D%2212%22%20viewBox%3D%220%200%2024%2024%22%20fill%3D%22none%22%20stroke%3D%22%23666%22%20stroke-width%3D%222%22%3E%3Cpath%20d%3D%22M6%209l6%206%206-6%22%2F%3E%3C%2Fsvg%3E')] bg-[length:12px] bg-[right_8px_center] bg-no-repeat"
+              aria-label="세일즈 필터"
+            >
+              <option value="전체">세일즈 전체</option>
+              <option value="매출대상">매출대상자</option>
+              <option value="PT전환">PT전환</option>
+            </select>
           </div>
-          {/* 기간 필터 */}
-          <div className="flex items-center justify-center gap-1.5 bg-white border border-gray-300 rounded-md px-3 h-9 shrink-0">
-            <span className="text-[10px] text-gray-500 font-medium shrink-0">기간</span>
-            <Input
-              type="date"
-              value={dateFrom}
-              onChange={(e) => setDateFrom(e.target.value)}
-              className="h-7 text-xs border-0 p-0 bg-white text-gray-900 w-[140px] text-center"
-              aria-label="시작일"
-            />
-            <span className="text-gray-400 text-xs shrink-0">~</span>
-            <Input
-              type="date"
-              value={dateTo}
-              onChange={(e) => setDateTo(e.target.value)}
-              className="h-7 text-xs border-0 p-0 bg-white text-gray-900 w-[140px] text-center"
-              aria-label="종료일"
-            />
-            {(dateFrom || dateTo) && (
-              <button
-                type="button"
-                onClick={() => { setDateFrom(''); setDateTo('') }}
-                className="h-5 w-5 rounded-full bg-gray-200 text-gray-700 hover:bg-gray-300 flex items-center justify-center text-[10px] font-bold ml-1 shrink-0"
-                aria-label="기간 초기화"
-              >×</button>
-            )}
+          {/* 전체 / 거부·제외 버튼 */}
+          <div className="flex gap-2">
+            <button
+              onClick={() => setFilter('전체')}
+              className={`h-8 px-4 rounded-md text-xs font-bold transition-colors ${
+                filter === '전체'
+                  ? 'bg-yellow-400 text-black border-2 border-yellow-500'
+                  : 'bg-yellow-300 text-black border border-yellow-400 hover:bg-yellow-400'
+              }`}
+            >
+              전체 {(filterCounts['전체'] ?? 0) > 0 && <span className="ml-1 text-[10px]">{filterCounts['전체']}</span>}
+            </button>
+            <button
+              onClick={() => setFilter('거부/제외')}
+              className={`h-8 px-4 rounded-md text-xs font-bold transition-colors ${
+                filter === '거부/제외'
+                  ? 'bg-red-600 text-white border-2 border-red-700'
+                  : 'bg-red-100 text-red-700 border border-red-300 hover:bg-red-200'
+              }`}
+            >
+              거부/제외 {(filterCounts['거부/제외'] ?? 0) > 0 && <span className="ml-1 text-[10px]">{filterCounts['거부/제외']}</span>}
+            </button>
           </div>
-          {/* 세일즈 필터 */}
-          <select
-            value={categoryFilter}
-            onChange={(e) => setCategoryFilter(e.target.value)}
-            className="h-9 text-sm bg-white text-gray-900 border border-gray-300 rounded-md pl-3 pr-7 shrink-0 appearance-none bg-[url('data:image/svg+xml;charset=utf-8,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20width%3D%2212%22%20height%3D%2212%22%20viewBox%3D%220%200%2024%2024%22%20fill%3D%22none%22%20stroke%3D%22%23666%22%20stroke-width%3D%222%22%3E%3Cpath%20d%3D%22M6%209l6%206%206-6%22%2F%3E%3C%2Fsvg%3E')] bg-[length:12px] bg-[right_8px_center] bg-no-repeat"
-            aria-label="세일즈 필터"
-          >
-            <option value="전체">세일즈 전체</option>
-            <option value="매출대상">매출대상자</option>
-            <option value="PT전환">PT전환</option>
-            <option value="클로징실패">클로징실패</option>
-            <option value="연락두절">연락두절</option>
-            <option value="스케줄미확정">스케줄미확정</option>
-            <option value="거부">거부</option>
-          </select>
         </div>
 
         {/* 필터 + 회원추가 */}
@@ -855,6 +881,15 @@ export function TrainerCardList({ assignments, trainers = [], trainerId, trainer
                             <span className="inline-flex items-center rounded px-1 py-0.5 text-[10px] font-bold bg-orange-100 text-orange-700 border border-orange-300">플로팅</span>
                           )}
                           {trainerId && trainerId !== 'unassigned' && (() => {
+                            if (trainerId === 'excluded') {
+                              // 제외 폴더: 실제 담당 기준으로 PT/PPT 표시
+                              const badges = []
+                              if (a.pt_trainer_id) badges.push({ role: 'PT', color: 'bg-blue-50 text-blue-700 border-blue-300' })
+                              if (a.ppt_trainer_id) badges.push({ role: 'PPT', color: 'bg-violet-50 text-violet-700 border-violet-300' })
+                              return badges.map((b) => (
+                                <Badge key={b.role} variant="outline" className={`text-[10px] px-1.5 font-bold ${b.color}`}>{b.role}</Badge>
+                              ))
+                            }
                             const isPt = a.pt_trainer_id === trainerId
                             const role = isPt ? 'PT' : 'PPT'
                             return (
@@ -975,6 +1010,12 @@ export function TrainerCardList({ assignments, trainers = [], trainerId, trainer
                                     {card.pt_satisfaction && <p><span className="font-bold text-gray-600">PT만족도:</span> {card.pt_satisfaction}{card.pt_satisfaction_reason ? ` — ${card.pt_satisfaction_reason}` : ''}</p>}
                                     {card.referral_sources?.length > 0 && <p><span className="font-bold text-gray-600">유입경로:</span> {card.referral_sources.join(', ')}{card.referral_detail ? ` (${card.referral_detail})` : ''}</p>}
                                   </div>
+                                  {card.special_notes && (
+                                    <div className="rounded-md bg-red-50 border border-red-200 p-2.5 mt-2">
+                                      <p className="text-[10px] text-red-500 font-bold mb-0.5">특이사항</p>
+                                      <p className="text-sm text-red-800 whitespace-pre-wrap">{card.special_notes}</p>
+                                    </div>
+                                  )}
                                 </div>
                               )
                             }
@@ -1068,134 +1109,14 @@ export function TrainerCardList({ assignments, trainers = [], trainerId, trainer
 
                               return (
                                 <>
-                                  {/* OT 진행 현황 */}
-                                  {otProgress.length > 0 && (
-                                    <div className="rounded-lg border border-indigo-200 bg-indigo-50/40 p-4 space-y-3">
-                                      <div className="flex items-center justify-between flex-wrap gap-2">
-                                        <p className="text-sm font-bold text-indigo-900">🏋️ OT 진행 현황</p>
-                                        <span className="text-xs font-bold text-indigo-700 bg-white px-2 py-0.5 rounded-full border border-indigo-200">
-                                          완료 {completedCount} / {otProgress.length}
-                                        </span>
-                                      </div>
-                                      <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
-                                        {otProgress.map((s) => {
-                                          const isDone = !!s.completed_at
-                                          const scheduledDate = s.scheduled_at ? new Date(s.scheduled_at) : null
-                                          const isPastDue = !isDone && scheduledDate !== null && scheduledDate.getTime() < Date.now()
-                                          const isScheduled = !!s.scheduled_at && !isDone && !isPastDue
-                                          const statusLabel = isDone
-                                            ? '완료'
-                                            : isPastDue
-                                              ? '수업여부 변경 필요'
-                                              : isScheduled
-                                                ? '예정'
-                                                : '대기'
-                                          const statusColor = isDone
-                                            ? 'bg-emerald-500 text-white'
-                                            : isPastDue
-                                              ? 'bg-rose-500 text-white'
-                                              : isScheduled
-                                                ? 'bg-blue-500 text-white'
-                                                : 'bg-gray-400 text-white'
-                                          const approvalColor = s.approval_status === '승인'
-                                            ? 'bg-green-100 text-green-800 border-green-300'
-                                            : s.approval_status === '제출완료'
-                                              ? 'bg-yellow-100 text-yellow-800 border-yellow-300'
-                                              : s.approval_status === '반려'
-                                                ? 'bg-red-100 text-red-800 border-red-300'
-                                                : 'bg-gray-100 text-gray-600 border-gray-200'
-                                          const approvalLabel = s.approval_status ?? '작성중'
-                                          const approvalTitle = s.approval_status === '승인'
-                                            ? '관리자 승인 완료'
-                                            : s.approval_status === '제출완료'
-                                              ? '관리자 승인 대기 중'
-                                              : s.approval_status === '반려'
-                                                ? '관리자가 반려함'
-                                                : '트레이너가 아직 제출하지 않은 상태'
-                                          // 수업 진행 날짜: scheduled_at(예약일=실제 수업일) 우선, 없으면 completed_at
-                                          const dateStr = s.scheduled_at ?? s.completed_at ?? null
-                                          const formatted = dateStr
-                                            ? new Date(dateStr).toLocaleDateString('ko', { month: 'numeric', day: 'numeric' })
-                                            : null
-                                          const timeStr = s.scheduled_at && !isDone
-                                            ? new Date(s.scheduled_at).toLocaleTimeString('ko', { hour: '2-digit', minute: '2-digit', hour12: false })
-                                            : null
-                                          const border = isDone
-                                            ? 'border-emerald-200'
-                                            : isPastDue
-                                              ? 'border-rose-300'
-                                              : isScheduled
-                                                ? 'border-blue-200'
-                                                : 'border-gray-200'
-                                          const canDelete = (profile?.role === 'admin' || profile?.role === '관리자') && !isDone
-                                          return (
-                                            <div
-                                              key={s.num}
-                                              className={`relative rounded-lg border-2 bg-white p-2 text-center space-y-1 ${border} ${(isPastDue || (isScheduled && !isDone)) ? 'cursor-pointer hover:shadow-md transition-shadow' : ''}`}
-                                              onClick={(e) => {
-                                                e.stopPropagation()
-                                                if (isDone) return
-                                                if (!s.scheduled_at) return
-                                                handleCompleteOpen(a, s.num)
-                                              }}
-                                            >
-                                              {canDelete && (
-                                                <button
-                                                  type="button"
-                                                  className="absolute -top-1.5 -right-1.5 bg-red-500 hover:bg-red-600 text-white rounded-full w-5 h-5 flex items-center justify-center text-xs font-bold shadow"
-                                                  title={`${s.num}차 OT 세션 삭제`}
-                                                  onClick={async (e) => {
-                                                    e.stopPropagation()
-                                                    if (!confirm(`${a.member.name}님의 ${s.num}차 OT 세션을 삭제할까요?`)) return
-                                                    const res = await deleteOtSession(a.id, s.num)
-                                                    if (res.error) { alert('삭제 실패: ' + res.error); return }
-                                                    router.refresh()
-                                                  }}
-                                                  aria-label="세션 삭제"
-                                                >×</button>
-                                              )}
-                                              <div className="flex items-center justify-between gap-1">
-                                                <span className="text-xs font-bold text-gray-800">{s.num}차 OT</span>
-                                                {s.inbody && (
-                                                  <span className="text-[10px] bg-purple-100 text-purple-700 px-1 py-0.5 rounded">📊</span>
-                                                )}
-                                              </div>
-                                              <div className="flex flex-col gap-0.5 items-stretch">
-                                                <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded leading-tight ${statusColor}`}>
-                                                  {statusLabel}
-                                                </span>
-                                                <span className={`text-[10px] font-medium px-1.5 py-0.5 rounded border ${approvalColor}`} title={approvalTitle}>
-                                                  {approvalLabel}
-                                                </span>
-                                              </div>
-                                              {formatted && (
-                                                <p className="text-[10px] text-gray-500 leading-tight">
-                                                  {formatted}{timeStr && ` ${timeStr}`}
-                                                </p>
-                                              )}
-                                              {(isPastDue || isScheduled) && !isDone && (
-                                                <p className="text-[8px] text-indigo-500 font-medium">클릭하여 상태변경</p>
-                                              )}
-                                            </div>
-                                          )
-                                        })}
-                                      </div>
-                                      <p className="text-[10px] text-gray-500 leading-tight">
-                                        💡 <strong>작성중</strong> = 트레이너가 프로그램을 제출하지 않은 상태 · <strong>제출완료</strong> = 관리자 승인 대기 · <strong>승인</strong> = 관리자 승인 완료
-                                      </p>
-                                    </div>
-                                  )}
-
-
-
                                   {/* 미진행 처리 (거부/제외 · 연락두절 · 스케줄미확정) */}
                                   {(() => {
                                     const isEditing = quickStatusTarget === a.id
                                     const currentStatus = a.sales_status
                                     const isExcluded = a.is_excluded
-                                    const isInactive = isExcluded || ['OT거부자', '연락두절', '스케줄미확정'].includes(currentStatus)
-                                    const statusLabel = isExcluded ? '거부/제외' : currentStatus === 'OT거부자' ? '거부/제외' : currentStatus === '연락두절' ? '연락두절' : currentStatus === '스케줄미확정' ? '스케줄미확정' : ''
-                                    const QUICK_STATUSES = ['거부/제외', '연락두절', '스케줄미확정']
+                                    const isInactive = isExcluded || ['OT거부자', '연락두절', '스케줄미확정', '수업후거부'].includes(currentStatus)
+                                    const statusLabel = isExcluded ? '거부/제외' : currentStatus === 'OT거부자' ? '거부/제외' : currentStatus === '수업후거부' ? '수업후 거부' : currentStatus === '연락두절' ? '연락두절' : currentStatus === '스케줄미확정' ? '스케줄미확정' : ''
+                                    const QUICK_STATUSES = ['거부/제외', '수업후 거부', '연락두절', '스케줄미확정']
                                     return (
                                   <div className={`rounded-lg border p-4 space-y-2 ${isInactive ? 'border-red-300 bg-red-50/60' : 'border-gray-200 bg-gray-50/40'}`}>
                                     <div className="flex items-center justify-between flex-wrap gap-2">
@@ -1272,19 +1193,16 @@ export function TrainerCardList({ assignments, trainers = [], trainerId, trainer
                                               size="sm"
                                               className="h-7 text-xs bg-green-600 hover:bg-green-700 text-white"
                                               disabled={quickStatusLoading}
-                                              onClick={async () => {
-                                                setQuickStatusLoading(true)
-                                                await updateOtAssignment(a.id, {
+                                              onClick={() => {
+                                                setQuickStatusTarget(null)
+                                                updateOtAssignment(a.id, {
                                                   sales_status: 'OT진행중',
                                                   status: '배정완료',
                                                   is_excluded: false,
                                                   excluded_reason: null,
                                                   excluded_at: null,
                                                   sales_note: null,
-                                                })
-                                                setQuickStatusTarget(null)
-                                                setQuickStatusLoading(false)
-                                                startTransition(() => router.refresh())
+                                                }).then(() => startTransition(() => router.refresh()))
                                               }}
                                             >
                                               미진행 해제
@@ -1302,27 +1220,29 @@ export function TrainerCardList({ assignments, trainers = [], trainerId, trainer
                                             size="sm"
                                             className="h-7 text-xs bg-red-600 hover:bg-red-700 text-white"
                                             disabled={quickStatusLoading || !quickStatusValue}
-                                            onClick={async () => {
-                                              setQuickStatusLoading(true)
-                                              if (quickStatusValue === '거부/제외') {
-                                                // 제외 폴더로 이동
-                                                await updateOtAssignment(a.id, {
-                                                  is_excluded: true,
-                                                  excluded_reason: quickStatusReason || null,
-                                                  excluded_at: new Date().toISOString(),
+                                            onClick={() => {
+                                              // 값을 먼저 캡처 (state 초기화 전)
+                                              const selectedStatus = quickStatusValue
+                                              const reason = quickStatusReason
+                                              setQuickStatusTarget(null)
+                                              // 서버 저장은 백그라운드
+                                              if (selectedStatus === '거부/제외') {
+                                                updateOtAssignment(a.id, {
                                                   sales_status: 'OT거부자',
                                                   status: '거부',
-                                                })
+                                                  sales_note: reason || null,
+                                                }).then(() => startTransition(() => router.refresh()))
+                                              } else if (selectedStatus === '수업후 거부') {
+                                                updateOtAssignment(a.id, {
+                                                  sales_status: '수업후거부',
+                                                  sales_note: reason || null,
+                                                }).then(() => startTransition(() => router.refresh()))
                                               } else {
-                                                // 연락두절, 스케줄미확정 — 제외폴더 이동 없이 상태만 변경
-                                                await updateOtAssignment(a.id, {
-                                                  sales_status: quickStatusValue as SalesStatus,
-                                                  sales_note: quickStatusReason || null,
-                                                })
+                                                updateOtAssignment(a.id, {
+                                                  sales_status: selectedStatus as SalesStatus,
+                                                  sales_note: reason || null,
+                                                }).then(() => startTransition(() => router.refresh()))
                                               }
-                                              setQuickStatusTarget(null)
-                                              setQuickStatusLoading(false)
-                                              startTransition(() => router.refresh())
                                             }}
                                           >
                                             {quickStatusLoading ? '저장 중...' : '저장'}
@@ -1653,7 +1573,10 @@ export function TrainerCardList({ assignments, trainers = [], trainerId, trainer
                                                   session_number: num,
                                                   scheduled_at: s?.scheduled_at ?? new Date().toISOString(),
                                                   completed_at: null,
-                                                }).then(() => {
+                                                }).then((res) => {
+                                                  if (res && 'error' in res && res.error) {
+                                                    alert('완료 취소 실패: ' + res.error)
+                                                  }
                                                   setEditingCompletedSession(null)
                                                   setScheduleEdit(null)
                                                   setScheduleLoading(false)
@@ -1725,11 +1648,6 @@ export function TrainerCardList({ assignments, trainers = [], trainerId, trainer
 
                               return (
                                 <>
-                                  {statusLabel && (
-                                    <Badge className={`${statusColor} h-8 px-3 text-xs font-bold flex items-center`}>
-                                      <CheckCircle className="h-3.5 w-3.5 mr-1" />{statusLabel}
-                                    </Badge>
-                                  )}
                                   {maxProgressed < 3 && (
                                     <Button
                                       size="sm"
