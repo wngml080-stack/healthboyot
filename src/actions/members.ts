@@ -87,9 +87,11 @@ export async function getMembers(filters?: {
       detail_info, notes, registered_at, registration_source, is_existing_member,
       is_renewal, is_completed, start_date, created_at, created_by,
       creator:profiles!members_created_by_fkey(name, role),
+      consultation_card:consultation_cards(exercise_time_preference, exercise_start_date, exercise_goals, exercise_goal_detail, body_correction_area, desired_body_type, exercise_experiences, exercise_duration, medical_conditions, medical_detail, surgery_history, surgery_detail, age, occupation, exercise_personality),
       assignment:ot_assignments(
         id, status, ot_category, pt_trainer_id, ppt_trainer_id,
         sales_status, contact_status, is_sales_target, is_pt_conversion,
+        is_excluded, excluded_reason,
         notes, pt_assign_status, ppt_assign_status, created_at,
         pt_trainer:profiles!ot_assignments_pt_trainer_id_fkey(id, name),
         ppt_trainer:profiles!ot_assignments_ppt_trainer_id_fkey(id, name),
@@ -122,9 +124,31 @@ export async function getMembers(filters?: {
     )[0] ?? null
     const creator = raw.creator as { name: string; role: string } | null
     const creatorName = (creator && creator.role !== 'admin') ? creator.name : null
+    // 상담카드에서 운동시간/시작일 + 요약 가져오기
+    const cards = raw.consultation_card as Record<string, unknown>[] | null
+    const latestCard = cards?.[0] ?? null
     // eslint-disable-next-line @typescript-eslint/no-unused-vars
-    const { assignment: _rawAssignment, creator: _rawCreator, ...member } = raw as Record<string, unknown> & { assignment: unknown; creator: unknown }
-    return { ...member, assignment: latest, creator_name: creatorName } as MemberWithOt
+    const { assignment: _rawAssignment, creator: _rawCreator, consultation_card: _rawCard, ...member } = raw as Record<string, unknown> & { assignment: unknown; creator: unknown; consultation_card: unknown }
+    // 상담카드 값이 있으면 우선 적용
+    if (latestCard?.exercise_time_preference) member.exercise_time = latestCard.exercise_time_preference as string
+    if (latestCard?.exercise_start_date) member.start_date = latestCard.exercise_start_date as string
+    // 상담카드 요약 데이터
+    const cardSummary = latestCard ? {
+      exercise_goals: latestCard.exercise_goals as string[] | undefined,
+      exercise_goal_detail: latestCard.exercise_goal_detail as string | null,
+      body_correction_area: latestCard.body_correction_area as string | null,
+      desired_body_type: latestCard.desired_body_type as string | null,
+      exercise_experiences: latestCard.exercise_experiences as string[] | undefined,
+      exercise_duration: latestCard.exercise_duration as string | null,
+      medical_conditions: latestCard.medical_conditions as string[] | undefined,
+      medical_detail: latestCard.medical_detail as string | null,
+      surgery_history: latestCard.surgery_history as string | null,
+      surgery_detail: latestCard.surgery_detail as string | null,
+      age: latestCard.age as string | null,
+      occupation: latestCard.occupation as string | null,
+      exercise_personality: latestCard.exercise_personality as string[] | undefined,
+    } : null
+    return { ...member, assignment: latest, creator_name: creatorName, card_summary: cardSummary } as MemberWithOt
   })
   return members
 }
@@ -156,6 +180,7 @@ export async function createMember(values: MemberFormValues) {
   const { data: { user } } = await supabase.auth.getUser()
 
   // 운동시간은 상담카드 연결 시 가져오므로 자동 등록 시 빈값
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
   const { exercise_time: _skipTime, ...memberValues } = values as Record<string, unknown>
   const { data, error } = await supabase
     .from('members')

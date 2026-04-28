@@ -148,8 +148,8 @@ export function TrainerFolderGrid({ folders, allStaff, currentUserRole, currentU
       <div className="grid gap-4 grid-cols-1 sm:grid-cols-2 lg:grid-cols-3">
         {folders.map((folder, idx) => (
           <div key={folder.id} className="group/card relative">
-            {/* 관리자 메뉴 */}
-            {isAdmin && (
+            {/* 관리자 메뉴 (제외회원 폴더는 시스템 폴더이므로 제외) */}
+            {isAdmin && folder.id !== 'excluded' && (
               <div className="absolute top-3 right-3 z-10">
                 <DropdownMenu>
                   <DropdownMenuTrigger asChild>
@@ -184,9 +184,9 @@ export function TrainerFolderGrid({ folders, allStaff, currentUserRole, currentU
 
             <button
               onClick={() => handleFolderClick(folder)}
-              className="block text-left w-full"
+              className="block text-left w-full focus:outline-none"
             >
-              <div className="rounded-lg border border-gray-200 bg-white shadow-sm hover:shadow-xl hover:border-yellow-400 hover:-translate-y-1 transition-all overflow-hidden">
+              <div className="rounded-lg border border-gray-200 bg-white shadow-sm hover:shadow-xl hover:-translate-y-1 transition-all overflow-hidden">
                 {/* 직무별 색상 바 (두꺼운 상단 라인) */}
                 <div className={cn('h-2', folder.color)} />
                 <div className="p-5">
@@ -203,14 +203,20 @@ export function TrainerFolderGrid({ folders, allStaff, currentUserRole, currentU
 
                   <h3 className="font-bold text-lg mt-3 text-gray-900">{folder.name}</h3>
                   <p className="text-xs text-gray-500">
-                    {folder.role === 'trainer' ? '트레이너' : folder.role === 'fc' ? 'FC' : folder.role}
+                    {folder.id === 'excluded' ? '관리 폴더' : folder.role === 'trainer' ? '트레이너' : folder.role === 'fc' ? 'FC' : folder.role}
                   </p>
 
                   <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 mt-4">
-                    <StatItem value={folder.stats.inProgress} label="금일 OT" color="text-green-600" />
-                    <StatItem value={folder.stats.pending} label="금일 매출대상자" color="text-red-500" />
-                    <StatItem value={folder.stats.completed} label="PT전환" color="text-blue-600" />
-                    <StatItem value={folder.stats.total} label="전체회원" color="text-gray-900" />
+                    {folder.id === 'excluded' ? (<>
+                      <StatItem value={folder.stats.pending} label="거부" color="text-red-500" />
+                      <StatItem value={folder.stats.completed} label="완료" color="text-gray-500" />
+                      <StatItem value={folder.stats.total} label="전체" color="text-gray-900" />
+                    </>) : (<>
+                      <StatItem value={folder.stats.inProgress} label="금일 OT" color="text-green-600" />
+                      <StatItem value={folder.stats.pending} label="금일 매출대상자" color="text-red-500" />
+                      <StatItem value={folder.stats.completed} label="PT전환" color="text-blue-600" />
+                      <StatItem value={folder.stats.total} label="전체회원" color="text-gray-900" />
+                    </>)}
                   </div>
                 </div>
               </div>
@@ -373,27 +379,3 @@ function StatItem({ value, label, color }: { value: number; label: string; color
   )
 }
 
-function NewBadge({ date }: { date: string | null }) {
-  if (!date) return null
-
-  // KST 기준으로 2일 이내인지 확인
-  const nowKst = new Date(Date.now() + 9 * 60 * 60 * 1000)
-  const assignedKst = new Date(new Date(date).getTime() + 9 * 60 * 60 * 1000)
-  const diffMs = nowKst.getTime() - assignedKst.getTime()
-  const diffDays = diffMs / (1000 * 60 * 60 * 24)
-
-  if (diffDays > 2) return null
-
-  // YY.MM.DD 형식
-  const yy = String(assignedKst.getUTCFullYear()).slice(2)
-  const mm = String(assignedKst.getUTCMonth() + 1).padStart(2, '0')
-  const dd = String(assignedKst.getUTCDate()).padStart(2, '0')
-
-  return (
-    <div className="mt-2">
-      <span className="inline-flex items-center gap-1.5 rounded-full bg-red-500 px-2.5 py-0.5 text-[11px] font-bold text-white animate-pulse">
-        New <span className="text-red-200">|</span> {yy}.{mm}.{dd}
-      </span>
-    </div>
-  )
-}

@@ -2,6 +2,7 @@
 
 import { isDemoMode } from '@/lib/demo'
 import { DEMO_OT_ASSIGNMENTS } from '@/lib/demo-data'
+import { toKst } from '@/lib/kst'
 import { createClient } from '@/lib/supabase/server'
 
 export interface StatsData {
@@ -133,7 +134,7 @@ export async function getStats(period: 'weekly' | 'monthly' = 'monthly', offset:
     for (const s of sessions) {
       if (!s.completed_at) continue
       const sessionDate = s.scheduled_at ?? s.completed_at
-      const dayIdx = new Date(sessionDate).getDay()
+      const dayIdx = toKst(sessionDate).getUTCDay()
       dayCounts[dayIdx].count++
       if (tName) {
         dayCounts[dayIdx].trainerCounts.set(tName, (dayCounts[dayIdx].trainerCounts.get(tName) ?? 0) + 1)

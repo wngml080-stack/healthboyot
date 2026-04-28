@@ -2,8 +2,32 @@
 
 import { isDemoMode } from '@/lib/demo'
 import { DEMO_OT_ASSIGNMENTS } from '@/lib/demo-data'
+import { toKstShortStr, toKstDateStr, toKstTimeStr } from '@/lib/kst'
 import { createClient } from '@/lib/supabase/server'
-import type { OtAssignmentWithDetails, OtStatus } from '@/types'
+import type { OtAssignmentWithDetails, OtStatus, SalesStatus } from '@/types'
+
+/** updateOtAssignment에 전달 가능한 필드 화이트리스트 */
+export interface UpdateOtAssignmentValues {
+  status?: OtStatus
+  notes?: string | null
+  pt_trainer_id?: string | null
+  ppt_trainer_id?: string | null
+  pt_assign_status?: string | null
+  ppt_assign_status?: string | null
+  is_excluded?: boolean
+  excluded_reason?: string | null
+  excluded_at?: string | null
+  sales_status?: SalesStatus | string | null
+  sales_note?: string | null
+  is_sales_target?: boolean
+  is_pt_conversion?: boolean
+  expected_amount?: number
+  expected_sessions?: number
+  expected_sales?: number
+  actual_sales?: number
+  closing_probability?: number
+  closing_fail_reason?: string | null
+}
 
 export async function getOtAssignments(params?: {
   status?: OtStatus
@@ -27,32 +51,40 @@ export async function getOtAssignments(params?: {
       contact_status, sales_status, expected_amount, expected_sessions,
       closing_probability, closing_fail_reason, sales_note,
       is_sales_target, is_pt_conversion, pt_assign_status, ppt_assign_status,
+      is_excluded, excluded_reason, excluded_at,
       created_at, updated_at,
       member:members!inner(id, name, phone, ot_category, exercise_time, duration_months, detail_info, notes, registered_at, registration_source, is_existing_member, gender, start_date, is_completed),
       pt_trainer:profiles!ot_assignments_pt_trainer_id_fkey(id, name),
       ppt_trainer:profiles!ot_assignments_ppt_trainer_id_fkey(id, name),
-      sessions:ot_sessions(id, session_number, scheduled_at, completed_at, feedback, exercise_content, trainer_tip, cardio_type, cardio_duration)
+      sessions:ot_sessions(id, session_number, scheduled_at, completed_at)
     `)
     .order('created_at', { ascending: false })
-    .limit(200)
+    .limit(100)
 
   if (params?.status) {
     query = query.eq('status', params.status)
   }
   if (params?.trainerId) {
-    if (params.trainerId === 'unassigned') {
-      query = query.is('pt_trainer_id', null).is('ppt_trainer_id', null)
+    if (params.trainerId === 'excluded') {
+      // 제외회원 폴더: is_excluded = true인 회원만
+      query = query.eq('is_excluded', true)
     } else {
-      query = query.or(`pt_trainer_id.eq.${params.trainerId},ppt_trainer_id.eq.${params.trainerId}`)
+      // 일반 폴더: 제외회원 숨기기
+      query = query.eq('is_excluded', false)
+      if (params.trainerId === 'unassigned') {
+        query = query.is('pt_trainer_id', null).is('ppt_trainer_id', null)
+      } else {
+        query = query.or(`pt_trainer_id.eq.${params.trainerId},ppt_trainer_id.eq.${params.trainerId}`)
+      }
     }
   }
 
-  const { data, error } = await query
+  const { data, error } = await query.returns<OtAssignmentWithDetails[]>()
   if (error) {
     console.error('[getOtAssignments] DB Error:', error.message, error.details, error.hint)
     throw new Error(error.message)
   }
-  return (data as unknown as OtAssignmentWithDetails[]) ?? []
+  return data ?? []
 }
 
 export async function getOtAssignment(id: string): Promise<OtAssignmentWithDetails | null> {
@@ -71,6 +103,7 @@ export async function getOtAssignment(id: string): Promise<OtAssignmentWithDetai
       contact_status, sales_status, expected_amount, expected_sessions,
       closing_probability, closing_fail_reason, sales_note,
       is_sales_target, is_pt_conversion, pt_assign_status, ppt_assign_status,
+      is_excluded, excluded_reason, excluded_at,
       created_at, updated_at,
       member:members!inner(id, name, phone, gender, sports, ot_category, exercise_time, duration_months, injury_tags, detail_info, notes, registered_at, registration_source, is_existing_member, start_date, is_completed),
       pt_trainer:profiles!ot_assignments_pt_trainer_id_fkey(id, name),
@@ -78,32 +111,31 @@ export async function getOtAssignment(id: string): Promise<OtAssignmentWithDetai
       sessions:ot_sessions(id, ot_assignment_id, session_number, scheduled_at, completed_at, feedback, exercise_content, trainer_tip, cardio_type, cardio_duration, created_at, updated_at)
     `)
     .eq('id', id)
+    .returns<OtAssignmentWithDetails[]>()
     .single()
 
   if (error) return null
-  return data as unknown as OtAssignmentWithDetails
+  return data as OtAssignmentWithDetails
 }
 
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-export async function updateOtAssignment(id: string, values: Record<string, any>) {
+export async function updateOtAssignment(id: string, values: UpdateOtAssignmentValues) {
   if (isDemoMode()) {
     return { success: true }
   }
 
   const supabase = await createClient()
 
-  // 변경 전 데이터 조회 + 업데이트 병렬 실행
-  const [{ data: before }, { error }] = await Promise.all([
-    supabase
-      .from('ot_assignments')
-      .select('status, sales_status, is_sales_target, is_pt_conversion, member:members!inner(name), pt_trainer:profiles!ot_assignments_pt_trainer_id_fkey(name)')
-      .eq('id', id)
-      .single(),
-    supabase
-      .from('ot_assignments')
-      .update(values)
-      .eq('id', id),
-  ])
+  // 변경 전 데이터를 먼저 조회한 뒤 업데이트 (race condition 방지)
+  const { data: before } = await supabase
+    .from('ot_assignments')
+    .select('status, sales_status, is_sales_target, is_pt_conversion, member:members!inner(name), pt_trainer:profiles!ot_assignments_pt_trainer_id_fkey(name)')
+    .eq('id', id)
+    .single()
+
+  const { error } = await supabase
+    .from('ot_assignments')
+    .update(values)
+    .eq('id', id)
 
   if (error) {
     console.error('updateOtAssignment error:', error.message, 'id:', id, 'values:', values)
@@ -203,12 +235,8 @@ export async function upsertOtSession(values: {
         action = `${values.session_number}차 OT 완료`
         note = `${member.name} 회원 — ${trainerLabel} 담당`
       } else if (values.scheduled_at && !values.completed_at) {
-        // KST(UTC+9) 기준 — Vercel은 UTC라서 getHours()는 UTC를 반환하므로 +9h offset 적용
-        const kst = new Date(new Date(values.scheduled_at).getTime() + 9 * 60 * 60 * 1000)
-        const pad = (n: number) => String(n).padStart(2, '0')
-        const dateStr = `${kst.getUTCMonth() + 1}/${kst.getUTCDate()} ${pad(kst.getUTCHours())}:${pad(kst.getUTCMinutes())}`
         action = `${values.session_number}차 OT 일정 등록`
-        note = `${member.name} 회원 — ${dateStr} / ${trainerLabel} 담당`
+        note = `${member.name} 회원 — ${toKstShortStr(values.scheduled_at)} / ${trainerLabel} 담당`
       } else if (values.completed_at === null) {
         action = `${values.session_number}차 OT 완료 취소`
         note = `${member.name} 회원 — ${trainerLabel} 담당`
@@ -220,14 +248,16 @@ export async function upsertOtSession(values: {
           action, note, changed_by: userId,
         })
       }
-    } catch {}
+    } catch (err) {
+      console.error('[upsertOtSession] change_log 실패:', err)
+    }
 
     // 자동 상태 전환 + trainer_schedules 동기화 (병렬)
     const statusPromises: PromiseLike<unknown>[] = []
 
-    if (values.scheduled_at && !values.completed_at) {
-      // 일정 저장 → 진행중
-      if (['신청대기', '배정완료'].includes(assignData.status)) {
+    if (values.scheduled_at) {
+      // 일정 저장 → 진행중 (완료 처리가 아닌 경우에만 상태 전환)
+      if (!values.completed_at && ['신청대기', '배정완료'].includes(assignData.status)) {
         statusPromises.push(
           supabase.from('ot_assignments').update({ status: '진행중' }).eq('id', values.ot_assignment_id).then() as Promise<unknown>
         )
@@ -236,11 +266,8 @@ export async function upsertOtSession(values: {
       // trainer_schedules 동기화 (PT + PPT 둘 다 생성)
       const trainerIds = [assignData.pt_trainer_id, assignData.ppt_trainer_id].filter(Boolean) as string[]
       if (trainerIds.length > 0) {
-        // KST(UTC+9) 기준 날짜/시간 — Vercel은 UTC라서 getHours()는 UTC 시간을 반환하므로 직접 +9h offset 적용
-        const kst = new Date(new Date(values.scheduled_at).getTime() + 9 * 60 * 60 * 1000)
-        const pad = (n: number) => String(n).padStart(2, '0')
-        const dateStr = `${kst.getUTCFullYear()}-${pad(kst.getUTCMonth() + 1)}-${pad(kst.getUTCDate())}`
-        const timeStr = `${pad(kst.getUTCHours())}:${pad(kst.getUTCMinutes())}`
+        const dateStr = toKstDateStr(values.scheduled_at)
+        const timeStr = toKstTimeStr(values.scheduled_at)
         const memberId = (assignData as { member_id?: string }).member_id ?? null
 
         for (const tid of trainerIds) {
@@ -342,7 +369,7 @@ export async function moveOtSchedule(params: {
         note: `→ ${params.newDateStr} ${params.newTimeStr}`,
         changed_by: session?.user?.id ?? null,
       })
-    ).catch(() => {}),
+    ).catch((err) => console.error('[moveOtSchedule] change_log 실패:', err)),
   ])
 
   if (sessionErr) return { error: 'OT 세션 업데이트 실패: ' + sessionErr.message }
@@ -387,7 +414,9 @@ export async function changeTrainer(
       note: `${memberName} 회원 — 히스토리 포함 이동`,
       changed_by: authResult.data?.session?.user?.id ?? null,
     })
-  } catch {}
+  } catch (err) {
+    console.error('[changeTrainer] change_log 실패:', err)
+  }
 
   return { success: true }
 }

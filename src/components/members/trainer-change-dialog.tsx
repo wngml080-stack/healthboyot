@@ -56,7 +56,7 @@ export function TrainerChangeDialog({ member, trainers, onClose, onSaved }: Prop
     const oldPptVal = a.ppt_trainer_id ?? (a.ppt_assign_status === 'later' ? 'later' : a.ppt_assign_status === 'not_requested' ? 'not_requested' : 'none')
 
     const promises: Promise<unknown>[] = []
-    const statusOverrides: Record<string, string> = {}
+    const statusOverrides: import('@/actions/ot').UpdateOtAssignmentValues = {}
 
     if (newPtTrainer !== oldPtVal) {
       const oldName = a.pt_trainer?.name ?? statusLabel(oldPtVal)

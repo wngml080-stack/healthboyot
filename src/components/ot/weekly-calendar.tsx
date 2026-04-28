@@ -1,6 +1,6 @@
 'use client'
 
-import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react'
+import React, { useState, useEffect, useCallback, useMemo, useRef, useTransition } from 'react'
 import { useRouter } from 'next/navigation'
 import { format, addDays, startOfWeek, isSameDay } from 'date-fns'
 import { ko } from 'date-fns/locale'
@@ -12,6 +12,7 @@ import {
   Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription,
 } from '@/components/ui/dialog'
 import { ChevronLeft, ChevronRight, X, Search, Copy } from 'lucide-react'
+import { toKstShortStr } from '@/lib/kst'
 import { createClient } from '@/lib/supabase/client'
 import { updateOtAssignment, upsertOtSession, moveOtSchedule } from '@/actions/ot'
 // import { OtStatusBadge } from './ot-status-badge'
@@ -167,12 +168,7 @@ const OT_SALES_LABEL: Record<SalesStatus, string> = {
 }
 
 // ISO timestamp → "M/d HH:mm" KST 표시 (브라우저 TZ 무관)
-// Vercel이 UTC라서 server-side 렌더링 시 getHours()가 UTC 시간을 반환하는 문제 회피용
-function formatKstShort(iso: string): string {
-  const k = new Date(new Date(iso).getTime() + 9 * 60 * 60 * 1000)
-  const pad = (n: number) => String(n).padStart(2, '0')
-  return `${k.getUTCMonth() + 1}/${k.getUTCDate()} ${pad(k.getUTCHours())}:${pad(k.getUTCMinutes())}`
-}
+const formatKstShort = toKstShortStr
 
 // PT 스케줄의 note 필드 파싱:
 // 형식: "[010-1234-5678] [5/30회] [★] [200만] [수업완료] 메모 본문"
@@ -269,6 +265,7 @@ function buildPtNote(opts: {
 export function WeeklyCalendar({ assignments, trainerId, profile, workStartTime, workEndTime }: Props) {
   const router = useRouter()
   const [weekOffset, setWeekOffset] = useState(0)
+  const [, startTransition] = useTransition()
   const [schedules, setSchedules] = useState<ScheduleItem[]>([])
   const [loading, setLoading] = useState(false)
   const supabaseRef = useRef(createClient())
@@ -1088,13 +1085,13 @@ export function WeeklyCalendar({ assignments, trainerId, profile, workStartTime,
         {/* 네비게이션 */}
         <div className="flex items-center justify-between gap-1">
           <div className="flex items-center gap-1 sm:gap-2">
-            <Button variant="outline" size="icon" className="h-7 w-7 sm:h-8 sm:w-8 bg-white text-gray-700 border-gray-300" onClick={() => setWeekOffset((p) => p - 1)}>
+            <Button variant="outline" size="icon" className="h-7 w-7 sm:h-8 sm:w-8 bg-white text-gray-700 border-gray-300" onClick={() => startTransition(() => setWeekOffset((p) => p - 1))}>
               <ChevronLeft className="h-3.5 w-3.5 sm:h-4 sm:w-4" />
             </Button>
             <span className="text-xs sm:text-sm font-bold text-white bg-gray-900 px-2 sm:px-3 py-0.5 sm:py-1 rounded-md min-w-0 sm:min-w-[140px] text-center whitespace-nowrap">
               {format(weekStart, 'M월', { locale: ko })} {weekNum}주차
             </span>
-            <Button variant="outline" size="icon" className="h-7 w-7 sm:h-8 sm:w-8 bg-white text-gray-700 border-gray-300" onClick={() => setWeekOffset((p) => p + 1)}>
+            <Button variant="outline" size="icon" className="h-7 w-7 sm:h-8 sm:w-8 bg-white text-gray-700 border-gray-300" onClick={() => startTransition(() => setWeekOffset((p) => p + 1))}>
               <ChevronRight className="h-3.5 w-3.5 sm:h-4 sm:w-4" />
             </Button>
           </div>
@@ -1203,9 +1200,13 @@ export function WeeklyCalendar({ assignments, trainerId, profile, workStartTime,
                   {/* 스케줄 블록 (절대 위치) */}
                   {daySchedules.map((s) => {
                     const slot = timeToSlot(s.start_time)
-                    const heightSlots = Math.max(1, Math.ceil(s.duration / 30))
-                    const top = slot * slotH
-                    const height = heightSlots * slotH - 2
+                    // 시작 시간의 분 단위 오프셋 (예: 18:50 → 50분의 30분 슬롯 내 20분 오프셋)
+                    const [, startMin] = s.start_time.split(':').map(Number)
+                    const minuteOffset = startMin % 30  // 슬롯 내 오프셋 (분)
+                    const pixelOffset = (minuteOffset / 30) * slotH
+                    const top = slot * slotH + pixelOffset
+                    // duration을 정확한 픽셀 높이로 (50분이면 50/30 * slotH)
+                    const height = Math.max(slotH * 0.8, (s.duration / 30) * slotH) - 2
                     // 회원 정보 매칭 — OT 스케줄만 ot_assignments에서 찾음
                     // PT/PPT는 동명이인 OT 회원의 매출대상자 표시가 잘못 묻어오는 문제를 방지
                     const matched = s.schedule_type === 'OT'
@@ -1685,18 +1686,18 @@ export function WeeklyCalendar({ assignments, trainerId, profile, workStartTime,
               <div className="grid grid-cols-2 gap-3">
                 <div className="space-y-2">
                   <Label>시작 시간</Label>
-                  <Input type="time" value={createTime} onChange={(e) => setCreateTime(e.target.value)} step="600" />
+                  <Input type="time" value={createTime} onChange={(e) => setCreateTime(e.target.value)} step="300" />
                 </div>
                 <div className="space-y-2">
                   <Label>종료 시간</Label>
-                  <Input type="time" value={createEndTime} onChange={(e) => setCreateEndTime(e.target.value)} step="600" />
+                  <Input type="time" value={createEndTime} onChange={(e) => setCreateEndTime(e.target.value)} step="300" />
                 </div>
               </div>
             ) : (
               // OT/PT/PPT — 시작 시간만, duration은 별도 버튼
               <div className="space-y-2">
                 <Label>시작 시간</Label>
-                <Input type="time" value={createTime} onChange={(e) => setCreateTime(e.target.value)} step="600" />
+                <Input type="time" value={createTime} onChange={(e) => setCreateTime(e.target.value)} step="300" />
               </div>
             )}
 

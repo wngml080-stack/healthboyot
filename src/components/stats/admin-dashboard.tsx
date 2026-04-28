@@ -1,14 +1,13 @@
 'use client'
 
 import { useState, useRef, useCallback } from 'react'
-import { useRouter } from 'next/navigation'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import {
   Table, TableBody, TableCell, TableHead, TableHeader, TableRow,
 } from '@/components/ui/table'
-import { Users, TrendingUp, ClipboardCheck, BarChart3, Download, ChevronLeft, ChevronRight, Camera } from 'lucide-react'
+import { Download, ChevronLeft, ChevronRight, Camera } from 'lucide-react'
 import type { AdminDashboardData } from '@/actions/admin-dashboard'
 
 interface Props {
@@ -17,7 +16,6 @@ interface Props {
 }
 
 export function AdminDashboard({ data: initialData, initialPeriod }: Props) {
-  const router = useRouter()
   const [period, setPeriod] = useState<'weekly' | 'monthly'>(initialPeriod)
   const [offset, setOffset] = useState(0)
   const [data, setData] = useState(initialData)
@@ -320,33 +318,6 @@ export function AdminDashboard({ data: initialData, initialPeriod }: Props) {
       </div>
 
     </div>
-  )
-}
-
-function StatusBox({ label, value, bg, text, sub }: { label: string; value: number | string; bg: string; text: string; sub?: string }) {
-  return (
-    <div className={`flex items-center justify-between rounded-lg px-4 py-3 ${bg}`}>
-      <div>
-        <span className={`text-sm font-medium ${text}`}>{label}</span>
-        {sub && <p className="text-[10px] text-gray-400 mt-0.5">{sub}</p>}
-      </div>
-      <span className={`text-lg font-bold ${text}`}>{value}</span>
-    </div>
-  )
-}
-
-function SummaryCard({ icon, label, value, sub }: { icon: React.ReactNode; label: string; value: number | string; sub: string }) {
-  return (
-    <Card className="bg-white/5 border-gray-700">
-      <CardContent className="pt-4 pb-3 px-4">
-        <div className="flex items-center gap-2 mb-1">
-          {icon}
-          <span className="text-xs text-gray-400 font-medium">{label}</span>
-        </div>
-        <p className="text-2xl font-bold text-white">{value}</p>
-        <p className="text-xs text-gray-400 mt-0.5">{sub}</p>
-      </CardContent>
-    </Card>
   )
 }
 

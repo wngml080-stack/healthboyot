@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useRef, useCallback, useMemo, useEffect, Fragment, memo } from 'react'
+import { useState, useRef, useCallback, useMemo, Fragment } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
 import { Search, Pencil, ChevronDown, ChevronUp, Trash2, AlertTriangle, ArrowRightLeft, ArrowUpDown, ArrowUp, ArrowDown, UserPlus } from 'lucide-react'
 import { Input } from '@/components/ui/input'
@@ -29,17 +29,33 @@ import {
   TableRow,
 } from '@/components/ui/table'
 import { deleteMember } from '@/actions/members'
-import { getConsultationCard } from '@/actions/consultation'
 import { addChangeLog } from '@/actions/change-log'
 import { updateOtAssignment } from '@/actions/ot'
 import { MemberEditDialog } from './member-edit-dialog'
 import { MemberAddDialog } from './member-add-dialog'
 import { TrainerChangeDialog } from './trainer-change-dialog'
-import type { Member, OtAssignmentWithDetails, Profile, ConsultationCard } from '@/types'
+import type { Member, OtAssignmentWithDetails, Profile } from '@/types'
+
+export interface ConsultationCardSummary {
+  exercise_goals?: string[]
+  exercise_goal_detail?: string | null
+  body_correction_area?: string | null
+  desired_body_type?: string | null
+  exercise_experiences?: string[]
+  exercise_duration?: string | null
+  medical_conditions?: string[]
+  medical_detail?: string | null
+  surgery_history?: string | null
+  surgery_detail?: string | null
+  age?: string | null
+  occupation?: string | null
+  exercise_personality?: string[]
+}
 
 export interface MemberWithOt extends Member {
   assignment?: OtAssignmentWithDetails | null
   creator_name?: string | null
+  card_summary?: ConsultationCardSummary | null
 }
 
 interface Props {
@@ -108,19 +124,6 @@ export function MemberList({ initialMembers, trainers = [] }: Props) {
   const [expandedId, setExpandedId] = useState<string | null>(null)
   const [deleteConfirm, setDeleteConfirm] = useState<MemberWithOt | null>(null)
   const [deleting, setDeleting] = useState(false)
-
-  // 상담카드 캐시 (펼침 시 로딩)
-  const [cardCache, setCardCache] = useState<Record<string, ConsultationCard | null>>({})
-  const [cardLoading, setCardLoading] = useState<Record<string, boolean>>({})
-
-  useEffect(() => {
-    if (!expandedId || expandedId in cardCache) return
-    setCardLoading((prev) => ({ ...prev, [expandedId]: true }))
-    getConsultationCard(expandedId).then((card) => {
-      setCardCache((prev) => ({ ...prev, [expandedId]: card }))
-      setCardLoading((prev) => ({ ...prev, [expandedId]: false }))
-    })
-  }, [expandedId, cardCache])
 
   // 낙관적 UI 업데이트를 위한 로컬 오버라이드
   const [trainerOverrides, setTrainerOverrides] = useState<Record<string, { pt?: { id: string | null; name: string; status: string }; ppt?: { id: string | null; name: string; status: string } }>>({})
@@ -385,7 +388,6 @@ export function MemberList({ initialMembers, trainers = [] }: Props) {
                                 }),
                                 addChangeLog({ target_type: 'ot_assignment', target_id: m.assignment!.id, action: 'PT 담당 변경', old_value: oldName, new_value: newName, note: `${m.name} 회원` }),
                               ])
-                              router.refresh()
                             }}
                           >
                             <SelectTrigger className={`h-7 text-xs border justify-center gap-1 px-1 rounded ${
@@ -435,7 +437,6 @@ export function MemberList({ initialMembers, trainers = [] }: Props) {
                                   }),
                                   addChangeLog({ target_type: 'ot_assignment', target_id: m.assignment!.id, action: 'PPT 담당 변경', old_value: oldName, new_value: newName, note: `${m.name} 회원` }),
                                 ])
-                                router.refresh()
                               }}
                             >
                               <SelectTrigger className={`h-7 text-xs border justify-center gap-1 px-1 rounded ${
@@ -462,6 +463,18 @@ export function MemberList({ initialMembers, trainers = [] }: Props) {
                         <span className={`inline-flex items-center rounded px-2 py-0.5 text-[10px] font-semibold ${progressColor}`}>
                           {progressLabel}
                         </span>
+                        {m.assignment?.is_excluded && (
+                          <button
+                            type="button"
+                            className="ml-1 inline-flex items-center rounded px-1.5 py-0.5 text-[10px] font-bold bg-red-500 text-white hover:bg-red-600 transition-colors"
+                            onClick={(e) => {
+                              e.stopPropagation()
+                              alert(`제외 사유:\n${m.assignment?.excluded_reason || '사유 없음'}`)
+                            }}
+                          >
+                            제외
+                          </button>
+                        )}
                       </TableCell>
                       <TableCell className="text-center whitespace-nowrap">
                         {isExpanded ? <ChevronUp className="h-4 w-4 text-gray-400" /> : <ChevronDown className="h-4 w-4 text-gray-400" />}
@@ -502,17 +515,15 @@ export function MemberList({ initialMembers, trainers = [] }: Props) {
                             </div>
                           )}
                           {/* 상담카드 요약 */}
-                          {cardLoading[m.id] ? (
-                            <div className="mt-3 text-xs text-gray-400">상담카드 로딩 중...</div>
-                          ) : cardCache[m.id] && (() => {
-                            const card = cardCache[m.id]!
+                          {m.card_summary && (() => {
+                            const card = m.card_summary!
                             const hasContent = card.exercise_goals?.length || card.medical_conditions?.length || card.exercise_experiences?.length || card.desired_body_type || card.body_correction_area || card.exercise_duration || card.age || card.occupation
                             if (!hasContent) return null
                             return (
                               <div className="mt-3 pt-3 border-t border-gray-200">
                                 <p className="text-xs font-semibold text-gray-600 mb-2">상담카드 요약</p>
                                 <div className="grid grid-cols-2 gap-2 text-sm">
-                                  {card.exercise_goals?.length > 0 && (
+                                  {card.exercise_goals && card.exercise_goals.length > 0 && (
                                     <div>
                                       <p className="text-xs text-gray-500">운동목표</p>
                                       <p className="font-medium text-gray-900">{card.exercise_goals.join(', ')}{card.exercise_goal_detail ? ` (${card.exercise_goal_detail})` : ''}</p>
@@ -530,13 +541,13 @@ export function MemberList({ initialMembers, trainers = [] }: Props) {
                                       <p className="font-medium text-gray-900">{card.desired_body_type}</p>
                                     </div>
                                   )}
-                                  {card.exercise_experiences?.length > 0 && (
+                                  {card.exercise_experiences && card.exercise_experiences.length > 0 && (
                                     <div>
                                       <p className="text-xs text-gray-500">운동경력</p>
                                       <p className="font-medium text-gray-900">{card.exercise_experiences.join(', ')}{card.exercise_duration ? ` · ${card.exercise_duration}` : ''}</p>
                                     </div>
                                   )}
-                                  {card.medical_conditions?.length > 0 && card.medical_conditions[0] !== '없음' && (
+                                  {card.medical_conditions && card.medical_conditions.length > 0 && card.medical_conditions[0] !== '없음' && (
                                     <div>
                                       <p className="text-xs text-gray-500">질환</p>
                                       <p className="font-medium text-gray-900">{card.medical_conditions.join(', ')}{card.medical_detail ? ` (${card.medical_detail})` : ''}</p>
@@ -554,7 +565,7 @@ export function MemberList({ initialMembers, trainers = [] }: Props) {
                                       <p className="font-medium text-gray-900">{[card.age, card.occupation].filter(Boolean).join(' / ')}</p>
                                     </div>
                                   )}
-                                  {card.exercise_personality?.length > 0 && (
+                                  {card.exercise_personality && card.exercise_personality.length > 0 && (
                                     <div>
                                       <p className="text-xs text-gray-500">운동성향</p>
                                       <p className="font-medium text-gray-900">{card.exercise_personality.join(', ')}</p>

@@ -7,9 +7,9 @@ import type { Profile, Role } from '@/types'
 export async function getStaffList(): Promise<Profile[]> {
   if (isDemoMode()) {
     return [
-      { id: 'demo-admin-001', name: '김팀장', email: 'admin@demo.com', role: 'admin', avatar_url: null, folder_password: null, is_approved: true, work_start_time: '09:00', work_end_time: '18:00', created_at: '', updated_at: '' },
-      { id: 'demo-trainer-001', name: '박트레이너', email: 'trainer@demo.com', role: 'trainer', avatar_url: null, folder_password: '1234', is_approved: true, work_start_time: '10:00', work_end_time: '19:00', created_at: '', updated_at: '' },
-      { id: 'demo-fc-001', name: '이FC', email: 'fc@demo.com', role: 'fc', avatar_url: null, folder_password: null, is_approved: false, work_start_time: null, work_end_time: null, created_at: '', updated_at: '' },
+      { id: 'demo-admin-001', name: '김팀장', email: 'admin@demo.com', role: 'admin', avatar_url: null, folder_password: null, is_approved: true, work_start_time: '09:00', work_end_time: '18:00', created_at: '', updated_at: '' } as Profile,
+      { id: 'demo-trainer-001', name: '박트레이너', email: 'trainer@demo.com', role: 'trainer', avatar_url: null, folder_password: null, is_approved: true, work_start_time: '10:00', work_end_time: '19:00', created_at: '', updated_at: '' } as Profile,
+      { id: 'demo-fc-001', name: '이FC', email: 'fc@demo.com', role: 'fc', avatar_url: null, folder_password: null, is_approved: false, work_start_time: null, work_end_time: null, created_at: '', updated_at: '' } as Profile,
     ]
   }
 
@@ -17,7 +17,7 @@ export async function getStaffList(): Promise<Profile[]> {
 
   const { data, error } = await supabase
     .from('profiles')
-    .select('id, name, email, role, avatar_url, folder_password, is_approved, has_folder, folder_order, work_start_time, work_end_time, created_at, updated_at')
+    .select('id, name, email, role, avatar_url, is_approved, has_folder, folder_order, folder_password, work_start_time, work_end_time, created_at, updated_at')
     .order('role')
     .order('name')
 
@@ -25,7 +25,8 @@ export async function getStaffList(): Promise<Profile[]> {
     console.error('[getStaffList] DB Error:', error.message, error.details, error.hint)
     throw new Error(error.message)
   }
-  return data ?? []
+  // folder_password를 클라이언트에 노출하지 않음
+  return (data ?? []).map(({ folder_password: _, ...rest }) => ({ ...rest, folder_password: null })) as Profile[]
 }
 
 export async function createStaff(values: {

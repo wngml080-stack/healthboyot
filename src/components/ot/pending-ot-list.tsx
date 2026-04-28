@@ -9,8 +9,8 @@ import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
 } from '@/components/ui/select'
 import { updateOtAssignment } from '@/actions/ot'
-import { getExerciseStartDatesByMemberIds } from '@/actions/consultation'
-import type { OtAssignmentWithDetails, Profile } from '@/types'
+import { getExerciseStartDatesByMemberIds, getConsultationCard } from '@/actions/consultation'
+import type { OtAssignmentWithDetails, Profile, ConsultationCard } from '@/types'
 
 interface Props {
   assignments: OtAssignmentWithDetails[]
@@ -25,6 +25,8 @@ export function PendingOtList({ assignments, trainers = [] }: Props) {
   const [selectedPptTrainer, setSelectedPptTrainer] = useState('')
   const [loading, setLoading] = useState(false)
   const [startDates, setStartDates] = useState<Record<string, string | null>>({})
+  const [cardCache, setCardCache] = useState<Record<string, ConsultationCard | null>>({})
+  const [cardLoading, setCardLoading] = useState<Record<string, boolean>>({})
 
   // 각 회원의 상담카드에서 운동 시작일 배치 조회 (N+1 제거)
   useEffect(() => {
@@ -46,13 +48,29 @@ export function PendingOtList({ assignments, trainers = [] }: Props) {
     }
   }, [assignments]) // eslint-disable-line react-hooks/exhaustive-deps
 
+  // 펼침 시 상담카드 로딩
+  useEffect(() => {
+    if (!expandedId) return
+    const memberId = assignments.find((a) => a.id === expandedId)?.member_id
+    if (!memberId || memberId in cardCache) return
+    setCardLoading((prev) => ({ ...prev, [memberId]: true }))
+    getConsultationCard(memberId).then((card) => {
+      setCardCache((prev) => ({ ...prev, [memberId]: card }))
+      setCardLoading((prev) => ({ ...prev, [memberId]: false }))
+      // 상담카드에 운동시작일이 있으면 startDates도 업데이트
+      if (card?.exercise_start_date) {
+        setStartDates((prev) => ({ ...prev, [memberId]: card.exercise_start_date }))
+      }
+    })
+  }, [expandedId, assignments, cardCache])
+
   const handleAssign = async (assignmentId: string) => {
     if (!selectedPtTrainer && !selectedPptTrainer) return
     setLoading(true)
     const isSpecial = (v: string) => v === 'later' || v === 'urgent' || v === 'not_requested'
     const ptIsReal = selectedPtTrainer && !isSpecial(selectedPtTrainer)
     const pptIsReal = selectedPptTrainer && !isSpecial(selectedPptTrainer)
-    const updates: Record<string, string | null> = {
+    const updates: import('@/actions/ot').UpdateOtAssignmentValues = {
       status: (ptIsReal || pptIsReal) ? '배정완료' : '신청대기',
     }
     if (selectedPtTrainer) {
@@ -123,12 +141,75 @@ export function PendingOtList({ assignments, trainers = [] }: Props) {
                       </span>
                     </div>
                   )}
-                  <DetailRow label="운동시간" value={a.member.exercise_time} />
                   <DetailRow label="운동기간" value={a.member.duration_months ? String(a.member.duration_months) : null} />
                   <DetailRow label="종목" value={a.member.ot_category} />
                   <DetailRow label="상세정보" value={a.member.detail_info} />
                   <DetailRow label="특이사항" value={a.member.notes} />
                 </div>
+
+                {/* 상담카드 요약 */}
+                {cardLoading[a.member_id] ? (
+                  <div className="text-xs text-gray-400">상담카드 로딩 중...</div>
+                ) : cardCache[a.member_id] && (() => {
+                  const card = cardCache[a.member_id]!
+                  const hasContent = card.exercise_goals?.length || card.medical_conditions?.length || card.exercise_experiences?.length || card.desired_body_type || card.body_correction_area || card.exercise_duration || card.age || card.occupation
+                  if (!hasContent) return null
+                  return (
+                    <div className="pt-2 border-t border-gray-200">
+                      <p className="text-xs font-semibold text-gray-600 mb-1.5">상담카드 요약</p>
+                      <div className="space-y-1 text-sm">
+                        {card.exercise_goals?.length > 0 && (
+                          <div className="flex">
+                            <span className="text-gray-500 w-20 shrink-0">운동목표</span>
+                            <span className="text-gray-900">{card.exercise_goals.join(', ')}{card.exercise_goal_detail ? ` (${card.exercise_goal_detail})` : ''}</span>
+                          </div>
+                        )}
+                        {card.body_correction_area && (
+                          <div className="flex">
+                            <span className="text-gray-500 w-20 shrink-0">교정부위</span>
+                            <span className="text-gray-900">{card.body_correction_area}</span>
+                          </div>
+                        )}
+                        {card.desired_body_type && (
+                          <div className="flex">
+                            <span className="text-gray-500 w-20 shrink-0">원하는체형</span>
+                            <span className="text-gray-900">{card.desired_body_type}</span>
+                          </div>
+                        )}
+                        {card.exercise_experiences?.length > 0 && (
+                          <div className="flex">
+                            <span className="text-gray-500 w-20 shrink-0">운동경력</span>
+                            <span className="text-gray-900">{card.exercise_experiences.join(', ')}{card.exercise_duration ? ` · ${card.exercise_duration}` : ''}</span>
+                          </div>
+                        )}
+                        {card.medical_conditions?.length > 0 && card.medical_conditions[0] !== '없음' && (
+                          <div className="flex">
+                            <span className="text-gray-500 w-20 shrink-0">질환</span>
+                            <span className="text-gray-900">{card.medical_conditions.join(', ')}{card.medical_detail ? ` (${card.medical_detail})` : ''}</span>
+                          </div>
+                        )}
+                        {card.surgery_history && (
+                          <div className="flex">
+                            <span className="text-gray-500 w-20 shrink-0">수술이력</span>
+                            <span className="text-gray-900">{card.surgery_history}{card.surgery_detail ? ` (${card.surgery_detail})` : ''}</span>
+                          </div>
+                        )}
+                        {(card.age || card.occupation) && (
+                          <div className="flex">
+                            <span className="text-gray-500 w-20 shrink-0">{card.age && card.occupation ? '나이/직업' : card.age ? '나이' : '직업'}</span>
+                            <span className="text-gray-900">{[card.age, card.occupation].filter(Boolean).join(' / ')}</span>
+                          </div>
+                        )}
+                        {card.exercise_personality?.length > 0 && (
+                          <div className="flex">
+                            <span className="text-gray-500 w-20 shrink-0">운동성향</span>
+                            <span className="text-gray-900">{card.exercise_personality.join(', ')}</span>
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                  )
+                })()}
 
                 {/* 빠른 배정 */}
                 {!isAssigning ? (

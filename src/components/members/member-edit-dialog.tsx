@@ -57,7 +57,7 @@ export function MemberEditDialog({ member, trainers, onClose, onSaved }: Props) 
     ]
 
     if (member.assignment) {
-      const trainerUpdates: Record<string, string | null> = {}
+      const trainerUpdates: import('@/actions/ot').UpdateOtAssignmentValues = {}
       const newPt = ptTrainer === 'none' ? null : ptTrainer
       const newPpt = pptTrainer === 'none' ? null : pptTrainer
 

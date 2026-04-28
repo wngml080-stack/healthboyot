@@ -557,8 +557,8 @@ export function TrainerStats({ assignments, trainerName, programs, registrations
                   </tr>
                 </thead>
                 <tbody>
-                  {inbodyRows.map((r, i) => (
-                    <tr key={i} className="border-b border-gray-100">
+                  {inbodyRows.map((r) => (
+                    <tr key={`${r.name}-${r.session}`} className="border-b border-gray-100">
                       <td className="px-3 py-1.5 text-center font-medium text-gray-900">{r.name}</td>
                       <td className="px-3 py-1.5 text-center">{r.session}차</td>
                       <td className="px-3 py-1.5 text-center text-gray-600">{r.date}</td>
@@ -613,8 +613,8 @@ export function TrainerStats({ assignments, trainerName, programs, registrations
                 {(resolvedTargets.ptConversion.length > 0 || resolvedTargets.closingFailed.length > 0) && (
                   <div className="border-t border-gray-100 pt-2 space-y-1.5">
                     <p className="text-[10px] font-bold text-gray-500">결과</p>
-                    {resolvedTargets.ptConversion.map((r, i) => (
-                      <div key={i} className="flex items-center justify-between bg-purple-50 rounded-lg px-3 py-2">
+                    {resolvedTargets.ptConversion.map((r) => (
+                      <div key={r.name} className="flex items-center justify-between bg-purple-50 rounded-lg px-3 py-2">
                         <div className="flex items-center gap-2">
                           <span className="text-sm font-bold text-gray-900">{r.name}</span>
                           <Badge className="bg-purple-600 text-white text-[10px]">PT전환</Badge>
@@ -626,8 +626,8 @@ export function TrainerStats({ assignments, trainerName, programs, registrations
                         ) : null}
                       </div>
                     ))}
-                    {resolvedTargets.closingFailed.map((name, i) => (
-                      <div key={i} className="flex items-center justify-between bg-red-50 rounded-lg px-3 py-2">
+                    {resolvedTargets.closingFailed.map((name) => (
+                      <div key={name} className="flex items-center justify-between bg-red-50 rounded-lg px-3 py-2">
                         <div className="flex items-center gap-2">
                           <span className="text-sm font-bold text-gray-900">{name}</span>
                           <Badge className="bg-red-500 text-white text-[10px]">클로징실패</Badge>

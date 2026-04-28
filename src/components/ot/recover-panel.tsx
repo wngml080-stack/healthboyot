@@ -3,13 +3,8 @@
 import { useState } from 'react'
 import { Button } from '@/components/ui/button'
 import { recoverOtSessionsFromChangeLogs, type RecoveryResult } from '@/actions/ot-recovery'
+import { toKstShortStr } from '@/lib/kst'
 import { AlertCircle, CheckCircle2, Loader2 } from 'lucide-react'
-
-function formatKstShort(iso: string): string {
-  const k = new Date(new Date(iso).getTime() + 9 * 60 * 60 * 1000)
-  const pad = (n: number) => String(n).padStart(2, '0')
-  return `${k.getUTCMonth() + 1}/${k.getUTCDate()} ${pad(k.getUTCHours())}:${pad(k.getUTCMinutes())}`
-}
 
 export function RecoverPanel() {
   const [loading, setLoading] = useState(false)
@@ -141,7 +136,7 @@ export function RecoverPanel() {
                         ) : (
                           item.current_sessions.map((s, i) => (
                             <p key={i} className="text-gray-700">
-                              {s.session_number}차: {s.scheduled_at ? formatKstShort(s.scheduled_at) : '미정'}
+                              {s.session_number}차: {s.scheduled_at ? toKstShortStr(s.scheduled_at) : '미정'}
                             </p>
                           ))
                         )}
@@ -150,7 +145,7 @@ export function RecoverPanel() {
                         <p className="text-blue-500 mb-0.5">복구 후</p>
                         {item.recovered_times.map((t, i) => (
                           <p key={i} className="text-blue-700 font-medium">
-                            {i + 1}차: {formatKstShort(t)}
+                            {i + 1}차: {toKstShortStr(t)}
                           </p>
                         ))}
                       </div>

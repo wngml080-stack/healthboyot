@@ -2,6 +2,7 @@
 
 import { isDemoMode } from '@/lib/demo'
 import { DEMO_OT_ASSIGNMENTS } from '@/lib/demo-data'
+import { nowKst, toKstDateStr } from '@/lib/kst'
 import { createClient } from '@/lib/supabase/server'
 
 export interface TrainerFolder {
@@ -53,14 +54,13 @@ export async function getTrainerFolders(): Promise<TrainerFolder[]> {
   const trainerIds = trainers.map((t) => t.id)
 
   // KST 기준 오늘
-  const nowKst = new Date(Date.now() + 9 * 60 * 60 * 1000)
-  const todayStr = `${nowKst.getUTCFullYear()}-${String(nowKst.getUTCMonth() + 1).padStart(2, '0')}-${String(nowKst.getUTCDate()).padStart(2, '0')}`
+  const todayStr = toKstDateStr(nowKst())
 
-  // 배정 + 오늘 스케줄 병렬 조회
-  const [{ data: assignments }, { data: todaySchedules }] = await Promise.all([
+  // 배정 + 오늘 스케줄 + 제외회원 수 병렬 조회 (3쿼리 → 2쿼리로 축소 가능하지만 병렬이라 차이 미미)
+  const [{ data: assignments }, { data: todaySchedules }, { count: excludedCount }] = await Promise.all([
     supabase
       .from('ot_assignments')
-      .select('status, pt_trainer_id, ppt_trainer_id, is_sales_target, is_pt_conversion, created_at, member:members!inner(id, name, registration_source)')
+      .select('status, pt_trainer_id, ppt_trainer_id, is_sales_target, is_pt_conversion, created_at, member:members!inner(id, name)')
       .or(`pt_trainer_id.in.(${trainerIds.join(',')}),ppt_trainer_id.in.(${trainerIds.join(',')})`),
     supabase
       .from('trainer_schedules')
@@ -68,16 +68,39 @@ export async function getTrainerFolders(): Promise<TrainerFolder[]> {
       .eq('scheduled_date', todayStr)
       .eq('schedule_type', 'OT')
       .in('trainer_id', trainerIds),
+    supabase
+      .from('ot_assignments')
+      .select('id', { count: 'exact', head: true })
+      .eq('is_excluded', true),
   ])
 
+  // 트레이너별 assignment 미리 인덱싱 (O(N) → O(1) 조회)
+  const allAssignments = assignments ?? []
+  const assignmentsByTrainer = new Map<string, (typeof allAssignments)>()
+  for (const a of allAssignments) {
+    if (a.pt_trainer_id) {
+      if (!assignmentsByTrainer.has(a.pt_trainer_id)) assignmentsByTrainer.set(a.pt_trainer_id, [])
+      assignmentsByTrainer.get(a.pt_trainer_id)!.push(a)
+    }
+    if (a.ppt_trainer_id && a.ppt_trainer_id !== a.pt_trainer_id) {
+      if (!assignmentsByTrainer.has(a.ppt_trainer_id)) assignmentsByTrainer.set(a.ppt_trainer_id, [])
+      assignmentsByTrainer.get(a.ppt_trainer_id)!.push(a)
+    }
+  }
+
+  // 오늘 스케줄 트레이너별 인덱싱
+  const allSchedules = todaySchedules ?? []
+  const schedulesByTrainer = new Map<string, (typeof allSchedules)>()
+  for (const s of allSchedules) {
+    if (!schedulesByTrainer.has(s.trainer_id)) schedulesByTrainer.set(s.trainer_id, [])
+    schedulesByTrainer.get(s.trainer_id)!.push(s)
+  }
+
   const folders: TrainerFolder[] = trainers.map((t) => {
-    // 트레이너 본인 담당 회원 전체 (수기 포함)
-    const myAssignments = (assignments ?? []).filter((a) => {
-      return a.pt_trainer_id === t.id || a.ppt_trainer_id === t.id
-    })
+    const myAssignments = assignmentsByTrainer.get(t.id) ?? []
 
     // 오늘 이 트레이너의 OT 수업
-    const myTodayOts = (todaySchedules ?? []).filter((s) => s.trainer_id === t.id)
+    const myTodayOts = schedulesByTrainer.get(t.id) ?? []
     // 오늘 OT 수업이 잡힌 회원 이름 set
     const todayMemberNames = new Set(myTodayOts.map((s) => s.member_name))
     // 오늘 OT 수업 회원 중 매출대상자 카운트 (회원 단위 unique)
@@ -111,6 +134,23 @@ export async function getTrainerFolders(): Promise<TrainerFolder[]> {
         total: myAssignments.length, // 전체 회원 (수기 포함)
       },
     }
+  })
+
+  // "제외회원" 폴더 — count만 사용 (head: true로 데이터 안 받아옴)
+  folders.push({
+    id: 'excluded',
+    name: '제외회원',
+    role: 'trainer',
+    color: 'bg-red-400',
+    has_password: false,
+    folder_order: 9999,
+    latestAssignmentDate: null,
+    stats: {
+      inProgress: 0,
+      pending: 0,
+      completed: 0,
+      total: excludedCount ?? 0,
+    },
   })
 
   return folders

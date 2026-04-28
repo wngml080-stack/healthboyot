@@ -13,7 +13,7 @@ import {
   Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription,
 } from '@/components/ui/dialog'
 import { PageTitle } from '@/components/shared/page-title'
-import { Download, Target, Camera } from 'lucide-react'
+import { Download, Camera } from 'lucide-react'
 import { upsertSalesTarget } from '@/actions/sales-target'
 import type { StatsData } from '@/actions/stats'
 import type { SalesTarget } from '@/actions/sales-target'
@@ -23,7 +23,6 @@ interface Props {
   target: SalesTarget | null
 }
 
-function fmtMoney(v: number): string { return v ? v.toLocaleString() : '0' }
 function fmtMan(v: number): string { return v >= 10000 ? `${(v / 10000).toLocaleString()}만` : v ? v.toLocaleString() : '0' }
 
 export function StatsView({ stats: initialStats, target }: Props) {

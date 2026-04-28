@@ -23,6 +23,7 @@
  * - dryRun=false: 실제 적용
  */
 
+import { toKstDateStr, toKstTimeStr } from '@/lib/kst'
 import { createClient } from '@/lib/supabase/server'
 import { getCurrentProfile } from './auth'
 
@@ -249,10 +250,8 @@ async function applyRecoveryForAssignment(
   // 3. trainer_schedules 일괄 insert (병렬)
   if (trainerIds.length > 0 && insertedSessions) {
     const scheduleRows = insertedSessions.flatMap((sess) => {
-      const kst = new Date(new Date(sess.scheduled_at).getTime() + 9 * 60 * 60 * 1000)
-      const pad = (n: number) => String(n).padStart(2, '0')
-      const dateStr = `${kst.getUTCFullYear()}-${pad(kst.getUTCMonth() + 1)}-${pad(kst.getUTCDate())}`
-      const timeStr = `${pad(kst.getUTCHours())}:${pad(kst.getUTCMinutes())}`
+      const dateStr = toKstDateStr(sess.scheduled_at)
+      const timeStr = toKstTimeStr(sess.scheduled_at)
       return trainerIds.map((tid) => ({
         trainer_id: tid,
         schedule_type: 'OT' as const,

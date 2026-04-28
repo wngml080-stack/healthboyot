@@ -16,7 +16,8 @@ import {
   DialogTitle,
   DialogDescription,
 } from '@/components/ui/dialog'
-import { CheckCircle, User, AlertTriangle, BarChart3, CalendarDays, ClipboardList, Pencil, Plus, Undo2, UserPlus, Target, HeartPulse, Dumbbell, Phone, Download } from 'lucide-react'
+import { CheckCircle, User, AlertTriangle, BarChart3, CalendarDays, ClipboardList, Pencil, Plus, Undo2, UserPlus, Target, HeartPulse, Dumbbell, Phone, Download, Ban } from 'lucide-react'
+import { Textarea } from '@/components/ui/textarea'
 import { upsertOtSession, updateOtAssignment, deleteOtSession } from '@/actions/ot'
 import { getOtProgram, getAssignmentExpandData } from '@/actions/ot-program'
 import { quickRegisterMember } from '@/actions/members'
@@ -62,7 +63,12 @@ function toManwon(v: number): number { return v >= 10000 ? Math.round(v / 10000)
 export function TrainerCardList({ assignments, trainers = [], trainerId, trainerName = '', profile, initialSchedules }: Props) {
   const router = useRouter()
   const [, startTransition] = useTransition()
-  const today = new Date().toISOString().split('T')[0]
+  const [today, setToday] = useState('')
+  const [mounted, setMounted] = useState(false)
+  useEffect(() => {
+    setToday(new Date().toISOString().split('T')[0])
+    setMounted(true)
+  }, [])
 
   // trainer_schedules에서 해당 트레이너의 전체 스케줄 로드
   // 첫 마운트 시점에는 서버에서 받은 initialSchedules를 사용 → client-side waterfall 제거
@@ -98,40 +104,51 @@ export function TrainerCardList({ assignments, trainers = [], trainerId, trainer
   }, [trainerSchedules])
 
   // 필터
-  const [filter, setFilter] = useState<string>('전체')
-  const FILTERS = ['전체', 'PT', 'PPT', '미진행', '1차', '2차', '3차', '4차+', '수업상태변경', '승인필요', '거부']
+  const [filter, setFilter] = useState<string>('미진행')
+  const FILTERS = ['미진행', '1차', '2차', '3차', '4차+', '수업상태변경', '승인필요', '거부']
 
   // 펼침
   const [expandedId, setExpandedId] = useState<string | null>(null)
   const [expandedData, setExpandedData] = useState<Record<string, { card: import('@/types').ConsultationCard | null; program: OtProgram | null } | 'loading'>>({})
 
-  // 피드백 데이터 + 승인필요 set
+  // 피드백 데이터 + 승인필요 set + 승인상태 맵
   const [feedbackMap, setFeedbackMap] = useState<Record<string, { session: number; feedback: string }[]>>({})
   const [feedbackPopup, setFeedbackPopup] = useState<{ title: string; feedback: string } | null>(null)
   const [needApprovalSet, setNeedApprovalSet] = useState<Set<string>>(new Set())
+  const [approvalMap, setApprovalMap] = useState<Record<string, { session: number; status: string; approved_at?: string | null }[]>>({})
+
+  // assignments ID 안정화 (참조 동일성 유지)
+  const assignmentIdKey = useMemo(() => assignments.map((a) => a.id).join(','), [assignments])
 
   useEffect(() => {
-    if (!trainerId) return
+    if (!trainerId || !assignmentIdKey) return
+    const ids = assignmentIdKey.split(',').filter(Boolean)
+    if (ids.length === 0) return
     const supabase = createClient()
-    supabase.from('ot_programs').select('ot_assignment_id, sessions').then(({ data }) => {
+    supabase.from('ot_programs').select('ot_assignment_id, sessions').in('ot_assignment_id', ids).then(({ data }) => {
       if (!data) return
       const map: Record<string, { session: number; feedback: string }[]> = {}
       const approvalNeeded = new Set<string>()
+      const approvals: Record<string, { session: number; status: string; approved_at?: string | null }[]> = {}
       for (const p of data) {
-        const sessions = p.sessions as { admin_feedback?: string | null; completed?: boolean; approval_status?: string }[] | null
+        const sessions = p.sessions as { admin_feedback?: string | null; completed?: boolean; approval_status?: string; approved_at?: string | null }[] | null
         if (!sessions) continue
         const feedbacks = sessions
           .map((s, i) => ({ session: i + 1, feedback: s.admin_feedback ?? '' }))
           .filter((f) => f.feedback)
         if (feedbacks.length > 0) map[p.ot_assignment_id] = feedbacks
-        // 승인필요: 완료된 세션 중 승인 안 된 것이 있으면
         const hasUnapproved = sessions.some((s) => s.completed && s.approval_status !== '승인')
         if (hasUnapproved) approvalNeeded.add(p.ot_assignment_id)
+        const approvalEntries = sessions
+          .map((s, i) => ({ session: i + 1, status: s.approval_status ?? '', approved_at: s.approved_at }))
+          .filter((e) => e.status)
+        if (approvalEntries.length > 0) approvals[p.ot_assignment_id] = approvalEntries
       }
       setFeedbackMap(map)
       setNeedApprovalSet(approvalNeeded)
+      setApprovalMap(approvals)
     })
-  }, [trainerId])
+  }, [trainerId, assignmentIdKey])
 
   const loadExpandedData = async (memberId: string, assignmentId: string) => {
     if (expandedData[assignmentId]) return
@@ -159,6 +176,36 @@ export function TrainerCardList({ assignments, trainers = [], trainerId, trainer
   const [completeProgramLoading, setCompleteProgramLoading] = useState(false)
   const programFormRef = useRef<OtProgramFormRef>(null)
 
+  // 제외회원 처리
+  const [excludeTarget, setExcludeTarget] = useState<OtAssignmentWithDetails | null>(null)
+  const [excludeReason, setExcludeReason] = useState('')
+  const [excludeLoading, setExcludeLoading] = useState(false)
+  const isAdmin = profile?.role === 'admin' || profile?.role === '관리자'
+
+  const handleExclude = async () => {
+    if (!excludeTarget || !excludeReason.trim()) return
+    setExcludeLoading(true)
+    await updateOtAssignment(excludeTarget.id, {
+      is_excluded: true,
+      excluded_reason: excludeReason.trim(),
+      excluded_at: new Date().toISOString(),
+    })
+    setExcludeTarget(null)
+    setExcludeReason('')
+    setExcludeLoading(false)
+    router.refresh()
+  }
+
+  const handleRestore = async (a: OtAssignmentWithDetails) => {
+    if (!confirm(`${a.member.name}님을 제외 목록에서 복구하시겠습니까?`)) return
+    await updateOtAssignment(a.id, {
+      is_excluded: false,
+      excluded_reason: null,
+      excluded_at: null,
+    })
+    router.refresh()
+  }
+
   // 인라인 스케줄 편집
   const [scheduleEdit, setScheduleEdit] = useState<{ assignmentId: string; sessionNumber: number; date: string; time: string; feedback?: string; duration: number } | null>(null)
   const [scheduleLoading, setScheduleLoading] = useState(false)
@@ -181,6 +228,12 @@ export function TrainerCardList({ assignments, trainers = [], trainerId, trainer
   const [addRole, setAddRole] = useState<'pt' | 'ppt'>('pt')
   const [addIsFloating, setAddIsFloating] = useState(false)
   const [addLoading, setAddLoading] = useState(false)
+
+  // 미진행 사유 (거부/연락두절/스케줄미확정)
+  const [quickStatusTarget, setQuickStatusTarget] = useState<string | null>(null)
+  const [quickStatusValue, setQuickStatusValue] = useState<string>('')
+  const [quickStatusReason, setQuickStatusReason] = useState('')
+  const [quickStatusLoading, setQuickStatusLoading] = useState(false)
 
   // 회원 퀵뷰
   const [quickViewTarget, setQuickViewTarget] = useState<OtAssignmentWithDetails | null>(null)
@@ -214,27 +267,19 @@ export function TrainerCardList({ assignments, trainers = [], trainerId, trainer
     setScheduleOnlyLoading(true)
     try {
       const { assignment, sessionNumber } = scheduleOnlyTarget
-      // 1) OT 세션 일정 저장
-      await upsertOtSession({
+      // upsertOtSession이 ot_sessions + trainer_schedules(PT/PPT 모두) + 상태 전환까지 처리
+      const result = await upsertOtSession({
         ot_assignment_id: assignment.id,
         session_number: sessionNumber,
-        scheduled_at: `${scheduleOnlyDate}T${scheduleOnlyTime}:00`,
+        scheduled_at: new Date(`${scheduleOnlyDate}T${scheduleOnlyTime}:00+09:00`).toISOString(),
+        duration: scheduleOnlyDuration,
       })
-      // 2) trainer_schedules에도 OT 일정 등록 (스케줄 관리 반영)
-      const assignedTrainerId = assignment.pt_trainer_id || assignment.ppt_trainer_id
-      if (assignedTrainerId) {
-        const { createSchedule } = await import('@/actions/schedule')
-        await createSchedule({
-          trainer_id: assignedTrainerId,
-          schedule_type: 'OT',
-          member_name: assignment.member.name,
-          scheduled_date: scheduleOnlyDate,
-          start_time: scheduleOnlyTime,
-          duration: scheduleOnlyDuration,
-        })
+      if (result && 'error' in result && result.error) {
+        alert('일정 저장 실패: ' + result.error)
+      } else {
+        setScheduleOnlyTarget(null)
+        startTransition(() => router.refresh())
       }
-      setScheduleOnlyTarget(null)
-      startTransition(() => router.refresh())
     } catch (err) {
       console.error('일정 저장 실패:', err)
       alert('일정 저장 중 오류가 발생했습니다.')
@@ -299,8 +344,7 @@ export function TrainerCardList({ assignments, trainers = [], trainerId, trainer
     if (!salesTarget) return
     setSalesLoading(true)
     try {
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const updates: any = {
+      const updates: import('@/actions/ot').UpdateOtAssignmentValues = {
         sales_status: salesStatus,
         expected_amount: expectedAmount,
         expected_sessions: expectedSessions,
@@ -346,13 +390,10 @@ export function TrainerCardList({ assignments, trainers = [], trainerId, trainer
       const scheduled = a.sessions?.filter((s) => s.scheduled_at && !s.completed_at).length ?? 0
       const hasAny = done > 0 || scheduled > 0
       if (!hasAny && !['거부','추후결정'].includes(a.status)) counts['미진행'] = (counts['미진행'] ?? 0) + 1
-      // 1차: 스케줄확정~완료 (done=0+scheduled>0 또는 done=1)
-      if ((done === 0 && scheduled > 0) || done === 1) counts['1차'] = (counts['1차'] ?? 0) + 1
-      // 2차: done=1+scheduled>0 또는 done=2
-      if ((done === 1 && scheduled > 0) || done === 2) counts['2차'] = (counts['2차'] ?? 0) + 1
-      // 3차: done=2+scheduled>0 또는 done=3
-      if ((done === 2 && scheduled > 0) || done === 3) counts['3차'] = (counts['3차'] ?? 0) + 1
-      // 4차+: done>=3+scheduled>0 또는 done>=4
+      // 필터 로직과 동일하게 맞춤
+      if ((done === 0 && scheduled > 0) || (done === 1 && scheduled === 0)) counts['1차'] = (counts['1차'] ?? 0) + 1
+      if ((done === 1 && scheduled > 0) || (done === 2 && scheduled === 0)) counts['2차'] = (counts['2차'] ?? 0) + 1
+      if ((done === 2 && scheduled > 0) || (done === 3 && scheduled === 0)) counts['3차'] = (counts['3차'] ?? 0) + 1
       if ((done >= 3 && scheduled > 0) || done >= 4) counts['4차+'] = (counts['4차+'] ?? 0) + 1
       // 수업상태변경: 스케줄 확정됐는데 수업일이 지났는데 완료 처리 안 됨
       const pastScheduled = (a.sessions ?? []).filter((s) => s.scheduled_at && !s.completed_at && new Date(s.scheduled_at) < new Date()).length
@@ -379,9 +420,9 @@ export function TrainerCardList({ assignments, trainers = [], trainerId, trainer
       if (filter === 'PT') return a.pt_trainer_id === trainerId
       if (filter === 'PPT') return a.ppt_trainer_id === trainerId
       if (filter === '미진행') return done === 0 && scheduled === 0 && !['거부','추후결정'].includes(a.status)
-      if (filter === '1차') return (done === 0 && scheduled > 0) || done === 1
-      if (filter === '2차') return (done === 1 && scheduled > 0) || done === 2
-      if (filter === '3차') return (done === 2 && scheduled > 0) || done === 3
+      if (filter === '1차') return (done === 0 && scheduled > 0) || (done === 1 && scheduled === 0)
+      if (filter === '2차') return (done === 1 && scheduled > 0) || (done === 2 && scheduled === 0)
+      if (filter === '3차') return (done === 2 && scheduled > 0) || (done === 3 && scheduled === 0)
       if (filter === '4차+') return (done >= 3 && scheduled > 0) || done >= 4
       if (filter === '수업상태변경') {
         const pastSch = (a.sessions ?? []).filter((s) => s.scheduled_at && !s.completed_at && new Date(s.scheduled_at) < new Date()).length
@@ -530,7 +571,7 @@ export function TrainerCardList({ assignments, trainers = [], trainerId, trainer
 
     // 결과 분류 저장
     if (completeResult) {
-      const updateData: Record<string, unknown> = {}
+      const updateData: import('@/actions/ot').UpdateOtAssignmentValues = {}
       if (completeResult === '매출대상') {
         updateData.is_sales_target = true
         updateData.sales_status = 'OT진행중'
@@ -563,26 +604,87 @@ export function TrainerCardList({ assignments, trainers = [], trainerId, trainer
     )
   }
 
-  const getProgressInfo = (a: OtAssignmentWithDetails) => {
-    const done = a.sessions?.filter((s) => s.completed_at).length ?? 0
-    const scheduled = a.sessions?.filter((s) => s.scheduled_at && !s.completed_at).length ?? 0
-    if (a.status === '거부') return { label: '거부', color: 'bg-red-100 text-red-700' }
-    if (a.status === '추후결정') return { label: '추후결정', color: 'bg-orange-100 text-orange-700' }
+  // 진행상태 + 로그 + D-day를 미리 계산하여 캐싱 (렌더 시 재연산 방지, hydration-safe)
+  const progressCache = useMemo(() => {
+    const infoMap = new Map<string, { label: string; color: string }>()
+    const logMap = new Map<string, { label: string; date: string | null; color: string }[]>()
+    const ddayMap = new Map<string, { text: string; color: string } | null>()
+    const isNewMap = new Map<string, boolean>()
+    const todayStart = mounted ? new Date() : null
+    if (todayStart) todayStart.setHours(0, 0, 0, 0)
 
-    // 승인 상태 확인 (expandedData에서 프로그램 로드됐으면)
-    const ed = expandedData[a.id]
-    const prog = ed && ed !== 'loading' ? ed.program : null
-    const lastDoneIdx = done - 1
-    const lastApproval = prog?.sessions?.[lastDoneIdx]?.approval_status
+    for (const a of assignments) {
+      // ── progressInfo ──
+      const done = a.sessions?.filter((s) => s.completed_at).length ?? 0
+      const scheduled = a.sessions?.filter((s) => s.scheduled_at && !s.completed_at).length ?? 0
+      let info = { label: '대기', color: 'bg-gray-100 text-gray-700' }
+      if (a.status === '거부') info = { label: '거부', color: 'bg-red-100 text-red-700' }
+      else if (a.status === '추후결정') info = { label: '추후결정', color: 'bg-orange-100 text-orange-700' }
+      else if (done === 0 && scheduled === 0) info = { label: '대기', color: 'bg-gray-100 text-gray-700' }
+      else if (scheduled > 0) info = { label: `${done + 1}차스케줄확정`, color: 'bg-yellow-100 text-yellow-700' }
+      else {
+        const approvals = approvalMap[a.id] ?? []
+        const lastApproval = approvals.find((ap) => ap.session === done)?.status
+        if (done > 0 && lastApproval === '승인') info = { label: `${done}차승인완료`, color: 'bg-green-100 text-green-700' }
+        else if (done > 0) info = { label: `${done}차수업완료`, color: 'bg-blue-100 text-blue-700' }
+      }
+      infoMap.set(a.id, info)
 
-    if (done === 0 && scheduled === 0) return { label: '대기', color: 'bg-gray-100 text-gray-700' }
+      // ── progressLog ──
+      const log: { label: string; date: string | null; color: string }[] = []
+      const approvals = approvalMap[a.id] ?? []
+      const sorted = [...(a.sessions ?? [])].sort((x, y) => x.session_number - y.session_number)
+      log.push({ label: '대기', date: a.created_at ? format(new Date(a.created_at), 'MM.dd') : null, color: 'text-gray-500' })
+      for (const s of sorted) {
+        if (!s.completed_at) continue
+        const n = s.session_number
+        // 수업 진행일 (scheduled_at)과 완료 처리일 (completed_at) 분리
+        if (s.scheduled_at) {
+          const classDate = format(new Date(s.scheduled_at), 'MM.dd')
+          const completeDate = format(new Date(s.completed_at), 'MM.dd')
+          if (classDate !== completeDate) {
+            // 수업일 ≠ 완료일 → 둘 다 표기
+            log.push({ label: `${n}차수업`, date: classDate, color: 'text-blue-600' })
+            log.push({ label: `${n}차완료`, date: completeDate, color: 'text-emerald-600' })
+          } else {
+            // 같은 날 → 하나만
+            log.push({ label: `${n}차완료`, date: classDate, color: 'text-blue-600' })
+          }
+        } else {
+          log.push({ label: `${n}차완료`, date: format(new Date(s.completed_at), 'MM.dd'), color: 'text-blue-600' })
+        }
+        const approval = approvals.find((ap) => ap.session === n)
+        if (approval?.status === '승인') {
+          log.push({ label: `${n}차승인`, date: approval.approved_at ? format(new Date(approval.approved_at), 'MM.dd') : null, color: 'text-green-600' })
+        } else if (approval?.status === '반려') {
+          log.push({ label: `${n}차반려`, date: null, color: 'text-red-600' })
+        }
+      }
+      logMap.set(a.id, log)
 
-    const n = done > 0 ? done : 1
-    if (done > 0 && lastApproval === '승인') return { label: `${n}차승인완료`, color: 'bg-green-100 text-green-700' }
-    if (done > 0) return { label: `${n}차수업완료`, color: 'bg-blue-100 text-blue-700' }
-    if (scheduled > 0) return { label: `${n}차스케줄확정`, color: 'bg-yellow-100 text-yellow-700' }
-    return { label: '대기', color: 'bg-gray-100 text-gray-700' }
-  }
+      // ── D-day (client-only) ──
+      if (todayStart) {
+        const scheduledSessions = (a.sessions ?? []).filter((s) => s.scheduled_at && !s.completed_at).sort((x, y) => (x.scheduled_at ?? '').localeCompare(y.scheduled_at ?? ''))
+        if (scheduledSessions.length > 0) {
+          const nextStart = new Date(scheduledSessions[0].scheduled_at!); nextStart.setHours(0, 0, 0, 0)
+          const daysUntil = Math.floor((nextStart.getTime() - todayStart.getTime()) / (1000 * 60 * 60 * 24))
+          ddayMap.set(a.id, { text: `수업예정 D${daysUntil <= 0 ? daysUntil : `-${daysUntil}`}`, color: 'text-blue-600' })
+        } else {
+          const completedSessions = (a.sessions ?? []).filter((s) => s.completed_at).sort((x, y) => (y.completed_at ?? '').localeCompare(x.completed_at ?? ''))
+          if (completedSessions.length > 0 && completedSessions[0].completed_at) {
+            const lastStart = new Date(completedSessions[0].completed_at); lastStart.setHours(0, 0, 0, 0)
+            const days = Math.floor((todayStart.getTime() - lastStart.getTime()) / (1000 * 60 * 60 * 24))
+            ddayMap.set(a.id, { text: `마지막수업일 D+${days}`, color: days >= 7 ? 'text-red-500' : days >= 3 ? 'text-orange-500' : 'text-gray-400' })
+          } else {
+            ddayMap.set(a.id, null)
+          }
+        }
+        // New 뱃지
+        isNewMap.set(a.id, !!(a.created_at && (todayStart.getTime() + 86400000 - new Date(a.created_at).getTime()) < 3 * 86400000))
+      }
+    }
+    return { infoMap, logMap, ddayMap, isNewMap }
+  }, [assignments, approvalMap, mounted])
 
   return (
     <>
@@ -673,16 +775,24 @@ export function TrainerCardList({ assignments, trainers = [], trainerId, trainer
             <option value="스케줄미확정">스케줄미확정</option>
             <option value="거부">거부</option>
           </select>
+          {/* 전체 필터 버튼 */}
+          <button
+            onClick={() => setFilter('전체')}
+            className={`h-9 px-3 rounded-md text-xs font-medium transition-colors shrink-0 ${
+              filter === '전체'
+                ? 'bg-yellow-400 text-black'
+                : 'bg-white text-gray-600 border border-gray-300 hover:bg-gray-50'
+            }`}
+          >
+            전체 {(filterCounts['전체'] ?? 0) > 0 && <span className="ml-1 text-[10px]">{filterCounts['전체']}</span>}
+          </button>
         </div>
 
         {/* 필터 + 회원추가 */}
         <div className="flex flex-wrap gap-2 items-center">
           {false && (null
           )}
-          {FILTERS.filter((f) => {
-            if ((f === 'PT' || f === 'PPT') && (!trainerId || trainerId === 'unassigned')) return false
-            return true
-          }).map((f) => {
+          {FILTERS.map((f) => {
             const count = filterCounts[f] ?? 0
             return (
               <button
@@ -713,7 +823,7 @@ export function TrainerCardList({ assignments, trainers = [], trainerId, trainer
             ) : (
               <div className="space-y-2">
                 {filteredMembers.map((a) => {
-                  const progress = getProgressInfo(a)
+                  const progress = progressCache.infoMap.get(a.id) ?? { label: '대기', color: 'bg-gray-100 text-gray-700' }
                   const nextSession = getNextSessionNumber(a)
                   const nextScheduled = a.sessions?.find((s) => s.session_number === nextSession && s.scheduled_at && !s.completed_at)
 
@@ -726,8 +836,6 @@ export function TrainerCardList({ assignments, trainers = [], trainerId, trainer
                     >
                       <div
                         className="p-3 sm:p-4 hover:bg-gray-50 cursor-pointer"
-                        onMouseEnter={() => loadExpandedData(a.member_id, a.id)}
-                        onTouchStart={() => loadExpandedData(a.member_id, a.id)}
                         onClick={() => {
                           const next = isExpanded ? null : a.id
                           setExpandedId(next)
@@ -737,6 +845,9 @@ export function TrainerCardList({ assignments, trainers = [], trainerId, trainer
                       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-1">
                         <div className="flex items-center gap-2 flex-wrap">
                           <span className="font-bold text-gray-900">{a.member.name}</span>
+                          {a.is_excluded && (
+                            <span className="inline-flex items-center rounded px-1.5 py-0.5 text-[10px] font-bold bg-red-100 text-red-700 border border-red-300">제외</span>
+                          )}
                           {a.member.registration_source === '수기' && (
                             <span className="inline-flex items-center rounded px-1 py-0.5 text-[10px] font-bold bg-amber-100 text-amber-700 border border-amber-300">수기</span>
                           )}
@@ -756,27 +867,22 @@ export function TrainerCardList({ assignments, trainers = [], trainerId, trainer
                               </Badge>
                             )
                           })()}
-                          <Badge variant="outline" className={`text-[10px] px-1.5 ${progress.color}`}>
+                          <Badge
+                            variant="outline"
+                            className={`text-[10px] px-1.5 cursor-pointer hover:ring-2 hover:ring-yellow-400 transition-shadow ${progress.color}`}
+                            onClick={(e) => {
+                              e.stopPropagation()
+                              const nextSess = getNextSessionNumber(a)
+                              handleCompleteOpen(a, nextSess)
+                            }}
+                          >
                             {progress.label}
                           </Badge>
                           {(() => {
-                            const completedSessions = (a.sessions ?? []).filter((s) => s.completed_at).sort((x, y) => (y.scheduled_at ?? y.completed_at ?? '').localeCompare(x.scheduled_at ?? x.completed_at ?? ''))
-                            if (completedSessions.length === 0) return null
-                            const lastDate = completedSessions[0].scheduled_at ?? completedSessions[0].completed_at
-                            if (!lastDate) return null
-                            const days = Math.floor((Date.now() - new Date(lastDate).getTime()) / (1000 * 60 * 60 * 24))
-                            return (
-                              <span className={`text-[10px] font-bold ${days >= 7 ? 'text-red-500' : days >= 3 ? 'text-orange-500' : 'text-gray-400'}`}>
-                                D+{days}
-                              </span>
-                            )
+                            const dday = progressCache.ddayMap.get(a.id)
+                            if (!dday) return null
+                            return <span className={`text-[10px] font-bold ${dday.color}`}>{dday.text}</span>
                           })()}
-                          {a.is_sales_target && (
-                            <Badge className="text-[10px] px-1.5 bg-red-500 text-white border-red-500 font-bold">★ 매출대상</Badge>
-                          )}
-                          {a.is_pt_conversion && (
-                            <Badge variant="outline" className="text-[10px] px-1.5 font-bold bg-yellow-300 text-black border-yellow-500">PT전환</Badge>
-                          )}
                         </div>
                         <div className="text-right text-xs text-gray-500 flex items-center justify-end gap-1.5">
                           {feedbackMap[a.id] && feedbackMap[a.id].map((fb) => (
@@ -788,15 +894,40 @@ export function TrainerCardList({ assignments, trainers = [], trainerId, trainer
                               {fb.session}차 피드백
                             </button>
                           ))}
-                          {a.created_at && (Date.now() - new Date(a.created_at).getTime()) < 3 * 24 * 60 * 60 * 1000 && (
+                          {a.is_sales_target && (
+                            <Badge className="text-[10px] px-1.5 bg-red-500 text-white border-red-500 font-bold">★ 매출대상</Badge>
+                          )}
+                          {a.is_pt_conversion && (
+                            <Badge variant="outline" className="text-[10px] px-1.5 font-bold bg-yellow-300 text-black border-yellow-500">PT전환</Badge>
+                          )}
+                          {progressCache.isNewMap.get(a.id) && (
                             <span className="inline-flex items-center rounded px-1.5 py-0.5 text-[10px] font-bold bg-red-500 text-white">New</span>
                           )}
                           <span>배정날짜 : {a.created_at ? format(new Date(a.created_at), 'yyyy-MM-dd') : '-'}</span>
                         </div>
                       </div>
+                      {/* OT 진행 로그 타임라인 */}
+                      {(() => {
+                        const log = progressCache.logMap.get(a.id) ?? []
+                        if (log.length <= 1) return null
+                        return (
+                          <div className="flex flex-wrap items-center gap-1 mt-1.5 text-[10px]">
+                            {log.map((entry, i) => (
+                              <span key={i} className="flex items-center gap-1">
+                                {i > 0 && <span className="text-gray-300 mx-0.5">|</span>}
+                                <span className={`font-semibold ${entry.color}`}>
+                                  {entry.date && <span className="font-normal">{entry.date}/</span>}
+                                  {entry.label}
+                                </span>
+                              </span>
+                            ))}
+                          </div>
+                        )
+                      })()}
                       {/* 기본 정보 */}
                       <div className="flex flex-wrap gap-x-4 gap-y-1 mt-2 text-xs text-gray-500">
                         <span>등록 {a.member.registered_at}</span>
+                        <span>시작 {a.member.start_date ?? '-'}</span>
                         {a.member.ot_category && <span>{a.member.ot_category}</span>}
                         {a.member.exercise_time && <span className="text-blue-600">{a.member.exercise_time}</span>}
                         {a.member.phone && <span>번호) {a.member.phone.replace(/(\d{3})(\d{4})(\d{4})/, '$1-$2-$3')}</span>}
@@ -872,12 +1003,15 @@ export function TrainerCardList({ assignments, trainers = [], trainerId, trainer
                                 const num = i + 1
                                 const ot = a.sessions?.find((s) => s.session_number === num)
                                 const prog = programSessions[i]
+                                // 수업 날짜: 프로그램의 date 필드(트레이너가 입력한 실제 수업일) 우선
+                                const progDate = prog?.date ?? null // 예: "2026-04-22"
                                 return {
                                   num,
                                   scheduled_at: ot?.scheduled_at ?? null,
                                   completed_at: ot?.completed_at ?? null,
                                   approval_status: prog?.approval_status ?? null,
                                   inbody: prog?.inbody ?? false,
+                                  prog_date: progDate,
                                 }
                               })
                               const completedCount = otProgress.filter((s) => s.completed_at).length
@@ -928,7 +1062,8 @@ export function TrainerCardList({ assignments, trainers = [], trainerId, trainer
                                               : s.approval_status === '반려'
                                                 ? '관리자가 반려함'
                                                 : '트레이너가 아직 제출하지 않은 상태'
-                                          const dateStr = (s.scheduled_at || s.completed_at) || null
+                                          // 수업 진행 날짜: scheduled_at(예약일=실제 수업일) 우선, 없으면 completed_at
+                                          const dateStr = s.scheduled_at ?? s.completed_at ?? null
                                           const formatted = dateStr
                                             ? new Date(dateStr).toLocaleDateString('ko', { month: 'numeric', day: 'numeric' })
                                             : null
@@ -1042,6 +1177,138 @@ export function TrainerCardList({ assignments, trainers = [], trainerId, trainer
                                     )}
                                   </div>
 
+                                  {/* 미진행 사유 (거부/연락두절/스케줄미확정) */}
+                                  {(() => {
+                                    const isEditing = quickStatusTarget === a.id
+                                    const currentStatus = a.sales_status
+                                    const isInactive = ['OT거부자', '연락두절', '스케줄미확정'].includes(currentStatus)
+                                    return (
+                                  <div className={`rounded-lg border p-4 space-y-2 ${isInactive ? 'border-red-300 bg-red-50/60' : 'border-gray-200 bg-gray-50/40'}`}>
+                                    <div className="flex items-center justify-between flex-wrap gap-2">
+                                      <p className="text-sm font-bold text-gray-800">⚠️ 미진행 처리</p>
+                                      {isInactive && !isEditing && (
+                                        <Badge className="bg-red-500 text-white text-[10px]">
+                                          {currentStatus === 'OT거부자' ? '거부' : currentStatus}
+                                        </Badge>
+                                      )}
+                                    </div>
+                                    {isInactive && !isEditing && (
+                                      <div className="space-y-1">
+                                        {a.sales_note && (
+                                          <p className="text-xs text-gray-700"><span className="font-bold">사유:</span> {a.sales_note}</p>
+                                        )}
+                                        <button
+                                          type="button"
+                                          className="text-xs text-blue-600 hover:underline"
+                                          onClick={(e) => {
+                                            e.stopPropagation()
+                                            setQuickStatusTarget(a.id)
+                                            setQuickStatusValue(currentStatus === 'OT거부자' ? '거부' : currentStatus)
+                                            setQuickStatusReason(a.sales_note ?? '')
+                                          }}
+                                        >
+                                          수정하기
+                                        </button>
+                                      </div>
+                                    )}
+                                    {!isInactive && !isEditing && (
+                                      <div className="flex gap-2">
+                                        {['거부', '연락두절', '스케줄미확정'].map((s) => (
+                                          <button
+                                            key={s}
+                                            type="button"
+                                            className="px-3 py-1.5 rounded-md text-xs font-medium border border-gray-300 bg-white text-gray-600 hover:bg-red-50 hover:border-red-300 hover:text-red-700 transition-colors"
+                                            onClick={(e) => {
+                                              e.stopPropagation()
+                                              setQuickStatusTarget(a.id)
+                                              setQuickStatusValue(s)
+                                              setQuickStatusReason('')
+                                            }}
+                                          >
+                                            {s}
+                                          </button>
+                                        ))}
+                                      </div>
+                                    )}
+                                    {isEditing && (
+                                      <div className="space-y-2" onClick={(e) => e.stopPropagation()}>
+                                        <div className="flex gap-2">
+                                          {['거부', '연락두절', '스케줄미확정'].map((s) => (
+                                            <button
+                                              key={s}
+                                              type="button"
+                                              className={`px-3 py-1.5 rounded-md text-xs font-medium transition-colors ${
+                                                quickStatusValue === s
+                                                  ? 'bg-red-500 text-white'
+                                                  : 'border border-gray-300 bg-white text-gray-600 hover:bg-red-50'
+                                              }`}
+                                              onClick={() => setQuickStatusValue(s)}
+                                            >
+                                              {s}
+                                            </button>
+                                          ))}
+                                        </div>
+                                        <textarea
+                                          value={quickStatusReason}
+                                          onChange={(e) => setQuickStatusReason(e.target.value)}
+                                          placeholder="사유를 입력해주세요"
+                                          className="w-full rounded-md border border-gray-300 bg-white text-sm text-gray-900 p-2 h-20 resize-none"
+                                        />
+                                        <div className="flex gap-2 justify-end">
+                                          {isInactive && (
+                                            <Button
+                                              size="sm"
+                                              className="h-7 text-xs bg-green-600 hover:bg-green-700 text-white"
+                                              disabled={quickStatusLoading}
+                                              onClick={async () => {
+                                                setQuickStatusLoading(true)
+                                                await updateOtAssignment(a.id, {
+                                                  sales_status: 'OT진행중',
+                                                  status: '배정완료',
+                                                  sales_note: null,
+                                                })
+                                                setQuickStatusTarget(null)
+                                                setQuickStatusLoading(false)
+                                                startTransition(() => router.refresh())
+                                              }}
+                                            >
+                                              미진행 해제
+                                            </Button>
+                                          )}
+                                          <Button
+                                            size="sm"
+                                            variant="outline"
+                                            className="h-7 text-xs text-gray-700"
+                                            onClick={() => setQuickStatusTarget(null)}
+                                          >
+                                            취소
+                                          </Button>
+                                          <Button
+                                            size="sm"
+                                            className="h-7 text-xs bg-red-600 hover:bg-red-700 text-white"
+                                            disabled={quickStatusLoading || !quickStatusValue}
+                                            onClick={async () => {
+                                              setQuickStatusLoading(true)
+                                              const mappedStatus = quickStatusValue === '거부' ? 'OT거부자' : quickStatusValue
+                                              await updateOtAssignment(a.id, {
+                                                sales_status: mappedStatus,
+                                                status: quickStatusValue === '거부' ? '거부' : a.status,
+                                                sales_note: quickStatusReason || null,
+                                              })
+                                              setQuickStatusTarget(null)
+                                              setQuickStatusLoading(false)
+                                              startTransition(() => router.refresh())
+                                            }}
+                                          >
+                                            {quickStatusLoading ? '저장 중...' : '저장'}
+                                          </Button>
+                                        </div>
+                                      </div>
+                                    )}
+                                  </div>
+                                    )
+                                  })()}
+
                                   {/* 세일즈 여정 */}
                                   {(() => {
                                     // 세션에서 가장 최근 입력값을 assignment 레벨 fallback으로 사용
@@ -1087,22 +1354,8 @@ export function TrainerCardList({ assignments, trainers = [], trainerId, trainer
                                       </div>
                                     </div>
 
-                                    {journey.length > 0 ? (
-                                      <div className="relative pl-4 border-l-2 border-blue-300 space-y-3">
-                                        {journey.map((j, ji) => (
-                                          <div key={ji} className="relative">
-                                            <span className="absolute -left-[21px] top-1 h-3 w-3 rounded-full bg-blue-500 border-2 border-white" />
-                                            <div className="flex items-center gap-2 flex-wrap">
-                                              <span className="text-sm font-bold text-gray-900">{j.label}</span>
-                                              {j.date && <span className="text-xs text-gray-500">{j.date}</span>}
-                                              {j.status && <Badge className={`${statusBadgeColor(j.status)} text-[10px]`}>{j.status}</Badge>}
-                                            </div>
-                                            {j.detail && <p className="text-xs text-gray-700 mt-0.5">{j.detail}</p>}
-                                          </div>
-                                        ))}
-                                      </div>
-                                    ) : (
-                                      <p className="text-xs text-gray-500">차수별 세일즈 기록이 아직 없습니다. 프로그램 팝업의 각 세션에서 세일즈 정보를 입력하면 여정으로 표시됩니다.</p>
+                                    {journey.length === 0 && (
+                                      <p className="text-xs text-gray-500">차수별 세일즈 기록이 아직 없습니다.</p>
                                     )}
 
                                     {a.sales_note && (
@@ -1115,6 +1368,15 @@ export function TrainerCardList({ assignments, trainers = [], trainerId, trainer
                                       <div className="rounded bg-red-50 border border-red-200 p-2 text-xs">
                                         <p className="font-bold text-red-700 mb-0.5">클로징 실패 사유</p>
                                         <p className="text-red-800 whitespace-pre-wrap">{a.closing_fail_reason}</p>
+                                      </div>
+                                    )}
+                                    {a.is_excluded && a.excluded_reason && (
+                                      <div className="rounded bg-red-100 border-2 border-red-300 p-3 text-xs">
+                                        <p className="font-bold text-red-700 mb-1">제외 사유</p>
+                                        <p className="text-red-800 whitespace-pre-wrap">{a.excluded_reason}</p>
+                                        {a.excluded_at && (
+                                          <p className="text-red-400 mt-1.5 text-[10px]">{new Date(a.excluded_at).toLocaleDateString('ko')} 제외 처리</p>
+                                        )}
                                       </div>
                                     )}
                                   </div>
@@ -1458,6 +1720,16 @@ export function TrainerCardList({ assignments, trainers = [], trainerId, trainer
                             <Button size="sm" variant="outline" className="text-white bg-gray-800 border-gray-700" onClick={(e) => { e.stopPropagation(); router.push(`/ot/${a.id}`) }}>
                               상세 페이지
                             </Button>
+                            {isAdmin && !a.is_excluded && (
+                              <Button size="sm" className="bg-red-500 hover:bg-red-600 text-white" onClick={(e) => { e.stopPropagation(); setExcludeTarget(a); setExcludeReason('') }}>
+                                <Ban className="h-3.5 w-3.5 mr-1" />제외
+                              </Button>
+                            )}
+                            {isAdmin && a.is_excluded && (
+                              <Button size="sm" className="bg-green-600 hover:bg-green-700 text-white" onClick={(e) => { e.stopPropagation(); handleRestore(a) }}>
+                                <Undo2 className="h-3.5 w-3.5 mr-1" />복구
+                              </Button>
+                            )}
                           </div>
                         </div>
                       )}
@@ -1483,6 +1755,8 @@ export function TrainerCardList({ assignments, trainers = [], trainerId, trainer
             }
           }
           setCompleteTarget(null)
+          // 닫을 때 항상 최신 데이터 반영
+          startTransition(() => router.refresh())
         }
       }}>
         <DialogContent className="w-[95vw] max-w-[95vw] sm:max-w-4xl max-h-[95vh] overflow-y-auto">
@@ -1505,10 +1779,21 @@ export function TrainerCardList({ assignments, trainers = [], trainerId, trainer
                 hideButtons
                 completingSessionIdx={completeTarget.sessionNumber - 1}
                 completeLoading={completeLoading}
+                initialCard={(() => {
+                  const cached = expandedData[completeTarget.assignment.id]
+                  return (cached && cached !== 'loading') ? cached.card : null
+                })()}
                 onCompleteSession={async () => { await handleCompleteSubmit() }}
                 onSaved={async () => {
                   const updated = await getOtProgram(completeTarget.assignment.id)
                   setCompleteProgramData(updated)
+                  // expandedData 캐시도 갱신
+                  setExpandedData((prev) => {
+                    const existing = prev[completeTarget.assignment.id]
+                    if (!existing || existing === 'loading') return prev
+                    return { ...prev, [completeTarget.assignment.id]: { ...existing, program: updated } }
+                  })
+                  startTransition(() => router.refresh())
                 }}
               />
             </div>
@@ -2447,6 +2732,40 @@ export function TrainerCardList({ assignments, trainers = [], trainerId, trainer
         </DialogContent>
       </Dialog>
 
+      {/* 제외 사유 입력 다이얼로그 */}
+      <Dialog open={!!excludeTarget} onOpenChange={() => setExcludeTarget(null)}>
+        <DialogContent className="max-w-sm">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2 text-red-600">
+              <Ban className="h-5 w-5" />
+              제외 처리 — {excludeTarget?.member.name}
+            </DialogTitle>
+            <DialogDescription>제외 사유를 입력해주세요. 제외된 회원은 제외회원 폴더로 이동됩니다.</DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4">
+            <div className="space-y-2">
+              <Label>제외 사유 <span className="text-red-500">*</span></Label>
+              <Textarea
+                value={excludeReason}
+                onChange={(e) => setExcludeReason(e.target.value)}
+                placeholder="환불, 거부, 연락두절 등 사유를 입력해주세요"
+                rows={3}
+                className="bg-white text-gray-900 border-gray-300"
+              />
+            </div>
+            <div className="flex justify-end gap-2">
+              <Button variant="outline" className="text-gray-900 border-gray-400 bg-gray-100 hover:bg-gray-200" onClick={() => setExcludeTarget(null)}>취소</Button>
+              <Button
+                className="bg-red-600 hover:bg-red-700 text-white"
+                onClick={handleExclude}
+                disabled={excludeLoading || !excludeReason.trim()}
+              >
+                {excludeLoading ? '처리 중...' : '제외 처리'}
+              </Button>
+            </div>
+          </div>
+        </DialogContent>
+      </Dialog>
     </>
   )
 }

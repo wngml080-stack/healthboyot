@@ -79,9 +79,10 @@ interface Props {
   completingSessionIdx?: number | null
   onCompleteSession?: (idx: number) => Promise<void> | void
   completeLoading?: boolean
+  initialCard?: ConsultationCard | null
 }
 
-export const OtProgramForm = forwardRef<OtProgramFormRef, Props>(function OtProgramForm({ assignment, program, profile, onSaved, hideButtons, hideSessionList, completingSessionIdx, onCompleteSession, completeLoading }, ref) {
+export const OtProgramForm = forwardRef<OtProgramFormRef, Props>(function OtProgramForm({ assignment, program, profile, onSaved, hideButtons, hideSessionList, completingSessionIdx, onCompleteSession, completeLoading, initialCard }, ref) {
   const a = assignment
   const isAdmin = ['admin', '관리자'].includes(profile.role)
   const isTrainer = profile.id === a.pt_trainer_id || profile.id === a.ppt_trainer_id
@@ -113,36 +114,45 @@ export const OtProgramForm = forwardRef<OtProgramFormRef, Props>(function OtProg
   )
 
   // 상담카드 전체 필드 (읽기 전용 표시용)
-  const [fullCard, setFullCard] = useState<ConsultationCard | null>(null)
+  const [fullCard, setFullCard] = useState<ConsultationCard | null>(initialCard ?? null)
 
-  // 상담카드 1번만 fetch — 읽기용 + 빈 consultation 채우기 양쪽에 사용
-  useEffect(() => {
+  // 상담카드 적용 함수
+  const applyCard = useCallback((card: ConsultationCard) => {
+    setFullCard(card)
     const needsFill = consultation.exercise_goals.length === 0 && consultation.medical_conditions.length === 0
-    getConsultationCard(a.member_id).then((card) => {
-      if (!card) return
-      setFullCard(card)
-      if (needsFill) {
-        setConsultation({
-          exercise_goals: card.exercise_goals ?? [],
-          exercise_goal_detail: card.exercise_goal_detail ?? null,
-          body_correction_area: card.body_correction_area ?? null,
-          medical_conditions: card.medical_conditions ?? [],
-          medical_detail: card.medical_detail,
-          surgery_detail: card.surgery_detail,
-          exercise_experiences: card.exercise_experiences ?? [],
-          exercise_experience_history: card.exercise_experience_history ?? null,
-          exercise_duration: card.exercise_duration,
-          exercise_personality: card.exercise_personality ?? [],
-          desired_body_type: card.desired_body_type,
-        })
-      }
-      if (!startDate && card.exercise_start_date) setStartDate(card.exercise_start_date)
-      setAthleticGoal((prev) => {
-        if (prev) return prev
-        const goals = card.exercise_goals ?? []
-        if (!goals.length) return prev
-        return goals.join(', ') + (card.exercise_goal_detail ? ` — ${card.exercise_goal_detail}` : '')
+    if (needsFill) {
+      setConsultation({
+        exercise_goals: card.exercise_goals ?? [],
+        exercise_goal_detail: card.exercise_goal_detail ?? null,
+        body_correction_area: card.body_correction_area ?? null,
+        medical_conditions: card.medical_conditions ?? [],
+        medical_detail: card.medical_detail,
+        surgery_detail: card.surgery_detail,
+        exercise_experiences: card.exercise_experiences ?? [],
+        exercise_experience_history: card.exercise_experience_history ?? null,
+        exercise_duration: card.exercise_duration,
+        exercise_personality: card.exercise_personality ?? [],
+        desired_body_type: card.desired_body_type,
       })
+    }
+    if (!startDate && card.exercise_start_date) setStartDate(card.exercise_start_date)
+    setAthleticGoal((prev) => {
+      if (prev) return prev
+      const goals = card.exercise_goals ?? []
+      if (!goals.length) return prev
+      return goals.join(', ') + (card.exercise_goal_detail ? ` — ${card.exercise_goal_detail}` : '')
+    })
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
+
+  // 상담카드 — initialCard가 있으면 즉시 적용, 없으면 fetch
+  useEffect(() => {
+    if (initialCard) {
+      applyCard(initialCard)
+      return
+    }
+    getConsultationCard(a.member_id).then((card) => {
+      if (card) applyCard(card)
     })
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [a.member_id])
@@ -304,6 +314,7 @@ export const OtProgramForm = forwardRef<OtProgramFormRef, Props>(function OtProg
   buildPayloadRef.current = buildSavePayload
 
   useEffect(() => {
+    let active = true
     const channel = new BroadcastChannel('ot-signature')
     channel.onmessage = async (e) => {
       if (e.data?.type !== 'signature-complete') return
@@ -311,18 +322,20 @@ export const OtProgramForm = forwardRef<OtProgramFormRef, Props>(function OtProg
       if (typeof sigIdx !== 'number' || !signatureUrl) return
       const signedAt = new Date().toISOString()
       // 세션에 서명 데이터 반영
-      setSessions((prev) => prev.map((s, i) =>
-        i === sigIdx ? { ...s, signature_url: signatureUrl, signer_name: sName, signed_at: signedAt } : s,
-      ))
+      if (active) {
+        setSessions((prev) => prev.map((s, i) =>
+          i === sigIdx ? { ...s, signature_url: signatureUrl, signer_name: sName, signed_at: signedAt } : s,
+        ))
+      }
       // 최신 sessions로 payload 구성 후 저장
       const currentSessions = sessionsRef.current.map((s, i) =>
         i === sigIdx ? { ...s, signature_url: signatureUrl, signer_name: sName, signed_at: signedAt } : s,
       )
       const payload = buildPayloadRef.current()
       await upsertOtProgram(a.id, a.member_id, { ...payload, sessions: currentSessions as unknown as OtProgramSession[] })
-      onSaved?.()
+      if (active) onSaved?.()
     }
-    return () => channel.close()
+    return () => { active = false; channel.close() }
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [a.id, a.member_id])
 
@@ -539,14 +552,31 @@ export const OtProgramForm = forwardRef<OtProgramFormRef, Props>(function OtProg
     const payload = buildSavePayload()
     if (overrideSessions) payload.sessions = overrideSessions
     const result = await upsertOtProgram(a.id, a.member_id, payload)
-    setSaving(false)
-    if (result.error) setError(result.error)
-    else {
-      lastSavedRef.current = JSON.stringify(payload)
-      setSuccess(true)
-      setTimeout(() => setSuccess(false), 3000)
-      onSaved?.()
+    if (result.error) { setSaving(false); setError(result.error); return }
+
+    // 프로그램 세션의 날짜/시간 → ot_sessions + trainer_schedules 자동 동기화
+    // 완료되지 않은 세션만 동기화 (completed=false인 프로그램 세션만)
+    const sessionsToSync = (overrideSessions ?? sessions)
+    for (let i = 0; i < sessionsToSync.length; i++) {
+      const s = sessionsToSync[i]
+      if (!s.date || !s.time) continue
+      // 프로그램에서 completed=true인 세션은 이미 완료된 수업이므로 스케줄 변경 안 함
+      if (s.completed) continue
+      const sessionNumber = i + 1
+      const scheduledAt = new Date(`${s.date}T${s.time}:00+09:00`).toISOString()
+      await upsertOtSession({
+        ot_assignment_id: a.id,
+        session_number: sessionNumber,
+        scheduled_at: scheduledAt,
+        duration: 50,
+      })
     }
+
+    setSaving(false)
+    lastSavedRef.current = JSON.stringify(payload)
+    setSuccess(true)
+    setTimeout(() => setSuccess(false), 3000)
+    onSaved?.()
   }
 
   // 저장 후 상담카드 데이터 갱신 (서버에서 채워줬을 수 있음)
@@ -880,58 +910,7 @@ export const OtProgramForm = forwardRef<OtProgramFormRef, Props>(function OtProg
               ) : (
                 /* 편집 가능 영역 */
                 <div className="space-y-3">
-                  {/* 수업 상태 변경 (미완료 세션에만 표시) */}
-                  {!isCompleted && canEdit && (() => {
-                    const otSession = a.sessions?.find((s) => s.session_number === idx + 1)
-                    if (!otSession?.scheduled_at) return null
-                    const currentStatus = (session as unknown as Record<string, unknown>).class_status as string | null | undefined
-                    return (
-                      <div className="flex flex-wrap items-center gap-1.5 bg-indigo-50 rounded-lg p-2">
-                        <span className="text-[10px] font-bold text-indigo-700 mr-1">수업상태:</span>
-                        {(['수업완료', '노쇼', '차감노쇼', '상담', '기타'] as const).map((opt) => {
-                          const isActive = currentStatus === opt
-                          const baseColors: Record<string, string> = { '수업완료': 'bg-green-500 text-white', '노쇼': 'bg-red-500 text-white', '차감노쇼': 'bg-orange-500 text-white', '상담': 'bg-blue-500 text-white', '기타': 'bg-gray-500 text-white' }
-                          const inactiveColors: Record<string, string> = { '수업완료': 'bg-white text-green-600 border-green-300', '노쇼': 'bg-white text-red-500 border-red-300', '차감노쇼': 'bg-white text-orange-500 border-orange-300', '상담': 'bg-white text-blue-500 border-blue-300', '기타': 'bg-white text-gray-500 border-gray-300' }
-                          return (
-                            <button
-                              key={opt}
-                              type="button"
-                              className={`rounded px-2 py-1 text-[10px] font-bold border transition-colors ${isActive ? baseColors[opt] + ' ring-2 ring-offset-1 ring-gray-400' : inactiveColors[opt]} hover:opacity-80`}
-                              onClick={async () => {
-                                if (opt === '기타') {
-                                  const reason = prompt('기타 사유를 입력하세요')
-                                  if (!reason) return
-                                  updateSession(idx, 'class_status' as keyof OtProgramSession, opt)
-                                  updateSession(idx, 'result_note', reason)
-                                  // 즉시 저장
-                                  const updatedSessions = sessions.map((s, i) => i === idx ? { ...s, class_status: opt, result_note: reason } : s) as OtProgramSession[]
-                                  handleSave(updatedSessions)
-                                  return
-                                }
-                                const newStatus = isActive ? null : opt
-                                // 즉시 세션 상태 반영
-                                updateSession(idx, 'class_status' as keyof OtProgramSession, newStatus)
-                                // 즉시 저장
-                                const updatedSessions = sessions.map((s, i) => i === idx ? { ...s, class_status: newStatus } : s) as OtProgramSession[]
-                                handleSave(updatedSessions)
-                                if (opt === '수업완료' && !isActive) {
-                                  await upsertOtSession({
-                                    ot_assignment_id: a.id,
-                                    session_number: idx + 1,
-                                    scheduled_at: otSession.scheduled_at ?? undefined,
-                                    completed_at: new Date().toISOString(),
-                                  })
-                                  onSaved?.()
-                                }
-                              }}
-                            >
-                              {opt}
-                            </button>
-                          )
-                        })}
-                      </div>
-                    )
-                  })()}
+                  {/* 수업 상태 변경 — 삭제됨 */}
 
                   <div className="grid grid-cols-2 gap-2">
                     <div className="flex items-center gap-1">

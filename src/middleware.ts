@@ -25,7 +25,9 @@ export async function middleware(request: NextRequest) {
         if (profile.role !== 'admin' && profile.role !== '관리자' && pathname.startsWith('/stats')) {
           return NextResponse.redirect(new URL('/dashboard', request.url))
         }
-      } catch {}
+      } catch (err) {
+        console.error('[middleware] demo session parse 실패:', err)
+      }
     }
 
     return NextResponse.next()

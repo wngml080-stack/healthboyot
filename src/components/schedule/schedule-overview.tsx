@@ -1,0 +1,675 @@
+'use client'
+
+import { useState, useEffect, useCallback, useMemo, useTransition, memo, useRef } from 'react'
+import { format, addDays, subDays } from 'date-fns'
+import { ko } from 'date-fns/locale'
+import { ChevronLeft, ChevronRight, Calendar, User, Clock, Filter } from 'lucide-react'
+import { Button } from '@/components/ui/button'
+import {
+  Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription,
+} from '@/components/ui/dialog'
+import { type TrainerDaySchedule, type ScheduleOverviewItem } from '@/actions/schedule-overview'
+import { createClient } from '@/lib/supabase/client'
+import { getOtProgram, getOtProgramByMemberId } from '@/actions/ot-program'
+import type { OtProgram } from '@/types'
+import { cn } from '@/lib/utils'
+
+const TYPE_COLORS: Record<string, { bg: string; border: string; text: string }> = {
+  OT: { bg: 'bg-emerald-100', border: 'border-l-emerald-500', text: 'text-emerald-800' },
+  PT: { bg: 'bg-blue-100', border: 'border-l-blue-500', text: 'text-blue-800' },
+  PPT: { bg: 'bg-purple-100', border: 'border-l-purple-500', text: 'text-purple-800' },
+  '식사': { bg: 'bg-orange-100', border: 'border-l-orange-500', text: 'text-orange-800' },
+  '홍보': { bg: 'bg-pink-100', border: 'border-l-pink-500', text: 'text-pink-800' },
+  '간부회의': { bg: 'bg-yellow-100', border: 'border-l-yellow-500', text: 'text-yellow-800' },
+  '팀회의': { bg: 'bg-yellow-50', border: 'border-l-yellow-400', text: 'text-yellow-800' },
+  '전체회의': { bg: 'bg-amber-100', border: 'border-l-amber-500', text: 'text-amber-800' },
+  '간담회': { bg: 'bg-indigo-100', border: 'border-l-indigo-500', text: 'text-indigo-800' },
+  '당직': { bg: 'bg-rose-100', border: 'border-l-rose-500', text: 'text-rose-800' },
+  '대외활동': { bg: 'bg-teal-100', border: 'border-l-teal-500', text: 'text-teal-800' },
+  '유급휴식': { bg: 'bg-cyan-100', border: 'border-l-cyan-500', text: 'text-cyan-800' },
+  '기타': { bg: 'bg-gray-100', border: 'border-l-gray-500', text: 'text-gray-800' },
+}
+
+const TYPE_BADGE_COLORS: Record<string, string> = {
+  OT: 'bg-emerald-200 border-emerald-400 text-emerald-900',
+  PT: 'bg-blue-200 border-blue-400 text-blue-900',
+  PPT: 'bg-purple-200 border-purple-400 text-purple-900',
+  '식사': 'bg-orange-200 border-orange-400 text-orange-900',
+  '홍보': 'bg-pink-200 border-pink-400 text-pink-900',
+  '간부회의': 'bg-yellow-300 border-yellow-500 text-yellow-900',
+  '팀회의': 'bg-yellow-200 border-yellow-400 text-yellow-900',
+  '전체회의': 'bg-amber-200 border-amber-400 text-amber-900',
+  '간담회': 'bg-indigo-200 border-indigo-400 text-indigo-900',
+  '당직': 'bg-rose-200 border-rose-400 text-rose-900',
+  '대외활동': 'bg-teal-200 border-teal-400 text-teal-900',
+  '유급휴식': 'bg-cyan-200 border-cyan-400 text-cyan-900',
+  '기타': 'bg-gray-200 border-gray-400 text-gray-900',
+}
+
+const ROLE_COLORS: Record<string, string> = {
+  admin: 'bg-red-500',
+  '관리자': 'bg-red-500',
+  '팀장': 'bg-amber-500',
+  trainer: 'bg-blue-500',
+  '강사': 'bg-pink-500',
+  fc: 'bg-purple-500',
+}
+
+function formatTime(time: string): string {
+  return time.slice(0, 5)
+}
+
+function endTime(start: string, duration: number): string {
+  const [h, m] = start.split(':').map(Number)
+  const total = h * 60 + m + duration
+  const eh = Math.floor(total / 60)
+  const em = total % 60
+  return `${String(eh).padStart(2, '0')}:${String(em).padStart(2, '0')}`
+}
+
+function timeToMinutes(time: string): number {
+  const [h, m] = time.split(':').map(Number)
+  return h * 60 + m
+}
+
+const ROW_HEIGHT = 48 // px per 30min slot
+const START_HOUR = 6
+const START_MINUTES = START_HOUR * 60
+
+const HOURS = Array.from({ length: 19 }, (_, i) => i + START_HOUR)
+
+export function ScheduleOverview() {
+  const [date, setDate] = useState(() => format(new Date(), 'yyyy-MM-dd'))
+  const [data, setData] = useState<TrainerDaySchedule[]>([])
+  const [loading, setLoading] = useState(true)
+  const [, startTransition] = useTransition()
+  const [selectedTrainer, setSelectedTrainer] = useState<string | null>(null)
+  const [viewMode, setViewMode] = useState<'all' | 'timeline'>('timeline')
+
+  // OT 프로그램 팝업
+  const [programDialog, setProgramDialog] = useState<{
+    open: boolean
+    schedule: ScheduleOverviewItem | null
+    program: OtProgram | null
+    loading: boolean
+  }>({ open: false, schedule: null, program: null, loading: false })
+
+  const supabaseRef = useRef(createClient())
+  const isMountedRef = useRef(true)
+  useEffect(() => () => { isMountedRef.current = false }, [])
+
+  const load = useCallback(async (targetDate: string) => {
+    const supabase = supabaseRef.current
+
+    // 클라이언트에서 직접 병렬 쿼리 (서버 왕복 제거)
+    const [trainersRes, schedulesRes] = await Promise.all([
+      supabase
+        .from('profiles')
+        .select('id, name, role, folder_order')
+        .eq('is_approved', true)
+        .eq('has_folder', true)
+        .order('folder_order', { ascending: true })
+        .order('name', { ascending: true }),
+      supabase
+        .from('trainer_schedules')
+        .select('id, trainer_id, schedule_type, member_name, member_id, ot_session_id, scheduled_date, start_time, duration, note')
+        .eq('scheduled_date', targetDate)
+        .order('start_time', { ascending: true }),
+    ])
+
+    const trainers = trainersRes.data ?? []
+    const schedules = schedulesRes.data ?? []
+
+    // OT assignment 정보 병렬 조회
+    const otSessionIds = schedules.filter((s) => s.ot_session_id).map((s) => s.ot_session_id as string)
+    const memberIdsForFallback = Array.from(new Set(
+      schedules.filter((s) => ['OT', 'PT', 'PPT'].includes(s.schedule_type) && !s.ot_session_id && s.member_id)
+        .map((s) => s.member_id).filter(Boolean)
+    )) as string[]
+
+    const [sessionsRes, memberAssignmentsRes] = await Promise.all([
+      otSessionIds.length > 0
+        ? supabase.from('ot_sessions').select('id, ot_assignment_id').in('id', otSessionIds)
+        : Promise.resolve({ data: [] as { id: string; ot_assignment_id: string }[] }),
+      memberIdsForFallback.length > 0
+        ? supabase.from('ot_assignments').select('id, member_id, is_sales_target, is_pt_conversion, sales_status').in('member_id', memberIdsForFallback).not('status', 'in', '("완료","거부")').order('created_at', { ascending: false })
+        : Promise.resolve({ data: [] as { id: string; member_id: string; is_sales_target: boolean; is_pt_conversion: boolean; sales_status: string }[] }),
+    ])
+
+    const sessionData = sessionsRes.data ?? []
+    const assignmentIds = Array.from(new Set(sessionData.map((s) => s.ot_assignment_id)))
+
+    let assignmentsData: { id: string; is_sales_target: boolean; is_pt_conversion: boolean; sales_status: string }[] = []
+    if (assignmentIds.length > 0) {
+      const { data } = await supabase.from('ot_assignments').select('id, is_sales_target, is_pt_conversion, sales_status').in('id', assignmentIds)
+      assignmentsData = data ?? []
+    }
+
+    // 맵 구성
+    const assignmentMap = new Map<string, { is_sales_target: boolean; is_pt_conversion: boolean; sales_status: string }>()
+    for (const a of assignmentsData) assignmentMap.set(a.id, { is_sales_target: a.is_sales_target, is_pt_conversion: a.is_pt_conversion, sales_status: a.sales_status })
+
+    const sessionAssignmentMap = new Map<string, { assignment_id: string; is_sales_target: boolean; is_pt_conversion: boolean; sales_status: string }>()
+    for (const sd of sessionData) {
+      const aInfo = assignmentMap.get(sd.ot_assignment_id)
+      if (aInfo) sessionAssignmentMap.set(sd.id, { assignment_id: sd.ot_assignment_id, ...aInfo })
+    }
+
+    const memberAssignmentMap = new Map<string, { assignment_id: string; is_sales_target: boolean; is_pt_conversion: boolean; sales_status: string }>()
+    for (const a of (memberAssignmentsRes.data ?? [])) {
+      if (!memberAssignmentMap.has(a.member_id)) {
+        memberAssignmentMap.set(a.member_id, { assignment_id: a.id, is_sales_target: a.is_sales_target, is_pt_conversion: a.is_pt_conversion, sales_status: a.sales_status })
+      }
+    }
+
+    // 그룹핑
+    const scheduleMap = new Map<string, ScheduleOverviewItem[]>()
+    for (const s of schedules) {
+      const fromSession = s.ot_session_id ? sessionAssignmentMap.get(s.ot_session_id) : null
+      const fromMember = s.member_id ? memberAssignmentMap.get(s.member_id) : null
+      const aInfo = fromSession ?? fromMember ?? null
+      const item: ScheduleOverviewItem = {
+        id: s.id, trainer_id: s.trainer_id, schedule_type: s.schedule_type,
+        member_name: s.member_name, member_id: s.member_id, ot_session_id: s.ot_session_id,
+        scheduled_date: s.scheduled_date, start_time: s.start_time, duration: s.duration, note: s.note,
+        is_sales_target: aInfo?.is_sales_target ?? false, is_pt_conversion: aInfo?.is_pt_conversion ?? false,
+        ot_assignment_id: aInfo?.assignment_id ?? null, sales_status: aInfo?.sales_status ?? null, result_category: null,
+      }
+      const list = scheduleMap.get(s.trainer_id) ?? []
+      list.push(item)
+      scheduleMap.set(s.trainer_id, list)
+    }
+
+    const result: TrainerDaySchedule[] = trainers.map((t) => ({
+      trainer_id: t.id, trainer_name: t.name, role: t.role,
+      folder_order: t.folder_order ?? 0, schedules: scheduleMap.get(t.id) ?? [],
+    }))
+
+    if (!isMountedRef.current) return
+    startTransition(() => {
+      setData(result)
+      setLoading(false)
+    })
+  }, [])
+
+  useEffect(() => {
+    setLoading(true)
+    load(date)
+  }, [date, load])
+
+  const prev = () => setDate((d) => format(subDays(new Date(d), 1), 'yyyy-MM-dd'))
+  const next = () => setDate((d) => format(addDays(new Date(d), 1), 'yyyy-MM-dd'))
+  const goToday = () => setDate(format(new Date(), 'yyyy-MM-dd'))
+
+  const dateObj = useMemo(() => new Date(date + 'T00:00:00'), [date])
+  const dayOfWeek = format(dateObj, 'EEEE', { locale: ko })
+  const isWeekend = dateObj.getDay() === 0 || dateObj.getDay() === 6
+
+  const displayed = useMemo(() =>
+    selectedTrainer ? data.filter((t) => t.trainer_id === selectedTrainer) : data,
+    [data, selectedTrainer]
+  )
+
+  // 스케줄 클릭 -> OT 프로그램 조회 (병렬)
+  const handleScheduleClick = useCallback(async (schedule: ScheduleOverviewItem) => {
+    setProgramDialog({ open: true, schedule, program: null, loading: true })
+
+    // assignment_id와 member_id 둘 다 있으면 병렬 조회
+    const promises: Promise<OtProgram | null>[] = []
+    if (schedule.ot_assignment_id) {
+      promises.push(getOtProgram(schedule.ot_assignment_id))
+    }
+    if (schedule.member_id) {
+      promises.push(getOtProgramByMemberId(schedule.member_id))
+    }
+
+    if (promises.length === 0) {
+      setProgramDialog((prev) => ({ ...prev, loading: false }))
+      return
+    }
+
+    const results = await Promise.all(promises)
+    const program = results.find((r) => r !== null) ?? null
+    setProgramDialog((prev) => ({ ...prev, program, loading: false }))
+  }, [])
+
+  return (
+    <div className="space-y-4">
+      {/* 헤더 */}
+      <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3">
+        <div>
+          <h1 className="text-xl font-bold flex items-center gap-2 text-white">
+            <Calendar className="h-5 w-5 text-yellow-500" />
+            스케줄 총괄
+          </h1>
+          <p className="text-sm text-gray-400 mt-0.5">트레이너별 일일 스케줄을 한눈에 확인합니다</p>
+        </div>
+        <div className="flex gap-1 bg-white/10 rounded-lg p-1">
+          <button
+            onClick={() => setViewMode('timeline')}
+            className={cn(
+              'px-3 py-1.5 rounded-md text-xs font-medium transition-colors',
+              viewMode === 'timeline' ? 'bg-yellow-400 shadow text-black' : 'text-gray-300 hover:text-white'
+            )}
+          >
+            타임라인
+          </button>
+          <button
+            onClick={() => setViewMode('all')}
+            className={cn(
+              'px-3 py-1.5 rounded-md text-xs font-medium transition-colors',
+              viewMode === 'all' ? 'bg-yellow-400 shadow text-black' : 'text-gray-300 hover:text-white'
+            )}
+          >
+            카드뷰
+          </button>
+        </div>
+      </div>
+
+      {/* 날짜 네비게이션 */}
+      <div className="flex items-center justify-between bg-white/5 border border-white/10 rounded-xl p-3">
+        <Button variant="ghost" size="icon" onClick={prev} className="h-9 w-9 text-gray-300 hover:text-white hover:bg-white/10">
+          <ChevronLeft className="h-5 w-5" />
+        </Button>
+        <div className="flex items-center gap-3">
+          <button onClick={goToday} className="px-3 py-1 bg-yellow-400 text-black text-xs font-bold rounded-lg hover:bg-yellow-500 transition-colors">
+            오늘
+          </button>
+          <div className="text-center">
+            <div className="text-lg font-bold text-white">{format(dateObj, 'M월 d일', { locale: ko })}</div>
+            <div className={cn('text-xs font-medium', isWeekend ? 'text-red-400' : 'text-gray-400')}>{dayOfWeek}</div>
+          </div>
+          <input
+            type="date"
+            value={date}
+            onChange={(e) => e.target.value && setDate(e.target.value)}
+            className="text-sm border border-white/20 bg-white/10 text-white rounded-lg px-2 py-1 w-[140px]"
+          />
+        </div>
+        <Button variant="ghost" size="icon" onClick={next} className="h-9 w-9 text-gray-300 hover:text-white hover:bg-white/10">
+          <ChevronRight className="h-5 w-5" />
+        </Button>
+      </div>
+
+      {/* 트레이너 필터 칩 */}
+      <div className="flex items-center gap-2 flex-wrap">
+        <Filter className="h-4 w-4 text-gray-500 shrink-0" />
+        <button
+          onClick={() => setSelectedTrainer(null)}
+          className={cn(
+            'px-3 py-1 rounded-full text-xs font-medium border transition-colors',
+            !selectedTrainer ? 'bg-yellow-400 text-black border-yellow-400' : 'bg-white/5 text-gray-300 border-white/20 hover:border-white/40'
+          )}
+        >
+          전체 ({data.length})
+        </button>
+        {data.map((t) => (
+          <button
+            key={t.trainer_id}
+            onClick={() => setSelectedTrainer(selectedTrainer === t.trainer_id ? null : t.trainer_id)}
+            className={cn(
+              'px-3 py-1 rounded-full text-xs font-medium border transition-colors',
+              selectedTrainer === t.trainer_id ? 'bg-yellow-400 text-black border-yellow-400' : 'bg-white/5 text-gray-300 border-white/20 hover:border-white/40'
+            )}
+          >
+            {t.trainer_name}
+            {t.schedules.length > 0 && <span className="ml-1 text-[10px] opacity-70">({t.schedules.length})</span>}
+          </button>
+        ))}
+      </div>
+
+      {loading && data.length === 0 && <div className="py-20 text-center text-sm text-gray-400">불러오는 중...</div>}
+
+      {/* 타임라인뷰 */}
+      {!(loading && data.length === 0) && viewMode === 'timeline' && (
+        <div className={cn('bg-white rounded-xl border overflow-x-auto transition-opacity', loading && 'opacity-50')}>
+          {/* 헤더 */}
+          <div className="flex border-b bg-gray-50 sticky top-0 z-20">
+            <div className="w-14 shrink-0 px-2 py-3 text-[11px] font-bold text-gray-500 sticky left-0 bg-gray-50 z-30 border-r text-center">
+              시간
+            </div>
+            {displayed.map((t) => (
+              <div key={t.trainer_id} className="flex-1 min-w-[140px] text-center text-xs font-bold text-gray-700 px-2 py-3 border-r last:border-r-0">
+                <div className="flex items-center justify-center gap-1.5">
+                  <span className={cn('w-2.5 h-2.5 rounded-full shrink-0', ROLE_COLORS[t.role] ?? 'bg-gray-400')} />
+                  {t.trainer_name}
+                  {t.schedules.length > 0 && (
+                    <span className="text-[10px] text-gray-400 font-normal">({t.schedules.length})</span>
+                  )}
+                </div>
+              </div>
+            ))}
+          </div>
+
+          {/* 타임라인 바디 */}
+          <div className="flex">
+            {/* 시간 열 */}
+            <div className="w-14 shrink-0 sticky left-0 bg-white z-10 border-r">
+              {HOURS.map((hour) => (
+                <div key={hour} style={{ height: ROW_HEIGHT * 2 }}>
+                  <div className="border-b border-gray-200 px-1 flex items-start pt-1 justify-center" style={{ height: ROW_HEIGHT }}>
+                    <span className="text-[11px] text-gray-500 font-mono font-semibold">
+                      {String(hour).padStart(2, '0')}:00
+                    </span>
+                  </div>
+                  <div className="border-b border-gray-100" style={{ height: ROW_HEIGHT }} />
+                </div>
+              ))}
+            </div>
+
+            {/* 트레이너 열 */}
+            {displayed.map((t) => (
+              <div key={t.trainer_id} className="flex-1 min-w-[140px] relative border-r last:border-r-0">
+                {/* 시간 격자 */}
+                {HOURS.map((hour) => (
+                  <div key={hour} style={{ height: ROW_HEIGHT * 2 }}>
+                    <div className="border-b border-gray-200" style={{ height: ROW_HEIGHT }} />
+                    <div className="border-b border-gray-100" style={{ height: ROW_HEIGHT }} />
+                  </div>
+                ))}
+
+                {/* 스케줄 블록 */}
+                {t.schedules.map((s) => {
+                  const startMin = timeToMinutes(s.start_time)
+                  const offsetMin = startMin - START_MINUTES
+                  if (offsetMin < 0) return null
+                  const top = (offsetMin / 30) * ROW_HEIGHT
+                  const height = Math.max((s.duration / 30) * ROW_HEIGHT, ROW_HEIGHT)
+                  const colors = TYPE_COLORS[s.schedule_type] ?? TYPE_COLORS['기타']
+                  const isOtType = ['OT', 'PT', 'PPT'].includes(s.schedule_type)
+                  const isClickable = isOtType && !!(s.ot_assignment_id || s.member_id)
+                  const isShort = s.duration <= 30
+
+                  return (
+                    <div
+                      key={s.id}
+                      className={cn(
+                        'absolute left-1.5 right-1.5 rounded-lg border-l-[3px] shadow-sm overflow-hidden',
+                        colors.bg, colors.border,
+                        isClickable && 'cursor-pointer hover:shadow-lg hover:brightness-95 active:scale-[0.98] transition-all',
+                        !isClickable && 'transition-shadow',
+                      )}
+                      style={{ top: top + 1, height: height - 2 }}
+                      onClick={() => isClickable && handleScheduleClick(s)}
+                    >
+                      <div className={cn('px-2 h-full flex', isShort ? 'items-center gap-1' : 'flex-col justify-center gap-0.5 py-1')}>
+                        <div className="flex items-center gap-1 min-w-0">
+                          {s.is_sales_target && <span className="text-red-500 text-[11px] shrink-0">★</span>}
+                          <span className={cn('text-[11px] font-bold', colors.text)}>{s.schedule_type}</span>
+                        </div>
+                        {s.member_name && (
+                          <span className={cn('text-[11px] font-medium truncate', colors.text, isShort && 'flex-1')}>
+                            {s.member_name}
+                          </span>
+                        )}
+                        {!isShort && (
+                          <span className="text-[10px] text-gray-500">
+                            {formatTime(s.start_time)}~{endTime(s.start_time, s.duration)}
+                          </span>
+                        )}
+                      </div>
+                    </div>
+                  )
+                })}
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* 카드뷰 */}
+      {!(loading && data.length === 0) && viewMode === 'all' && (
+        <div className="space-y-3">
+          {displayed.map((trainer) => (
+            <TrainerCard key={trainer.trainer_id} trainer={trainer} onScheduleClick={handleScheduleClick} />
+          ))}
+          {displayed.length === 0 && (
+            <div className="py-20 text-center text-sm text-gray-400">해당 날짜에 등록된 트레이너가 없습니다</div>
+          )}
+        </div>
+      )}
+
+      {/* 요약 바 */}
+      {data.length > 0 && <SummaryBar data={displayed} />}
+
+      {/* OT 프로그램 팝업 */}
+      <Dialog open={programDialog.open} onOpenChange={(open) => !open && setProgramDialog({ open: false, schedule: null, program: null, loading: false })}>
+        <DialogContent className="max-w-lg max-h-[85vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              {programDialog.schedule?.member_name} - OT 프로그램
+              {programDialog.schedule?.is_sales_target && (
+                <span className="px-2 py-0.5 bg-red-100 text-red-700 text-[10px] font-bold rounded-full">★ 매출대상자</span>
+              )}
+            </DialogTitle>
+            <DialogDescription>
+              {programDialog.schedule && (
+                <>{programDialog.schedule.schedule_type} | {formatTime(programDialog.schedule.start_time)}~{endTime(programDialog.schedule.start_time, programDialog.schedule.duration)} ({programDialog.schedule.duration}분)</>
+              )}
+            </DialogDescription>
+          </DialogHeader>
+
+          {programDialog.loading && <div className="py-10 text-center text-sm text-gray-400">프로그램 불러오는 중...</div>}
+          {!programDialog.loading && !programDialog.program && <div className="py-10 text-center text-sm text-gray-400">등록된 OT 프로그램이 없습니다</div>}
+          {!programDialog.loading && programDialog.program && <ProgramSummary program={programDialog.program} />}
+        </DialogContent>
+      </Dialog>
+    </div>
+  )
+}
+
+function ProgramSummary({ program }: { program: OtProgram }) {
+  return (
+    <div className="space-y-4">
+      <div className="grid grid-cols-2 gap-2 text-sm">
+        {program.trainer_name && (
+          <div className="bg-gray-50 rounded-lg px-3 py-2">
+            <div className="text-[10px] text-gray-400 font-medium">담당 트레이너</div>
+            <div className="font-bold">{program.trainer_name}</div>
+          </div>
+        )}
+        {program.athletic_goal && (
+          <div className="bg-gray-50 rounded-lg px-3 py-2">
+            <div className="text-[10px] text-gray-400 font-medium">운동 목표</div>
+            <div className="font-bold">{program.athletic_goal}</div>
+          </div>
+        )}
+        {program.recommended_days_per_week && (
+          <div className="bg-gray-50 rounded-lg px-3 py-2">
+            <div className="text-[10px] text-gray-400 font-medium">주 권장 횟수</div>
+            <div className="font-bold">{program.recommended_days_per_week}회</div>
+          </div>
+        )}
+        {program.exercise_duration_min && (
+          <div className="bg-gray-50 rounded-lg px-3 py-2">
+            <div className="text-[10px] text-gray-400 font-medium">운동 시간</div>
+            <div className="font-bold">{program.exercise_duration_min}분</div>
+          </div>
+        )}
+      </div>
+
+      <div className="flex items-center gap-2">
+        <span className="text-xs text-gray-500">승인 상태:</span>
+        <span className={cn(
+          'px-2 py-0.5 rounded-full text-[10px] font-bold',
+          program.approval_status === '승인' && 'bg-green-100 text-green-700',
+          program.approval_status === '반려' && 'bg-red-100 text-red-700',
+          program.approval_status === '제출완료' && 'bg-blue-100 text-blue-700',
+          program.approval_status === '작성중' && 'bg-gray-100 text-gray-600',
+        )}>
+          {program.approval_status}
+        </span>
+      </div>
+
+      {program.sessions.map((session, idx) => {
+        const exercises = session.exercises?.filter((e) => e.name) ?? []
+        if (exercises.length === 0 && !session.tip && !session.plan) return null
+        return (
+          <div key={idx} className="border rounded-lg overflow-hidden">
+            <div className="bg-gray-50 px-3 py-2 border-b flex items-center justify-between">
+              <span className="text-xs font-bold">{idx + 1}차 OT{session.date && ` (${session.date})`}</span>
+              {session.result_category && (
+                <span className={cn(
+                  'px-2 py-0.5 rounded-full text-[10px] font-bold',
+                  session.result_category === '매출대상' && 'bg-red-100 text-red-700',
+                  session.result_category === '등록완료' && 'bg-green-100 text-green-700',
+                  session.result_category === '수업완료' && 'bg-blue-100 text-blue-700',
+                  (!['매출대상', '등록완료', '수업완료'].includes(session.result_category ?? '')) && 'bg-gray-100 text-gray-600',
+                )}>
+                  {session.result_category}
+                </span>
+              )}
+            </div>
+            {session.plan && (
+              <div className="px-3 py-2 border-b bg-yellow-50">
+                <div className="text-[10px] text-yellow-700 font-bold mb-0.5">플랜</div>
+                <div className="text-xs text-yellow-900">{session.plan}</div>
+              </div>
+            )}
+            {exercises.length > 0 && (
+              <div className="divide-y">
+                {exercises.map((ex, i) => (
+                  <div key={i} className="px-3 py-1.5 flex items-center gap-3 text-xs">
+                    <span className="text-gray-400 w-4">{i + 1}</span>
+                    <span className="font-medium flex-1">{ex.name}</span>
+                    {ex.weight && <span className="text-gray-500">{ex.weight}kg</span>}
+                    {ex.reps && <span className="text-gray-500">{ex.reps}회</span>}
+                    {ex.sets && <span className="text-gray-500">{ex.sets}세트</span>}
+                  </div>
+                ))}
+              </div>
+            )}
+            {session.tip && (
+              <div className="px-3 py-2 border-t bg-blue-50">
+                <div className="text-[10px] text-blue-700 font-bold mb-0.5">트레이너 팁</div>
+                <div className="text-xs text-blue-900">{session.tip}</div>
+              </div>
+            )}
+            {session.cardio?.types?.length > 0 && (
+              <div className="px-3 py-2 border-t bg-green-50">
+                <div className="text-[10px] text-green-700 font-bold mb-0.5">유산소</div>
+                <div className="text-xs text-green-900">{session.cardio.types.join(', ')}{session.cardio.duration_min && ` (${session.cardio.duration_min}분)`}</div>
+              </div>
+            )}
+          </div>
+        )
+      })}
+
+      {program.inbody_data && program.inbody_data.current_weight && (
+        <div className="border rounded-lg overflow-hidden">
+          <div className="bg-gray-50 px-3 py-2 border-b"><span className="text-xs font-bold">인바디</span></div>
+          <div className="grid grid-cols-2 gap-px bg-gray-100">
+            {[
+              { label: '체중', current: program.inbody_data.current_weight, target: program.inbody_data.target_weight, unit: 'kg' },
+              { label: '체지방', current: program.inbody_data.current_body_fat, target: program.inbody_data.target_body_fat, unit: '%' },
+              { label: '골격근량', current: program.inbody_data.current_muscle_mass, target: program.inbody_data.target_muscle_mass, unit: 'kg' },
+              { label: '기초대사량', current: program.inbody_data.current_bmr, target: program.inbody_data.target_bmr, unit: 'kcal' },
+            ].filter((r) => r.current).map((row) => (
+              <div key={row.label} className="bg-white px-3 py-2">
+                <div className="text-[10px] text-gray-400">{row.label}</div>
+                <div className="text-xs">
+                  <span className="font-bold">{row.current}</span>
+                  {row.target && <span className="text-gray-400"> → {row.target}</span>}
+                  <span className="text-gray-400 ml-0.5">{row.unit}</span>
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+    </div>
+  )
+}
+
+const TrainerCard = memo(function TrainerCard({ trainer, onScheduleClick }: { trainer: TrainerDaySchedule; onScheduleClick: (s: ScheduleOverviewItem) => void }) {
+  const hasSchedules = trainer.schedules.length > 0
+  const otCount = trainer.schedules.filter((s) => s.schedule_type === 'OT').length
+  const ptCount = trainer.schedules.filter((s) => s.schedule_type === 'PT').length
+  const pptCount = trainer.schedules.filter((s) => s.schedule_type === 'PPT').length
+  const otherCount = trainer.schedules.length - otCount - ptCount - pptCount
+  const salesCount = trainer.schedules.filter((s) => s.is_sales_target).length
+
+  return (
+    <div className="bg-white rounded-xl border overflow-hidden">
+      <div className="flex items-center justify-between px-4 py-3 border-b bg-gray-50">
+        <div className="flex items-center gap-2">
+          <span className={cn('w-3 h-3 rounded-full', ROLE_COLORS[trainer.role] ?? 'bg-gray-400')} />
+          <span className="font-bold text-sm text-gray-900">{trainer.trainer_name}</span>
+          <span className="text-xs text-gray-500">{trainer.schedules.length}건</span>
+        </div>
+        <div className="flex gap-1.5">
+          {salesCount > 0 && (
+            <span className="px-2 py-0.5 bg-red-100 text-red-700 text-[10px] font-bold rounded-full flex items-center gap-0.5">
+              ★ 매출 {salesCount}
+            </span>
+          )}
+          {otCount > 0 && <span className="px-2 py-0.5 bg-emerald-200 text-emerald-800 text-[10px] font-bold rounded-full">OT {otCount}</span>}
+          {ptCount > 0 && <span className="px-2 py-0.5 bg-blue-200 text-blue-800 text-[10px] font-bold rounded-full">PT {ptCount}</span>}
+          {pptCount > 0 && <span className="px-2 py-0.5 bg-purple-200 text-purple-800 text-[10px] font-bold rounded-full">PPT {pptCount}</span>}
+          {otherCount > 0 && <span className="px-2 py-0.5 bg-gray-200 text-gray-700 text-[10px] font-bold rounded-full">기타 {otherCount}</span>}
+        </div>
+      </div>
+      {hasSchedules ? (
+        <div className="divide-y divide-gray-100">
+          {trainer.schedules.map((s) => {
+            const isOtType = ['OT', 'PT', 'PPT'].includes(s.schedule_type)
+            const isClickable = isOtType && !!(s.ot_assignment_id || s.member_id)
+            return (
+              <div
+                key={s.id}
+                className={cn('flex items-center gap-3 px-4 py-2.5 transition-colors', isClickable ? 'hover:bg-yellow-50 cursor-pointer' : 'hover:bg-gray-50')}
+                onClick={() => isClickable && onScheduleClick(s)}
+              >
+                <div className="text-xs text-gray-600 font-mono w-[90px] shrink-0 flex items-center gap-1">
+                  <Clock className="h-3 w-3" />
+                  {formatTime(s.start_time)}~{endTime(s.start_time, s.duration)}
+                </div>
+                <span className={cn('px-2 py-0.5 rounded text-[11px] font-bold border shrink-0', TYPE_BADGE_COLORS[s.schedule_type] ?? TYPE_BADGE_COLORS['기타'])}>
+                  {s.schedule_type}
+                </span>
+                <span className="text-sm font-medium text-gray-800 truncate flex items-center gap-1">
+                  <User className="h-3 w-3 text-gray-400" />
+                  {s.member_name || '-'}
+                </span>
+                {s.is_sales_target && (
+                  <span className="px-1.5 py-0.5 bg-red-100 text-red-700 text-[10px] font-bold rounded flex items-center gap-0.5 shrink-0">
+                    ★ 매출대상
+                  </span>
+                )}
+                {s.note && <span className="text-xs text-gray-500 truncate ml-auto hidden sm:block max-w-[200px]">{s.note}</span>}
+              </div>
+            )
+          })}
+        </div>
+      ) : (
+        <div className="px-4 py-6 text-center text-xs text-gray-400">등록된 스케줄이 없습니다</div>
+      )}
+    </div>
+  )
+})
+
+const SummaryBar = memo(function SummaryBar({ data }: { data: TrainerDaySchedule[] }) {
+  const all = data.flatMap((t) => t.schedules)
+  const typeCount = new Map<string, number>()
+  for (const s of all) typeCount.set(s.schedule_type, (typeCount.get(s.schedule_type) ?? 0) + 1)
+  const entries = Array.from(typeCount.entries()).sort((a, b) => b[1] - a[1])
+  const salesCount = all.filter((s) => s.is_sales_target).length
+
+  return (
+    <div className="bg-white/5 border border-white/10 rounded-xl px-4 py-3">
+      <div className="flex items-center justify-between flex-wrap gap-2">
+        <div className="text-xs font-bold text-gray-400">
+          총 {all.length}건 | {data.filter((t) => t.schedules.length > 0).length}명 활동
+          {salesCount > 0 && <span className="text-red-400 ml-2">| 매출대상 {salesCount}명</span>}
+        </div>
+        <div className="flex gap-2 flex-wrap">
+          {entries.map(([type, count]) => (
+            <span key={type} className={cn('px-2 py-0.5 rounded text-[10px] font-bold border', TYPE_BADGE_COLORS[type] ?? TYPE_BADGE_COLORS['기타'])}>
+              {type} {count}
+            </span>
+          ))}
+        </div>
+      </div>
+    </div>
+  )
+})

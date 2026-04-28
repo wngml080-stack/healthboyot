@@ -14,10 +14,16 @@ export async function addChangeLog(values: {
 
   const { data: { session } } = await supabase.auth.getSession()
 
-  await supabase.from('change_logs').insert({
+  const { error } = await supabase.from('change_logs').insert({
     ...values,
     changed_by: session?.user?.id ?? null,
   })
+
+  if (error) {
+    console.error('[addChangeLog] insert 실패:', error.message)
+    return { error: error.message }
+  }
+  return { success: true }
 }
 
 export interface ChangeLog {
