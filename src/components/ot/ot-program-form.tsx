@@ -557,14 +557,21 @@ export const OtProgramForm = forwardRef<OtProgramFormRef, Props>(function OtProg
     if (result.error) { setSaving(false); setError(result.error); return }
 
     // 프로그램 세션의 날짜/시간 → ot_sessions + trainer_schedules 자동 동기화 (병렬)
-    // 완료 여부와 무관하게 날짜/시간/duration 변경 시 모두 동기화
     const sessionsToSync = (overrideSessions ?? sessions)
     const syncPromises: Promise<unknown>[] = []
     for (let i = 0; i < sessionsToSync.length; i++) {
       const s = sessionsToSync[i]
       if (!s.date || !s.time) continue
+      if (s.completed) continue // 완료된 세션은 스케줄 덮어쓰기 방지
+      // 시간 형식 검증: HH:MM 형식이어야 함
+      const timeMatch = s.time.match(/^(\d{1,2}):(\d{2})$/)
+      if (!timeMatch) continue
+      const hh = String(Number(timeMatch[1])).padStart(2, '0')
+      const mm = timeMatch[2]
+      const normalizedTime = `${hh}:${mm}`
       const sessionNumber = i + 1
-      const scheduledAt = new Date(`${s.date}T${s.time}:00+09:00`).toISOString()
+      const scheduledAt = new Date(`${s.date}T${normalizedTime}:00+09:00`).toISOString()
+      if (isNaN(new Date(scheduledAt).getTime())) continue // Invalid Date 방어
       syncPromises.push(upsertOtSession({
         ot_assignment_id: a.id,
         session_number: sessionNumber,

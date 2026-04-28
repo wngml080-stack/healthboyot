@@ -1092,10 +1092,10 @@ export function WeeklyCalendar({ assignments, trainerId, profile, workStartTime,
       }
     }
 
+    await fetchSchedules()
     setEditSchedule(null)
     setEditSaving(false)
-    await fetchSchedules()
-    router.refresh()
+    startTransition(() => router.refresh())
   }
 
   const handleDetailSave = async () => {
@@ -1337,7 +1337,7 @@ export function WeeklyCalendar({ assignments, trainerId, profile, workStartTime,
                         key={s.id}
                         data-schedule-id={s.id}
                         className={`absolute rounded border ${isMobile ? 'px-0.5 py-0' : 'px-1 py-0.5'} overflow-hidden group select-none ${draggable ? 'cursor-grab active:cursor-grabbing' : 'cursor-pointer'} ${isSales ? 'ring-2 ring-blue-400 ' : ''} ${isDragging ? 'shadow-2xl ring-2 ring-yellow-400 opacity-80' : ''} ${color}`}
-                        style={{ top, height, zIndex: isDragging ? 30 : 5, touchAction: 'none', left: layout.total > 1 ? `${colLeft}%` : (isMobile ? 0 : 2), right: layout.total > 1 ? `${100 - colLeft - colWidth}%` : (isMobile ? 0 : 2) }}
+                        style={{ top, height, zIndex: isDragging ? 30 : 5, touchAction: 'none', left: isDragging ? 0 : (layout.total > 1 ? `${colLeft}%` : (isMobile ? 0 : 2)), right: isDragging ? 0 : (layout.total > 1 ? `${100 - colLeft - colWidth}%` : (isMobile ? 0 : 2)), width: isDragging ? '100%' : undefined }}
                         onPointerDown={(e) => handleSchedulePointerDown(e, s)}
                         onPointerMove={handleSchedulePointerMove}
                         onPointerUp={handleSchedulePointerUp}
