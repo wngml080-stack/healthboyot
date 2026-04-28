@@ -1026,6 +1026,18 @@ export function TrainerCardList({ assignments, trainers = [], trainerId, trainer
                       {a.notes && (
                         <p className="mt-1 text-[10px] text-orange-700 bg-orange-50 rounded px-2 py-0.5 truncate">📝 {a.notes}</p>
                       )}
+                      {(() => {
+                        const reason = a.excluded_reason || a.sales_note
+                        const status = a.sales_status
+                        const isInactive = a.is_excluded || ['연락두절','스케줄미확정','OT거부자','수업후거부','클로징실패'].includes(status)
+                        if (!isInactive) return null
+                        const label = a.is_excluded ? '거부/제외' : status === 'OT거부자' ? '거부' : status === '수업후거부' ? '수업후 거부' : status
+                        return (
+                          <p className="mt-1 text-[10px] text-red-600 bg-red-50 rounded px-2 py-0.5 truncate">
+                            ⚠️ {label}{reason ? ` — ${reason}` : ''}
+                          </p>
+                        )
+                      })()}
                       </div>
 
                       {/* 펼침: 상세 + OT 세션 */}
