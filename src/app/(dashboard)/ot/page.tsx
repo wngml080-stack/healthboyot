@@ -6,20 +6,11 @@ import { getCurrentProfile } from '@/actions/auth'
 import { getAllOtPrograms } from '@/actions/ot-program'
 import { getOtRegistrationsByTrainer } from '@/actions/ot-registration'
 import { getTrainerScheduleSlots } from '@/actions/schedule'
-import dynamic from 'next/dynamic'
 import { TrainerSubNav } from '@/components/ot/trainer-sub-nav'
-const TrainerCardList = dynamic(() => import('@/components/ot/trainer-card-list').then((m) => m.TrainerCardList), {
-  loading: () => <div className="py-10 text-center text-sm text-gray-500">회원 목록 로드 중...</div>,
-})
-const TrainerFolderGrid = dynamic(() => import('@/components/ot/trainer-folder-grid').then((m) => m.TrainerFolderGrid), {
-  loading: () => <div className="py-10 text-center text-sm text-gray-500">폴더 로드 중...</div>,
-})
-const TrainerStats = dynamic(() => import('@/components/ot/trainer-stats').then((m) => m.TrainerStats), {
-  loading: () => <div className="py-10 text-center text-sm text-gray-500">통계 로드 중...</div>,
-})
-const WeeklyCalendar = dynamic(() => import('@/components/ot/weekly-calendar').then((m) => m.WeeklyCalendar), {
-  loading: () => <div className="py-10 text-center text-sm text-gray-500">캘린더 로드 중...</div>,
-})
+import { TrainerCardList } from '@/components/ot/trainer-card-list'
+import { TrainerFolderGrid } from '@/components/ot/trainer-folder-grid'
+import { TrainerStats } from '@/components/ot/trainer-stats'
+import { WeeklyCalendar } from '@/components/ot/weekly-calendar'
 import { PageTitle } from '@/components/shared/page-title'
 import { NotificationBell } from '@/components/ot/notification-bell'
 import { ArrowLeft, Loader2 } from 'lucide-react'
@@ -102,10 +93,10 @@ async function TrainerDetailView({ trainerId, tab }: { trainerId: string; tab: s
       tab === 'stats'
         ? getAllOtPrograms({ includeAll: true })
         : Promise.resolve([]),
-      trainerId !== 'unassigned'
+      trainerId !== 'unassigned' && trainerId !== 'excluded'
         ? getTrainerScheduleSlots(trainerId)
         : Promise.resolve([]),
-      tab === 'stats' && trainerId !== 'unassigned'
+      tab === 'stats' && trainerId !== 'unassigned' && trainerId !== 'excluded'
         ? getOtRegistrationsByTrainer(trainerId)
         : Promise.resolve([]),
     ])
@@ -139,7 +130,9 @@ async function TrainerDetailView({ trainerId, tab }: { trainerId: string; tab: s
 
   const trainerName = trainerId === 'unassigned'
     ? '미배정'
-    : staffList.find((s) => s.id === trainerId)?.name ?? '트레이너'
+    : trainerId === 'excluded'
+      ? '제외회원'
+      : staffList.find((s) => s.id === trainerId)?.name ?? '트레이너'
 
   const myRole = profile ? (() => {
     const isPT = trainerAssignments.some((a) => a.pt_trainer_id === profile.id)
