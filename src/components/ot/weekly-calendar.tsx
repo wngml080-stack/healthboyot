@@ -270,6 +270,7 @@ export function WeeklyCalendar({ assignments, trainerId, profile, workStartTime,
   const [weekOffset, setWeekOffset] = useState(0)
   const [viewMode, setViewMode] = useState<'week' | 'month'>('week')
   const [monthOffset, setMonthOffset] = useState(0)
+  const [monthFilter, setMonthFilter] = useState<'전체' | 'OT' | 'PT' | 'PPT'>('전체')
   const [, startTransition] = useTransition()
   const [schedules, setSchedules] = useState<ScheduleItem[]>([])
   const [loading, setLoading] = useState(false)
@@ -1266,18 +1267,21 @@ export function WeeklyCalendar({ assignments, trainerId, profile, workStartTime,
           }
           if (week.length > 0) { while (week.length < 7) week.push(null); weeks.push(week) }
 
+          const typeColor: Record<string, string> = { OT: 'bg-emerald-400', PT: 'bg-blue-400', PPT: 'bg-violet-400' }
+
+          // 필터 적용
+          const filteredSchedules = monthFilter === '전체' ? schedules : schedules.filter((s) => s.schedule_type === monthFilter)
+
           // 이 달의 스케줄을 날짜별 그룹
           const monthStr = `${year}-${String(month + 1).padStart(2, '0')}`
           const daySchedules = new Map<number, typeof schedules>()
-          for (const s of schedules) {
+          for (const s of filteredSchedules) {
             if (s.scheduled_date.startsWith(monthStr)) {
               const day = Number(s.scheduled_date.slice(8, 10))
               if (!daySchedules.has(day)) daySchedules.set(day, [])
               daySchedules.get(day)!.push(s)
             }
           }
-
-          const typeColor: Record<string, string> = { OT: 'bg-emerald-400', PT: 'bg-blue-400', PPT: 'bg-violet-400' }
 
           // OT 차수 맵 생성 (ot_session_id → session_number)
           const sessionNumMap = new Map<string, number>()
@@ -1288,6 +1292,20 @@ export function WeeklyCalendar({ assignments, trainerId, profile, workStartTime,
           }
 
           return (
+            <div className="space-y-2">
+            <div className="flex gap-1.5">
+              {(['전체', 'OT', 'PT', 'PPT'] as const).map((f) => (
+                <button
+                  key={f}
+                  className={`px-3 py-1 rounded-full text-xs font-bold transition-colors ${
+                    monthFilter === f
+                      ? f === 'OT' ? 'bg-emerald-500 text-white' : f === 'PT' ? 'bg-blue-500 text-white' : f === 'PPT' ? 'bg-violet-500 text-white' : 'bg-gray-900 text-white'
+                      : 'bg-white text-gray-600 border border-gray-300 hover:bg-gray-50'
+                  }`}
+                  onClick={() => setMonthFilter(f)}
+                >{f}</button>
+              ))}
+            </div>
             <div className="rounded-lg border border-gray-200 bg-white -mx-4 sm:mx-0 overflow-hidden">
               <div className="grid grid-cols-7 bg-gray-900 text-white text-xs text-center">
                 {['일', '월', '화', '수', '목', '금', '토'].map((d) => (
@@ -1335,6 +1353,7 @@ export function WeeklyCalendar({ assignments, trainerId, profile, workStartTime,
                   })}
                 </div>
               ))}
+            </div>
             </div>
           )
         })()}

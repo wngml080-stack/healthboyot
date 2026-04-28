@@ -22,12 +22,15 @@ export default async function OtPage({ searchParams }: OtPageProps) {
   const trainerId = params.trainer
   const tab = params.tab ?? 'schedule'
 
-  // 폴더 뷰
+  // 폴더 뷰 — 제목 즉시 표시, 폴더 그리드는 스트리밍
   if (!trainerId) {
     return (
-      <Suspense fallback={<FolderViewSkeleton />}>
-        <FolderView />
-      </Suspense>
+      <div className="space-y-4">
+        <PageTitle>트레이너 관리</PageTitle>
+        <Suspense fallback={<FolderViewSkeleton />}>
+          <FolderView />
+        </Suspense>
+      </div>
     )
   }
 
@@ -47,25 +50,24 @@ async function FolderView() {
     getCurrentProfile(),
   ])
   return (
-    <div className="space-y-4">
-      <div className="flex items-center justify-between">
-        <PageTitle>트레이너 관리</PageTitle>
-        {(profile?.role === 'admin' || profile?.role === '관리자') && (
+    <>
+      {(profile?.role === 'admin' || profile?.role === '관리자') && (
+        <div className="flex justify-end -mt-2">
           <Link
             href="/ot/recover"
             className="text-xs text-orange-600 hover:text-orange-700 underline"
           >
             OT 세션 복구
           </Link>
-        )}
-      </div>
+        </div>
+      )}
       <TrainerFolderGrid
         folders={folders}
         allStaff={staffList.map((s) => ({ id: s.id, name: s.name, role: s.role, is_approved: s.is_approved }))}
         currentUserRole={profile?.role ?? 'fc'}
         currentUserId={profile?.id}
       />
-    </div>
+    </>
   )
 }
 

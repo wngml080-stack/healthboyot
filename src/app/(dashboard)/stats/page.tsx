@@ -5,12 +5,17 @@ import { getAdminDashboard } from '@/actions/admin-dashboard'
 import { getCurrentProfile } from '@/actions/auth'
 import { StatsView } from '@/components/stats/stats-view'
 import { AdminDashboard } from '@/components/stats/admin-dashboard'
+import { PageTitle } from '@/components/shared/page-title'
+import { Loader2 } from 'lucide-react'
 
 export default async function StatsPage() {
   return (
-    <Suspense fallback={<div className="py-10 text-center text-sm text-gray-500">통계 로드 중...</div>}>
-      <StatsContent />
-    </Suspense>
+    <div className="space-y-4">
+      <PageTitle>통계</PageTitle>
+      <Suspense fallback={<DataSkeleton />}>
+        <StatsContent />
+      </Suspense>
+    </div>
   )
 }
 
@@ -29,6 +34,15 @@ async function StatsContent() {
     <div className="space-y-8">
       {isAdmin && <AdminDashboard data={dashboard} initialPeriod="monthly" />}
       <StatsView stats={stats} target={target} />
+    </div>
+  )
+}
+
+function DataSkeleton() {
+  return (
+    <div className="flex items-center justify-center py-16 text-muted-foreground gap-2">
+      <Loader2 className="h-5 w-5 animate-spin" />
+      <span className="text-sm">통계를 불러오는 중...</span>
     </div>
   )
 }
