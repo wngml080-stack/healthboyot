@@ -991,8 +991,8 @@ export const OtProgramForm = forwardRef<OtProgramFormRef, Props>(function OtProg
                         } disabled:opacity-50`}
                         onClick={() => {
                           updateSession(idx, 'class_duration', d)
-                          // 완료된 세션도 trainer_schedules duration 즉시 반영
-                          if (session.date && session.time) {
+                          // 미완료 세션만 trainer_schedules duration 즉시 반영
+                          if (!session.completed && session.date && session.time) {
                             const scheduledAt = new Date(`${session.date}T${session.time}:00+09:00`).toISOString()
                             upsertOtSession({
                               ot_assignment_id: a.id,

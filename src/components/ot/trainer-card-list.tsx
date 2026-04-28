@@ -696,17 +696,13 @@ export function TrainerCardList({ assignments, trainers = [], trainerId, trainer
       for (const s of sorted) {
         const n = s.session_number
         if (s.completed_at) {
-          // 수업일(scheduled_at)과 완료처리일(completed_at)을 비교
-          // scheduled_at이 있고 완료일과 다른 날이면 → "수업" + "완료" 분리 표기
-          // 같은 날이거나 scheduled_at 없으면 → "완료"만 표기
+          // scheduled_at이 있으면 항상 "수업" 표시 + "완료" 표시
           const completeDate = format(new Date(s.completed_at), 'MM.dd')
           if (s.scheduled_at) {
             const classDate = format(new Date(s.scheduled_at), 'MM.dd')
+            log.push({ label: `${n}차수업`, date: classDate, color: 'text-blue-600' })
             if (classDate !== completeDate) {
-              log.push({ label: `${n}차수업`, date: classDate, color: 'text-blue-600' })
               log.push({ label: `${n}차완료`, date: completeDate, color: 'text-emerald-600' })
-            } else {
-              log.push({ label: `${n}차완료`, date: classDate, color: 'text-blue-600' })
             }
           } else {
             log.push({ label: `${n}차완료`, date: completeDate, color: 'text-blue-600' })
@@ -1352,148 +1348,114 @@ export function TrainerCardList({ assignments, trainers = [], trainerId, trainer
                                     const isPtConversion = so?.is_pt_conversion ?? (a.is_pt_conversion || programSessions.some((s) => s.is_pt_conversion))
                                     const currentSalesStatus = so?.sales_status ?? a.sales_status
                                     const isClosingFail = currentSalesStatus === '클로징실패'
+                                    const salesFormId = `sf-${a.id}`
+                                    // 취소: 버튼 상태 + 입력값 모두 원래대로
+                                    const handleSalesCancel = () => {
+                                      setSalesOverrides((prev) => { const copy = { ...prev }; delete copy[a.id]; return copy })
+                                      // 입력값 리셋
+                                      const els = {
+                                        sessions: document.getElementById(`${salesFormId}-sessions`) as HTMLInputElement | null,
+                                        amount: document.getElementById(`${salesFormId}-amount`) as HTMLInputElement | null,
+                                        prob: document.getElementById(`${salesFormId}-prob`) as HTMLInputElement | null,
+                                        ptSessions: document.getElementById(`${salesFormId}-pt-sessions`) as HTMLInputElement | null,
+                                        ptAmount: document.getElementById(`${salesFormId}-pt-amount`) as HTMLInputElement | null,
+                                        failReason: document.getElementById(`${salesFormId}-fail`) as HTMLTextAreaElement | null,
+                                      }
+                                      if (els.sessions) els.sessions.value = String(a.expected_sessions || '')
+                                      if (els.amount) els.amount.value = a.expected_amount ? String(toManwon(a.expected_amount)) : ''
+                                      if (els.prob) els.prob.value = a.closing_probability ? `${a.closing_probability}%` : ''
+                                      if (els.ptSessions) els.ptSessions.value = String(a.expected_sessions || '')
+                                      if (els.ptAmount) els.ptAmount.value = a.actual_sales ? String(toManwon(a.actual_sales)) : ''
+                                      if (els.failReason) els.failReason.value = a.closing_fail_reason ?? ''
+                                    }
+                                    // 저장: 버튼 상태 + 입력값 한번에
+                                    const handleSalesSave = () => {
+                                      const update: Record<string, unknown> = {
+                                        is_sales_target: isSalesTarget,
+                                        is_pt_conversion: isPtConversion,
+                                      }
+                                      if (isClosingFail) {
+                                        update.sales_status = '클로징실패'
+                                        const el = document.getElementById(`${salesFormId}-fail`) as HTMLTextAreaElement | null
+                                        update.closing_fail_reason = el?.value.trim() || null
+                                      } else if (isPtConversion) {
+                                        update.sales_status = '등록완료'
+                                      }
+                                      if (isSalesTarget) {
+                                        update.expected_sessions = Number((document.getElementById(`${salesFormId}-sessions`) as HTMLInputElement)?.value) || 0
+                                        update.expected_amount = Number((document.getElementById(`${salesFormId}-amount`) as HTMLInputElement)?.value) || 0
+                                        update.closing_probability = Number((document.getElementById(`${salesFormId}-prob`) as HTMLInputElement)?.value.replace('%', '')) || 0
+                                      }
+                                      if (isPtConversion) {
+                                        update.expected_sessions = Number((document.getElementById(`${salesFormId}-pt-sessions`) as HTMLInputElement)?.value) || update.expected_sessions || 0
+                                        update.actual_sales = Number((document.getElementById(`${salesFormId}-pt-amount`) as HTMLInputElement)?.value) || 0
+                                      }
+                                      updateOtAssignment(a.id, update).then(() => startTransition(() => router.refresh()))
+                                    }
                                     return (
                                   <div className="rounded-lg border border-emerald-200 bg-emerald-50/40 p-4 space-y-3" onClick={(e) => e.stopPropagation()}>
                                     <p className="text-sm font-bold text-emerald-800">💰 세일즈 정보</p>
 
-                                    {/* 상태 버튼: 매출대상자 / PT전환 / 클로징실패 */}
+                                    {/* 상태 버튼: 매출대상자 / PT전환 / 클로징실패 — 클릭은 로컬 상태만 변경 */}
                                     <div className="grid grid-cols-3 gap-1.5">
                                       <button type="button"
                                         className={`h-10 rounded-lg border-2 text-sm font-bold transition-colors ${isSalesTarget ? 'bg-purple-600 text-white border-purple-600' : 'bg-white border-purple-200 text-purple-600'}`}
-                                        onClick={() => {
-                                          const next = !isSalesTarget
-                                          setSalesOverrides((prev) => ({ ...prev, [a.id]: { ...prev[a.id], is_sales_target: next } }))
-                                          updateOtAssignment(a.id, { is_sales_target: next })
-                                        }}
+                                        onClick={() => setSalesOverrides((prev) => ({ ...prev, [a.id]: { ...prev[a.id], is_sales_target: !isSalesTarget } }))}
                                       >★ 매출대상자 {isSalesTarget ? '✓' : ''}</button>
                                       <button type="button"
                                         className={`h-10 rounded-lg border-2 text-sm font-bold transition-colors ${isPtConversion ? 'bg-blue-600 text-white border-blue-600' : 'bg-white text-blue-600 border-blue-200'}`}
-                                        onClick={() => {
-                                          if (isPtConversion) {
-                                            setSalesOverrides((prev) => ({ ...prev, [a.id]: { ...prev[a.id], is_pt_conversion: false, sales_status: 'OT진행중' } }))
-                                            updateOtAssignment(a.id, { is_pt_conversion: false, sales_status: 'OT진행중' })
-                                          } else {
-                                            setSalesOverrides((prev) => ({ ...prev, [a.id]: { ...prev[a.id], is_pt_conversion: true, sales_status: '등록완료' } }))
-                                            updateOtAssignment(a.id, { is_pt_conversion: true, sales_status: '등록완료' })
-                                          }
-                                        }}
+                                        onClick={() => setSalesOverrides((prev) => ({ ...prev, [a.id]: { ...prev[a.id], is_pt_conversion: !isPtConversion, ...(isPtConversion ? { sales_status: 'OT진행중' } : { sales_status: '등록완료' }) } }))}
                                       >PT전환 {isPtConversion ? '✓' : ''}</button>
                                       <button type="button"
                                         className={`h-10 rounded-lg border-2 text-sm font-bold transition-colors ${isClosingFail ? 'bg-red-500 text-white border-red-500' : 'bg-white text-red-500 border-red-200'}`}
-                                        onClick={() => {
-                                          if (isClosingFail) {
-                                            setSalesOverrides((prev) => ({ ...prev, [a.id]: { ...prev[a.id], is_pt_conversion: false, sales_status: 'OT진행중' } }))
-                                            updateOtAssignment(a.id, { sales_status: 'OT진행중', closing_fail_reason: null, is_pt_conversion: false })
-                                          } else {
-                                            setSalesOverrides((prev) => ({ ...prev, [a.id]: { ...prev[a.id], is_pt_conversion: false, sales_status: '클로징실패' } }))
-                                            updateOtAssignment(a.id, { sales_status: '클로징실패', is_pt_conversion: false })
-                                          }
-                                        }}
+                                        onClick={() => setSalesOverrides((prev) => ({ ...prev, [a.id]: { ...prev[a.id], is_pt_conversion: false, sales_status: isClosingFail ? 'OT진행중' : '클로징실패' } }))}
                                       >클로징실패 {isClosingFail ? '✓' : ''}</button>
                                     </div>
 
                                     {/* 매출대상자: 예상횟수, 예상금액, 클로징확률 */}
-                                    {a.is_sales_target && (() => {
-                                      const sid = `sales-${a.id}`
-                                      return (
-                                      <div className="space-y-2">
-                                        <div className="grid grid-cols-3 gap-2 text-xs">
-                                          <div>
-                                            <p className="text-gray-500 mb-1">예상 횟수</p>
-                                            <Input id={`${sid}-sessions`} type="number" defaultValue={a.expected_sessions || ''} placeholder="회" className="h-8 text-xs bg-white text-gray-900 border-gray-300" />
-                                          </div>
-                                          <div>
-                                            <p className="text-gray-500 mb-1">예상 금액 (만원)</p>
-                                            <Input id={`${sid}-amount`} type="number" defaultValue={a.expected_amount ? toManwon(a.expected_amount) : ''} placeholder="만원" className="h-8 text-xs bg-white text-gray-900 border-gray-300" />
-                                          </div>
-                                          <div>
-                                            <p className="text-gray-500 mb-1">클로징 확률</p>
-                                            <Input id={`${sid}-prob`} type="text" defaultValue={a.closing_probability ? `${a.closing_probability}%` : ''} placeholder="%" className="h-8 text-xs bg-white text-gray-900 border-gray-300" />
-                                          </div>
+                                    {isSalesTarget && (
+                                      <div className="grid grid-cols-3 gap-2 text-xs">
+                                        <div>
+                                          <p className="text-gray-500 mb-1">예상 횟수</p>
+                                          <Input id={`${salesFormId}-sessions`} type="number" defaultValue={a.expected_sessions || ''} placeholder="회" className="h-8 text-xs bg-white text-gray-900 border-gray-300" />
                                         </div>
-                                        <div className="flex gap-2 justify-end">
-                                          <Button size="sm" variant="outline" className="h-7 text-xs text-gray-500 border-gray-300 bg-white hover:bg-gray-100"
-                                            onClick={() => {
-                                              const s = document.getElementById(`${sid}-sessions`) as HTMLInputElement | null
-                                              const am = document.getElementById(`${sid}-amount`) as HTMLInputElement | null
-                                              const p = document.getElementById(`${sid}-prob`) as HTMLInputElement | null
-                                              if (s) s.value = String(a.expected_sessions || '')
-                                              if (am) am.value = a.expected_amount ? String(toManwon(a.expected_amount)) : ''
-                                              if (p) p.value = a.closing_probability ? `${a.closing_probability}%` : ''
-                                            }}
-                                          >취소</Button>
-                                          <Button size="sm" className="h-7 text-xs bg-purple-600 hover:bg-purple-700 text-white"
-                                            onClick={() => {
-                                              const sessions = Number((document.getElementById(`${sid}-sessions`) as HTMLInputElement)?.value) || 0
-                                              const amount = Number((document.getElementById(`${sid}-amount`) as HTMLInputElement)?.value) || 0
-                                              const prob = Number((document.getElementById(`${sid}-prob`) as HTMLInputElement)?.value.replace('%', '')) || 0
-                                              updateOtAssignment(a.id, { expected_sessions: sessions, expected_amount: amount, closing_probability: prob }).then(() => startTransition(() => router.refresh()))
-                                            }}
-                                          >저장</Button>
+                                        <div>
+                                          <p className="text-gray-500 mb-1">예상 금액 (만원)</p>
+                                          <Input id={`${salesFormId}-amount`} type="number" defaultValue={a.expected_amount ? toManwon(a.expected_amount) : ''} placeholder="만원" className="h-8 text-xs bg-white text-gray-900 border-gray-300" />
+                                        </div>
+                                        <div>
+                                          <p className="text-gray-500 mb-1">클로징 확률</p>
+                                          <Input id={`${salesFormId}-prob`} type="text" defaultValue={a.closing_probability ? `${a.closing_probability}%` : ''} placeholder="%" className="h-8 text-xs bg-white text-gray-900 border-gray-300" />
                                         </div>
                                       </div>
-                                      )
-                                    })()}
+                                    )}
 
                                     {/* PT전환: 클로징횟수, 클로징금액 */}
-                                    {isPtConversion && (() => {
-                                      const pid = `pt-${a.id}`
-                                      return (
-                                      <div className="space-y-2">
-                                        <div className="grid grid-cols-2 gap-2 text-xs">
-                                          <div>
-                                            <p className="text-blue-600 mb-1 font-bold">클로징 횟수</p>
-                                            <Input id={`${pid}-sessions`} type="number" defaultValue={a.expected_sessions || ''} placeholder="회" className="h-8 text-xs bg-white text-gray-900 border-blue-300" />
-                                          </div>
-                                          <div>
-                                            <p className="text-blue-600 mb-1 font-bold">클로징 금액 (만원)</p>
-                                            <Input id={`${pid}-amount`} type="number" defaultValue={a.actual_sales ? toManwon(a.actual_sales) : ''} placeholder="만원" className="h-8 text-xs bg-white text-gray-900 border-blue-300" />
-                                          </div>
+                                    {isPtConversion && (
+                                      <div className="grid grid-cols-2 gap-2 text-xs">
+                                        <div>
+                                          <p className="text-blue-600 mb-1 font-bold">클로징 횟수</p>
+                                          <Input id={`${salesFormId}-pt-sessions`} type="number" defaultValue={a.expected_sessions || ''} placeholder="회" className="h-8 text-xs bg-white text-gray-900 border-blue-300" />
                                         </div>
-                                        <div className="flex gap-2 justify-end">
-                                          <Button size="sm" variant="outline" className="h-7 text-xs text-gray-500 border-gray-300 bg-white hover:bg-gray-100"
-                                            onClick={() => {
-                                              const s = document.getElementById(`${pid}-sessions`) as HTMLInputElement | null
-                                              const am = document.getElementById(`${pid}-amount`) as HTMLInputElement | null
-                                              if (s) s.value = String(a.expected_sessions || '')
-                                              if (am) am.value = a.actual_sales ? String(toManwon(a.actual_sales)) : ''
-                                            }}
-                                          >취소</Button>
-                                          <Button size="sm" className="h-7 text-xs bg-blue-600 hover:bg-blue-700 text-white"
-                                            onClick={() => {
-                                              const sessions = Number((document.getElementById(`${pid}-sessions`) as HTMLInputElement)?.value) || 0
-                                              const amount = Number((document.getElementById(`${pid}-amount`) as HTMLInputElement)?.value) || 0
-                                              updateOtAssignment(a.id, { expected_sessions: sessions, actual_sales: amount }).then(() => startTransition(() => router.refresh()))
-                                            }}
-                                          >저장</Button>
+                                        <div>
+                                          <p className="text-blue-600 mb-1 font-bold">클로징 금액 (만원)</p>
+                                          <Input id={`${salesFormId}-pt-amount`} type="number" defaultValue={a.actual_sales ? toManwon(a.actual_sales) : ''} placeholder="만원" className="h-8 text-xs bg-white text-gray-900 border-blue-300" />
                                         </div>
                                       </div>
-                                      )
-                                    })()}
+                                    )}
 
                                     {/* 클로징실패: 사유 입력 */}
-                                    {isClosingFail && (() => {
-                                      const tid = `fail-reason-${a.id}`
-                                      return (
-                                      <div className="text-xs space-y-2">
+                                    {isClosingFail && (
+                                      <div className="text-xs space-y-1">
                                         <p className="text-red-600 font-bold">실패 사유</p>
                                         <textarea
-                                          id={tid}
+                                          id={`${salesFormId}-fail`}
                                           defaultValue={a.closing_fail_reason ?? ''}
                                           placeholder="클로징 실패 사유를 입력해주세요"
                                           className="w-full rounded-md border border-red-300 bg-white text-sm text-gray-900 p-2 h-16 resize-none"
                                         />
-                                        <div className="flex gap-2 justify-end">
-                                          <Button size="sm" variant="outline" className="h-7 text-xs text-gray-500 border-gray-300 bg-white hover:bg-gray-100"
-                                            onClick={() => { const el = document.getElementById(tid) as HTMLTextAreaElement | null; if (el) el.value = a.closing_fail_reason ?? '' }}
-                                          >취소</Button>
-                                          <Button size="sm" className="h-7 text-xs bg-red-600 hover:bg-red-700 text-white"
-                                            onClick={() => { const el = document.getElementById(tid) as HTMLTextAreaElement | null; updateOtAssignment(a.id, { closing_fail_reason: el?.value.trim() || null }) }}
-                                          >저장</Button>
-                                        </div>
                                       </div>
-                                      )
-                                    })()}
+                                    )}
 
                                     {a.sales_note && (
                                       <div className="rounded bg-white p-2 text-xs">
@@ -1501,6 +1463,16 @@ export function TrainerCardList({ assignments, trainers = [], trainerId, trainer
                                         <p className="text-gray-800 whitespace-pre-wrap">{a.sales_note}</p>
                                       </div>
                                     )}
+
+                                    {/* 통합 저장/취소 버튼 */}
+                                    <div className="flex gap-2 justify-end border-t border-emerald-200 pt-3">
+                                      <Button size="sm" variant="outline" className="h-8 px-4 text-xs text-gray-500 border-gray-300 bg-white hover:bg-gray-100 font-bold"
+                                        onClick={handleSalesCancel}
+                                      >취소</Button>
+                                      <Button size="sm" className="h-8 px-4 text-xs bg-emerald-600 hover:bg-emerald-700 text-white font-bold"
+                                        onClick={handleSalesSave}
+                                      >저장</Button>
+                                    </div>
                                   </div>
                                     )
                                   })()}
