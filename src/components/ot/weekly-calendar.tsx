@@ -1279,6 +1279,14 @@ export function WeeklyCalendar({ assignments, trainerId, profile, workStartTime,
 
           const typeColor: Record<string, string> = { OT: 'bg-emerald-400', PT: 'bg-blue-400', PPT: 'bg-violet-400' }
 
+          // OT 차수 맵 생성 (ot_session_id → session_number)
+          const sessionNumMap = new Map<string, number>()
+          for (const a of assignments) {
+            for (const sess of a.sessions ?? []) {
+              sessionNumMap.set(sess.id, sess.session_number)
+            }
+          }
+
           return (
             <div className="rounded-lg border border-gray-200 bg-white -mx-4 sm:mx-0 overflow-hidden">
               <div className="grid grid-cols-7 bg-gray-900 text-white text-xs text-center">
@@ -1290,14 +1298,13 @@ export function WeeklyCalendar({ assignments, trainerId, profile, workStartTime,
                 <div key={wi} className="grid grid-cols-7 border-t border-gray-200">
                   {week.map((day, di) => {
                     const isToday = day && new Date().getDate() === day && new Date().getMonth() === month && new Date().getFullYear() === year
-                    const dayItems = day ? (daySchedules.get(day) ?? []) : []
+                    const dayItems = day ? (daySchedules.get(day) ?? []).sort((a, b) => a.start_time.localeCompare(b.start_time)) : []
                     return (
                       <div
                         key={di}
-                        className={`min-h-[80px] sm:min-h-[100px] border-l border-gray-100 p-1 ${!day ? 'bg-gray-50' : ''} ${isToday ? 'bg-yellow-50' : ''} ${di === 0 || di === 6 ? 'bg-red-50/30' : ''}`}
+                        className={`min-h-[280px] border-l border-gray-100 p-1 cursor-pointer hover:bg-gray-50 ${!day ? 'bg-gray-50' : ''} ${isToday ? 'bg-yellow-50' : ''} ${di === 0 || di === 6 ? 'bg-red-50/30' : ''}`}
                         onClick={() => {
                           if (!day) return
-                          // 해당 주로 이동
                           const clickedDate = new Date(year, month, day)
                           const today = new Date()
                           const diff = Math.round((clickedDate.getTime() - today.getTime()) / (7 * 86400000))
@@ -1308,14 +1315,17 @@ export function WeeklyCalendar({ assignments, trainerId, profile, workStartTime,
                         {day && (
                           <>
                             <p className={`text-xs font-bold mb-0.5 ${isToday ? 'text-yellow-600' : di === 0 ? 'text-red-500' : di === 6 ? 'text-blue-500' : 'text-gray-700'}`}>{day}</p>
-                            <div className="space-y-0.5">
-                              {dayItems.slice(0, 4).map((s) => (
-                                <div key={s.id} className={`rounded px-1 py-0.5 text-[9px] sm:text-[10px] truncate text-white font-medium ${typeColor[s.schedule_type] ?? 'bg-gray-400'}`}>
-                                  {s.member_name || s.schedule_type}
-                                </div>
-                              ))}
-                              {dayItems.length > 4 && (
-                                <p className="text-[9px] text-gray-500">+{dayItems.length - 4}건</p>
+                            <div className="space-y-px">
+                              {dayItems.slice(0, 16).map((s) => {
+                                const otNum = s.schedule_type === 'OT' && s.ot_session_id ? sessionNumMap.get(s.ot_session_id) : null
+                                return (
+                                  <div key={s.id} className={`rounded px-1 py-px text-[9px] sm:text-[10px] truncate text-white font-medium leading-tight ${typeColor[s.schedule_type] ?? 'bg-gray-400'}`}>
+                                    {s.start_time.slice(0, 5)} {s.member_name}{otNum ? ` ${otNum}차` : ''}{s.schedule_type !== 'OT' ? ` ${s.schedule_type}` : ''}
+                                  </div>
+                                )
+                              })}
+                              {dayItems.length > 16 && (
+                                <p className="text-[9px] text-gray-500">+{dayItems.length - 16}건</p>
                               )}
                             </div>
                           </>

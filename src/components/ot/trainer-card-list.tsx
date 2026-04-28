@@ -1825,7 +1825,9 @@ export function TrainerCardList({ assignments, trainers = [], trainerId, trainer
                                         for (const s of unapprovedSessions) {
                                           await approveOtSession(programId, s.idx)
                                         }
-                                        startTransition(() => router.refresh())
+                                        // expandedData 갱신 + 페이지 새로고침
+                                        setExpandedData((prev) => { const copy = { ...prev }; delete copy[a.id]; return copy })
+                                        router.refresh()
                                       }}
                                     >
                                       <CheckCircle className="h-4 w-4 mr-1" />OT임의승인 ({unapprovedSessions.length})
