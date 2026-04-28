@@ -561,6 +561,7 @@ export function ApprovalList({ programs: initialPrograms, profile, registrations
                         <div className="flex items-center gap-2">
                           <span className="font-bold text-gray-900 text-base">{idx + 1}차 OT</span>
                           <Badge className={`${sessBadge} text-white text-xs`}>{sessStatus}</Badge>
+                          {session.admin_feedback === '임의승인' && <Badge className="bg-amber-500 text-white text-xs">임의승인</Badge>}
                           {session.completed && <Badge className="bg-green-500 text-white text-xs">완료</Badge>}
                           {session.inbody && <Badge className="bg-purple-500 text-white text-xs">인바디</Badge>}
                           {session.date && <span className="text-sm text-gray-500">{session.date} {session.time}</span>}

@@ -138,7 +138,13 @@ export function TrainerCardList({ assignments, trainers = [], trainerId, trainer
           .map((s, i) => ({ session: i + 1, feedback: (s as unknown as { admin_feedback?: string }).admin_feedback ?? '' }))
           .filter((f) => f.feedback)
         if (feedbacks.length > 0) map[aid] = feedbacks
-        const hasUnapproved = sessions.some((s) => s.completed && s.approval_status !== '승인')
+        // 수업완료 판단: 프로그램 completed 또는 ot_sessions.completed_at
+        const assign = assignments.find((a) => a.id === aid)
+        const otSessions = assign?.sessions ?? []
+        const hasUnapproved = sessions.some((s, i) => {
+          const isCompleted = s.completed || !!otSessions.find((os) => os.session_number === i + 1 && os.completed_at)
+          return isCompleted && s.approval_status !== '승인'
+        })
         if (hasUnapproved) approvalNeeded.add(aid)
         const approvalEntries = sessions
           .map((s, i) => ({ session: i + 1, status: s.approval_status ?? '', approved_at: s.approved_at }))
@@ -1849,7 +1855,7 @@ export function TrainerCardList({ assignments, trainers = [], trainerId, trainer
                                         e.stopPropagation()
                                         if (!confirm(`${a.member.name}의 미승인 ${unapprovedSessions.length}건을 모두 승인하시겠습니까?`)) return
                                         for (const s of unapprovedSessions) {
-                                          await approveOtSession(programId, s.idx)
+                                          await approveOtSession(programId, s.idx, '임의승인')
                                         }
                                         // needApprovalSet에서 제거 + expandedData 갱신
                                         setNeedApprovalSet((prev) => { const next = new Set(prev); next.delete(a.id); return next })

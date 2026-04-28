@@ -221,7 +221,7 @@ export function TrainerStats({ assignments, trainerName, programs, registrations
     }
 
     const rows = assignments
-      .filter((a) => !a.is_excluded && !['거부','추후결정'].includes(a.status))
+      .filter((a) => !a.is_excluded && !['거부','추후결정','완료'].includes(a.status))
       .map((a) => {
         const cells: Record<string, CellData> = {}
         let totalCompleted = 0; let totalScheduled = 0

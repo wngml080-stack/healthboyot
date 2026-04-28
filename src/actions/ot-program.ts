@@ -440,7 +440,7 @@ export async function unsubmitOtSession(programId: string, sessionIdx: number) {
   })
 }
 
-export async function approveOtSession(programId: string, sessionIdx: number) {
+export async function approveOtSession(programId: string, sessionIdx: number, adminFeedback?: string) {
   const supabase = await createClient()
   const { data: { user } } = await supabase.auth.getUser()
   return updateSessionApproval(programId, sessionIdx, {
@@ -448,6 +448,7 @@ export async function approveOtSession(programId: string, sessionIdx: number) {
     approved_at: new Date().toISOString(),
     approved_by: user?.id ?? null,
     rejection_reason: null,
+    ...(adminFeedback ? { admin_feedback: adminFeedback } : {}),
   })
 }
 
