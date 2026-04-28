@@ -288,7 +288,7 @@ export function WeeklyCalendar({ assignments, trainerId, profile, workStartTime,
   const [showCreate, setShowCreate] = useState(false)
   const [createDate, setCreateDate] = useState('')
   const [createTime, setCreateTime] = useState('')
-  const [createType, setCreateType] = useState<string>('OT')
+  const [createType, setCreateType] = useState<string>('PT')
   const [createName, setCreateName] = useState('')
   const [createOtSessionId, setCreateOtSessionId] = useState('')
   const [createDuration, setCreateDuration] = useState(50)
@@ -583,7 +583,7 @@ export function WeeklyCalendar({ assignments, trainerId, profile, workStartTime,
     const endH = Math.floor(endTotalMin / 60)
     const endM = endTotalMin % 60
     setCreateEndTime(`${String(endH).padStart(2, '0')}:${String(endM).padStart(2, '0')}`)
-    setCreateType('OT')
+    setCreateType('PT')
     setCreateName('')
     setCreateOtSessionId('')
     setCreateDuration(50)
