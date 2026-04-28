@@ -430,21 +430,50 @@ export function WeeklyCalendar({ assignments, trainerId, profile, workStartTime,
 
     const doPaste = async () => {
       setPasteSaving(true)
-      const { error } = await supabaseRef.current.from('trainer_schedules').insert({
-        trainer_id: trainerId,
-        schedule_type: copiedSchedule.schedule_type,
-        member_name: copiedSchedule.member_name,
-        member_id: copiedSchedule.member_id,
-        scheduled_date: dateStr,
-        start_time: timeStr,
-        duration: copiedSchedule.duration,
-        note,
-      })
-      setPasteSaving(false)
-      if (error) {
-        alert('붙여넣기 실패: ' + error.message)
-        return
+      if (copiedSchedule.schedule_type === 'OT' && copiedSchedule.ot_session_id) {
+        // OT: ot_session_id로 assignment를 찾아서 upsertOtSession으로 생성
+        const assignment = otMembers.find((a) =>
+          a.sessions?.some((s) => s.id === copiedSchedule.ot_session_id)
+        )
+        if (assignment) {
+          const existingNums = new Set(assignment.sessions?.map((s) => s.session_number) ?? [])
+          let nextN = 1
+          while (existingNums.has(nextN)) nextN++
+          const result = await upsertOtSession({
+            ot_assignment_id: assignment.id,
+            session_number: nextN,
+            scheduled_at: new Date(`${dateStr}T${timeStr}:00+09:00`).toISOString(),
+            duration: copiedSchedule.duration,
+          })
+          if (result?.error) {
+            alert('붙여넣기 실패: ' + result.error)
+            setPasteSaving(false)
+            return
+          }
+        } else {
+          alert('OT 회원 정보를 찾을 수 없습니다')
+          setPasteSaving(false)
+          return
+        }
+      } else {
+        // PT/PPT/기타: trainer_schedules 직접 insert
+        const { error } = await supabaseRef.current.from('trainer_schedules').insert({
+          trainer_id: trainerId,
+          schedule_type: copiedSchedule.schedule_type,
+          member_name: copiedSchedule.member_name,
+          member_id: copiedSchedule.member_id,
+          scheduled_date: dateStr,
+          start_time: timeStr,
+          duration: copiedSchedule.duration,
+          note,
+        })
+        if (error) {
+          alert('붙여넣기 실패: ' + error.message)
+          setPasteSaving(false)
+          return
+        }
       }
+      setPasteSaving(false)
       await fetchSchedules()
       router.refresh()
     }

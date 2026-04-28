@@ -391,25 +391,48 @@ export function TrainerStats({ assignments, trainerName, programs, registrations
     return {
       memberRows: rows, dailyTotals: totals, columns: cols,
       summary: (() => {
-        const inProgressCount = rows.filter((r) => r.totalCompleted > 0 || r.totalScheduled > 0).length
-        const notStartedCount = assignments.length - inProgressCount
-        const s1 = rows.filter((r) => r.totalCompleted === 1).length
-        const s2 = rows.filter((r) => r.totalCompleted === 2).length
-        const s3 = rows.filter((r) => r.totalCompleted >= 3).length
-        const ptConvCount = rows.filter((r) => r.isPtConversion).length
+        const ptConvCount = assignments.filter((a) => a.is_pt_conversion).length
+        const salesTargetCount = assignments.filter((a) => a.is_sales_target).length
+        const rejectedCount = assignments.filter((a) => a.status === '거부' || a.is_excluded).length
+        const noContactCount = assignments.filter((a) => a.sales_status === '연락두절').length
+        const closingFailedCount = assignments.filter((a) => a.sales_status === '클로징실패').length
+        const scheduleUndecidedCount = assignments.filter((a) => a.sales_status === '스케줄미확정').length
+        const postClassRefusalCount = assignments.filter((a) => a.sales_status === '수업후거부').length
+        // 필터와 동일한 기준: 비활성 + PT전환 제외
+        const isInactive = (a: OtAssignmentWithDetails) =>
+          ['연락두절','스케줄미확정','OT거부자','수업후거부'].includes(a.sales_status) || a.is_excluded || ['거부','추후결정'].includes(a.status) || a.is_pt_conversion
+        // 차수별 카운트 (필터와 동일 기준)
+        let notStarted = 0, session1 = 0, session2 = 0, session3 = 0, session4plus = 0, needApproval = 0, statusChange = 0
+        for (const a of assignments) {
+          const done = a.sessions?.filter((s) => s.completed_at).length ?? 0
+          const scheduled = a.sessions?.filter((s) => s.scheduled_at && !s.completed_at).length ?? 0
+          const inactive = isInactive(a)
+          if (!inactive) {
+            if (done === 0 && scheduled === 0 && !['거부','추후결정'].includes(a.status)) notStarted++
+            if ((done === 0 && scheduled > 0) || (done === 1 && scheduled === 0)) session1++
+            if ((done === 1 && scheduled > 0) || (done === 2 && scheduled === 0)) session2++
+            if ((done === 2 && scheduled > 0) || (done === 3 && scheduled === 0)) session3++
+            if ((done >= 3 && scheduled > 0) || done >= 4) session4plus++
+          }
+          const pastSch = (a.sessions ?? []).filter((s) => s.scheduled_at && !s.completed_at && new Date(s.scheduled_at) < new Date()).length
+          if (pastSch > 0) statusChange++
+        }
         return {
           totalMembers: assignments.length, totalOt, totalCompleted, totalScheduled,
-          inProgress: inProgressCount, notStarted: notStartedCount,
-          session1Done: s1, session2Done: s2, session3Done: s3,
+          notStarted, session1, session2, session3, session4plus,
+          statusChange, needApproval,
           ptConversions: ptConvCount,
-          salesTargets: rows.filter((r) => r.isSalesTarget).length,
+          salesTargets: salesTargetCount,
           totalActualSales: rows.reduce((s, r) => s + r.actualSales, 0),
           totalExpectedSales: rows.reduce((s, r) => s + r.expectedAmount, 0),
-          registered, closingRate: inProgressCount > 0 ? Math.round((ptConvCount / inProgressCount) * 100) : 0,
-          rejected: assignments.filter((a) => a.status === '거부').length,
-          noContact: assignments.filter((a) => a.sales_status === '연락두절').length,
-          closingFailed: assignments.filter((a) => a.sales_status === '클로징실패').length,
-          scheduleUndecided: assignments.filter((a) => a.sales_status === '스케줄미확정').length,
+          registered,
+          closingRate: (session1 + session2 + session3 + session4plus + ptConvCount) > 0
+            ? Math.round((ptConvCount / (session1 + session2 + session3 + session4plus + ptConvCount)) * 100) : 0,
+          rejected: rejectedCount,
+          noContact: noContactCount,
+          closingFailed: closingFailedCount,
+          scheduleUndecided: scheduleUndecidedCount,
+          postClassRefusal: postClassRefusalCount,
         }
       })(),
       periodSummary: periodStats,
@@ -741,24 +764,34 @@ export function TrainerStats({ assignments, trainerName, programs, registrations
               <h3 className="text-sm font-bold text-gray-900">OT 현황</h3>
               <span className="text-[10px] text-gray-400">{periodLabel}</span>
             </div>
-            <div className="grid grid-cols-3 gap-2">
-              <StatPill label="총 인원" value={summary.totalMembers} color="bg-gray-100 text-gray-800" sub="회원 총인원" />
-              <StatPill label="진행회원" value={summary.inProgress} color="bg-green-100 text-green-800" sub="OT 진행한 회원" />
-              <StatPill label="미진행회원" value={summary.notStarted} color="bg-orange-100 text-orange-800" sub="스케줄 미잡힌 대상자" />
+            {/* 상위 필터 */}
+            <div className="grid grid-cols-4 gap-2">
+              <StatPill label="전체" value={summary.totalMembers} color="bg-yellow-100 text-yellow-800" sub="총 회원" />
+              <StatPill label="거부/제외" value={summary.rejected} color="bg-red-100 text-red-800" sub="거부/제외 처리" />
+              <StatPill label="매출대상" value={summary.salesTargets} color="bg-purple-100 text-purple-800" sub="매출 대상자" />
+              <StatPill label="PT전환" value={summary.ptConversions} color="bg-blue-100 text-blue-800" sub="OT → PT 전환" />
             </div>
-            <div className="grid grid-cols-3 gap-2">
-              <StatPill label="1차 완료" value={summary.session1Done} color="bg-emerald-100 text-emerald-800" sub="1차 수업 완료" />
-              <StatPill label="2차 완료" value={summary.session2Done} color="bg-emerald-100 text-emerald-800" sub="2차 수업 완료" />
-              <StatPill label="3차+ 완료" value={summary.session3Done} color="bg-emerald-100 text-emerald-800" sub="3차 이상 완료" />
+            <div className="border-t border-gray-100 my-1" />
+            {/* 하위 필터 — 차수별 */}
+            <div className="grid grid-cols-5 gap-2">
+              <StatPill label="미진행" value={summary.notStarted} color="bg-orange-100 text-orange-800" sub="스케줄 미잡힌" />
+              <StatPill label="1차" value={summary.session1} color="bg-emerald-100 text-emerald-800" sub="1차 진행/완료" />
+              <StatPill label="2차" value={summary.session2} color="bg-emerald-100 text-emerald-800" sub="2차 진행/완료" />
+              <StatPill label="3차" value={summary.session3} color="bg-emerald-100 text-emerald-800" sub="3차 진행/완료" />
+              <StatPill label="4차+" value={summary.session4plus} color="bg-emerald-100 text-emerald-800" sub="4차 이상" />
+            </div>
+            <div className="border-t border-gray-100 my-1" />
+            {/* 상태별 */}
+            <div className="grid grid-cols-4 gap-2">
+              <StatPill label="연락두절" value={summary.noContact} color="bg-gray-100 text-gray-800" sub="연락 안 됨" />
+              <StatPill label="스케줄미확정" value={summary.scheduleUndecided} color="bg-yellow-100 text-yellow-800" sub="스케줄 조율중" />
+              <StatPill label="수업후 거부" value={summary.postClassRefusal} color="bg-orange-100 text-orange-800" sub="수업 후 거부" />
+              <StatPill label="클로징실패" value={summary.closingFailed} color="bg-red-100 text-red-800" sub="세일즈 실패" />
             </div>
             <div className="border-t border-gray-100 my-1" />
             <div className="grid grid-cols-2 gap-2">
-              <StatPill label="연락두절" value={summary.noContact} color="bg-gray-100 text-gray-800" sub="연락 안 되시는 분" />
-              <StatPill label="스케줄미확정" value={summary.scheduleUndecided} color="bg-yellow-100 text-yellow-800" sub="스케줄 조율중" />
-              <StatPill label="매출대상자" value={summary.salesTargets} color="bg-blue-100 text-blue-800" sub="매출 대상자" />
-              <StatPill label="클로징실패" value={summary.closingFailed} color="bg-red-100 text-red-800" sub="세일즈 후 실패" />
-              <StatPill label="PT전환" value={summary.ptConversions} color="bg-purple-100 text-purple-800" sub="OT → PT 전환" />
               <StatPill label="클로징율" value={`${summary.closingRate}%`} color="bg-pink-100 text-pink-800" sub="진행회원 대비 PT전환" />
+              <StatPill label="수업상태변경" value={summary.statusChange} color="bg-amber-100 text-amber-800" sub="수업일 지남 미완료" />
             </div>
           </CardContent>
         </Card>
