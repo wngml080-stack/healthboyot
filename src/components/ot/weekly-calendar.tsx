@@ -105,7 +105,7 @@ const TYPE_COLORS: Record<string, string> = {
   기타: 'bg-gray-200 border-gray-400 text-gray-900',
 }
 
-const SCHEDULE_TYPES = ['OT', 'PT', 'PPT', '식사', '홍보', '간부회의', '팀회의', '전체회의', '간담회', '당직', '대외활동', '유급휴식', '기타'] as const
+const SCHEDULE_TYPES = ['PT', 'PPT', 'OT', '식사', '홍보', '간부회의', '팀회의', '전체회의', '간담회', '당직', '대외활동', '유급휴식', '기타'] as const
 
 // OT/PT/PPT 이외의 타입은 시작~종료 시간으로 입력 (duration 자동 계산)
 const RANGE_TYPES = new Set(['식사', '홍보', '간부회의', '팀회의', '전체회의', '간담회', '당직', '대외활동', '유급휴식', '기타'])
