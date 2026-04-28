@@ -10,6 +10,7 @@ import { ChevronLeft, ChevronRight, Target, CheckCircle2, Circle, Trash2, Plus, 
 import { format, startOfWeek, endOfWeek, addDays, addWeeks } from 'date-fns'
 import { ko } from 'date-fns/locale'
 import type { OtAssignmentWithDetails, OtProgram, OtRegistration } from '@/types'
+import { createClient } from '@/lib/supabase/client'
 
 interface Props {
   assignments: OtAssignmentWithDetails[]
@@ -81,6 +82,24 @@ export function TrainerStats({ assignments, trainerName, programs, registrations
 
   const prevPeriod = () => { if (viewMode === 'monthly') { if (month === 1) { setYear(year - 1); setMonth(12) } else setMonth(month - 1) } else setWeekOffset(weekOffset - 1) }
   const nextPeriod = () => { if (viewMode === 'monthly') { if (month === 12) { setYear(year + 1); setMonth(1) } else setMonth(month + 1) } else setWeekOffset(weekOffset + 1) }
+
+  // trainer_schedules에서 실제 스케줄 데이터 가져오기
+  interface TrainerScheduleItem { schedule_type: string; member_name: string; scheduled_date: string; start_time: string; duration: number }
+  const [trainerSchedules, setTrainerSchedules] = useState<TrainerScheduleItem[]>([])
+  useEffect(() => {
+    if (!trainerId) return
+    const supabase = createClient()
+    // 현재 보는 기간 기준으로 fetch (넉넉하게 2달)
+    const from = format(addDays(now, -45), 'yyyy-MM-dd')
+    const to = format(addDays(now, 45), 'yyyy-MM-dd')
+    supabase.from('trainer_schedules')
+      .select('schedule_type, member_name, scheduled_date, start_time, duration')
+      .eq('trainer_id', trainerId)
+      .gte('scheduled_date', from)
+      .lte('scheduled_date', to)
+      .then(({ data }) => setTrainerSchedules((data ?? []) as TrainerScheduleItem[]))
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [trainerId])
 
   // 목표 (차주 목표달성용)
   const goalWeekStart = startOfWeek(now, { weekStartsOn: 1 })
@@ -192,12 +211,23 @@ export function TrainerStats({ assignments, trainerName, programs, registrations
       }
     }
 
+    // trainer_schedules를 회원명으로 그룹핑
+    const schedulesByMember = new Map<string, TrainerScheduleItem[]>()
+    for (const ts of trainerSchedules) {
+      const list = schedulesByMember.get(ts.member_name) ?? []
+      list.push(ts)
+      schedulesByMember.set(ts.member_name, list)
+    }
+
     const rows = assignments
       .filter((a) => !['거부'].includes(a.status))
       .map((a) => {
         const cells: Record<string, CellData> = {}
         let totalCompleted = 0; let totalScheduled = 0
         const prog = programMap.get(a.id)
+
+        // trainer_schedules에서 해당 회원의 스케줄 가져오기
+        const memberSchedules = schedulesByMember.get(a.member.name) ?? []
 
         for (const s of a.sessions ?? []) {
           const dateStr = s.scheduled_at ?? s.completed_at
@@ -208,7 +238,13 @@ export function TrainerStats({ assignments, trainerName, programs, registrations
           const completed = !!s.completed_at
           const pastDue = !completed && new Date(s.scheduled_at ?? '').getTime() < nowTime
           const progSession = prog?.sessions?.[s.session_number - 1]
-          const timeStr = (s.scheduled_at ?? s.completed_at) ? format(new Date(s.scheduled_at ?? s.completed_at!), 'HH:mm') : undefined
+
+          // trainer_schedules에서 실제 시간 가져오기 (같은 날짜 매칭)
+          const matchedSchedule = memberSchedules.find((ts) => ts.scheduled_date === key && ts.schedule_type === 'OT')
+          const timeStr = matchedSchedule
+            ? matchedSchedule.start_time.slice(0, 5)
+            : ((s.scheduled_at ?? s.completed_at) ? format(new Date(s.scheduled_at ?? s.completed_at!), 'HH:mm') : undefined)
+
           cells[key] = { sessionNumber: s.session_number, completed, pastDue, approved: progSession?.approval_status === '승인', time: timeStr }
           if (completed) totalCompleted++; else totalScheduled++
         }
@@ -445,7 +481,7 @@ export function TrainerStats({ assignments, trainerName, programs, registrations
       },
       inbodyRows: inbody, thisWeekTargets: thisTargets, resolvedTargets, nextWeekTargets: nextTargets,
     }
-  }, [assignments, programs, year, month, daysInMonth, isCurrentMonth, todayDate, viewMode, selectedWeekStart, selectedWeekEnd, weekDays, goalWeekStart, now])
+  }, [assignments, programs, year, month, daysInMonth, isCurrentMonth, todayDate, viewMode, selectedWeekStart, selectedWeekEnd, weekDays, goalWeekStart, now, trainerSchedules])
 
   const grandTotal = memberRows.reduce((s, r) => s + r.totalSessions, 0)
   const periodLabel = viewMode === 'monthly'
