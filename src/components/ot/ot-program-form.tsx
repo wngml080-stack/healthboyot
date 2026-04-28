@@ -557,12 +557,12 @@ export const OtProgramForm = forwardRef<OtProgramFormRef, Props>(function OtProg
     if (result.error) { setSaving(false); setError(result.error); return }
 
     // 프로그램 세션의 날짜/시간 → ot_sessions + trainer_schedules 자동 동기화 (병렬)
+    // 완료 여부와 무관하게 날짜/시간/duration 변경 시 모두 동기화
     const sessionsToSync = (overrideSessions ?? sessions)
     const syncPromises: Promise<unknown>[] = []
     for (let i = 0; i < sessionsToSync.length; i++) {
       const s = sessionsToSync[i]
       if (!s.date || !s.time) continue
-      if (s.completed) continue
       const sessionNumber = i + 1
       const scheduledAt = new Date(`${s.date}T${s.time}:00+09:00`).toISOString()
       syncPromises.push(upsertOtSession({
@@ -938,17 +938,37 @@ export const OtProgramForm = forwardRef<OtProgramFormRef, Props>(function OtProg
                   <div className="flex items-center gap-2 flex-wrap">
                     <div className="flex items-center gap-1">
                       <Label className="text-xs font-bold shrink-0">날짜:</Label>
-                      <Input type="date" value={session.date} onChange={(e) => updateSession(idx, 'date', e.target.value)} className="h-7 text-sm w-32" disabled={!canEdit || isSessionLocked(session) || (isCompleted && !isExpanded)} />
+                      <Input type="date" value={session.date} onChange={(e) => updateSession(idx, 'date', e.target.value)} className="h-7 text-sm w-40" disabled={!canEdit || isSessionLocked(session) || (isCompleted && !isExpanded)} />
                     </div>
                     <div className="flex items-center gap-1">
                       <Label className="text-xs font-bold shrink-0">시간:</Label>
                       <Input
-                        type="time"
-                        step={600}
+                        type="text"
+                        inputMode="numeric"
+                        placeholder="18:30"
                         value={session.time}
-                        onChange={(e) => updateSession(idx, 'time', e.target.value)}
+                        onChange={(e) => {
+                          let v = e.target.value.replace(/[^0-9:]/g, '')
+                          // 자동 콜론 삽입: 2자리 숫자 입력 후 자동으로 : 추가
+                          if (v.length === 2 && !v.includes(':') && session.time.length < 2) v += ':'
+                          if (v.length > 5) v = v.slice(0, 5)
+                          updateSession(idx, 'time', v)
+                        }}
+                        onBlur={(e) => {
+                          // 포커스 아웃 시 HH:MM 형식으로 정리
+                          let v = e.target.value.replace(/[^0-9]/g, '')
+                          if (v.length >= 3) {
+                            const h = v.slice(0, v.length - 2)
+                            const m = v.slice(-2)
+                            const hh = Math.min(23, Math.max(0, Number(h)))
+                            const mm = Math.min(59, Math.max(0, Number(m)))
+                            updateSession(idx, 'time', `${String(hh).padStart(2, '0')}:${String(mm).padStart(2, '0')}`)
+                          } else if (v.length === 2) {
+                            updateSession(idx, 'time', `${String(Math.min(23, Number(v))).padStart(2, '0')}:00`)
+                          }
+                        }}
                         disabled={!canEdit || isSessionLocked(session) || (isCompleted && !isExpanded)}
-                        className="h-7 text-sm w-24"
+                        className="h-7 text-sm w-20 text-center"
                       />
                     </div>
                     {/* 수업시간 30분/50분 */}

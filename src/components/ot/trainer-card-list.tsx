@@ -1027,6 +1027,9 @@ export function TrainerCardList({ assignments, trainers = [], trainerId, trainer
                         {a.expected_amount > 0 && <span className="text-green-600 font-medium">예상 {toManwon(a.expected_amount).toLocaleString()}만원{a.expected_sessions ? ` (${a.expected_sessions}회)` : ''}</span>}
                         {nextScheduled && <span>OT일정: {nextSession}차 {format(new Date(nextScheduled.scheduled_at!), 'M/d HH:mm')}</span>}
                       </div>
+                      {a.notes && (
+                        <p className="mt-1 text-[10px] text-orange-700 bg-orange-50 rounded px-2 py-0.5 truncate">📝 {a.notes}</p>
+                      )}
                       </div>
 
                       {/* 펼침: 상세 + OT 세션 */}
@@ -1102,6 +1105,23 @@ export function TrainerCardList({ assignments, trainers = [], trainerId, trainer
                               </>
                             )
                           })()}
+
+                          {/* 특이사항 메모 (수정 가능) */}
+                          <div className="rounded-lg border border-orange-200 bg-orange-50/50 p-3 space-y-2" onClick={(e) => e.stopPropagation()}>
+                            <p className="text-sm font-bold text-orange-800">📝 특이사항</p>
+                            <Textarea
+                              defaultValue={a.notes ?? ''}
+                              placeholder="환불, 부상, 회원 특이사항 등을 기록하세요"
+                              rows={2}
+                              className="text-sm bg-white border-orange-200"
+                              onBlur={(e) => {
+                                const val = e.target.value.trim()
+                                if (val !== (a.notes ?? '')) {
+                                  updateOtAssignment(a.id, { notes: val || null })
+                                }
+                              }}
+                            />
+                          </div>
 
                           {/* 상담카드 요약 + 세일즈 여정 */}
                           <div onClick={(e) => e.stopPropagation()} className="space-y-4">
