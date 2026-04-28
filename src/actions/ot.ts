@@ -56,7 +56,7 @@ export async function getOtAssignments(params?: {
       member:members!inner(id, name, phone, ot_category, exercise_time, duration_months, detail_info, notes, registered_at, registration_source, is_existing_member, gender, start_date, is_completed),
       pt_trainer:profiles!ot_assignments_pt_trainer_id_fkey(id, name),
       ppt_trainer:profiles!ot_assignments_ppt_trainer_id_fkey(id, name),
-      sessions:ot_sessions(id, session_number, scheduled_at, completed_at)
+      sessions:ot_sessions(id, session_number, scheduled_at, completed_at).limit(5)
     `)
     .order('created_at', { ascending: false })
     .limit(100)

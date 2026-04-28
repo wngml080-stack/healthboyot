@@ -1,5 +1,6 @@
 'use server'
 
+import { cache } from 'react'
 import { isDemoMode } from '@/lib/demo'
 import { DEMO_OT_ASSIGNMENTS } from '@/lib/demo-data'
 import { nowKst, toKstDateStr } from '@/lib/kst'
@@ -32,7 +33,7 @@ const ROLE_COLORS: Record<string, string> = {
   '강사': 'bg-pink-500',
 }
 
-export async function getTrainerFolders(): Promise<TrainerFolder[]> {
+export const getTrainerFolders = cache(async (): Promise<TrainerFolder[]> => {
   if (isDemoMode()) {
     return getDemoFolders()
   }
@@ -61,7 +62,9 @@ export async function getTrainerFolders(): Promise<TrainerFolder[]> {
     supabase
       .from('ot_assignments')
       .select('status, pt_trainer_id, ppt_trainer_id, is_sales_target, is_pt_conversion, created_at, member:members!inner(id, name)')
-      .or(`pt_trainer_id.in.(${trainerIds.join(',')}),ppt_trainer_id.in.(${trainerIds.join(',')})`),
+      .eq('is_excluded', false)
+      .or(`pt_trainer_id.in.(${trainerIds.join(',')}),ppt_trainer_id.in.(${trainerIds.join(',')})`)
+      .limit(2000),
     supabase
       .from('trainer_schedules')
       .select('trainer_id, member_name')
@@ -154,7 +157,7 @@ export async function getTrainerFolders(): Promise<TrainerFolder[]> {
   })
 
   return folders
-}
+})
 
 function getDemoFolders(): TrainerFolder[] {
   const assignments = DEMO_OT_ASSIGNMENTS

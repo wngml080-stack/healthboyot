@@ -1,10 +1,12 @@
 'use server'
 
+import { cache } from 'react'
 import { isDemoMode } from '@/lib/demo'
 import { createClient } from '@/lib/supabase/server'
 import type { Profile, Role } from '@/types'
 
-export async function getStaffList(): Promise<Profile[]> {
+// cache()로 같은 요청 내 중복 호출 방지 (layout + page에서 각각 호출해도 1번만 실행)
+export const getStaffList = cache(async (): Promise<Profile[]> => {
   if (isDemoMode()) {
     return [
       { id: 'demo-admin-001', name: '김팀장', email: 'admin@demo.com', role: 'admin', avatar_url: null, folder_password: null, is_approved: true, work_start_time: '09:00', work_end_time: '18:00', created_at: '', updated_at: '' } as Profile,
@@ -27,7 +29,7 @@ export async function getStaffList(): Promise<Profile[]> {
   }
   // folder_password를 클라이언트에 노출하지 않음
   return (data ?? []).map(({ folder_password: _, ...rest }) => ({ ...rest, folder_password: null })) as Profile[]
-}
+})
 
 export async function createStaff(values: {
   email: string
