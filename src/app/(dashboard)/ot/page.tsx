@@ -1,13 +1,12 @@
 import { Suspense } from 'react'
 import { getOtAssignments } from '@/actions/ot'
-import { getTrainerFolders } from '@/actions/trainer-folders'
 import { getStaffList } from '@/actions/staff'
 import { getCurrentProfile } from '@/actions/auth'
 import { getAllOtPrograms } from '@/actions/ot-program'
 import { getOtRegistrationsByTrainer } from '@/actions/ot-registration'
 import { getTrainerScheduleSlots } from '@/actions/schedule'
-import { TrainerFolderGrid } from '@/components/ot/trainer-folder-grid'
 import { TrainerDetailTabs } from '@/components/ot/trainer-detail-tabs'
+import { FolderLoader } from './folder-loader'
 import { PageTitle } from '@/components/shared/page-title'
 import { NotificationBell } from '@/components/ot/notification-bell'
 import { ArrowLeft, Loader2 } from 'lucide-react'
@@ -22,14 +21,12 @@ export default async function OtPage({ searchParams }: OtPageProps) {
   const trainerId = params.trainer
   const tab = params.tab ?? 'schedule'
 
-  // 폴더 뷰 — 제목 즉시 표시, 폴더 그리드는 스트리밍
+  // 폴더 뷰 — 제목 즉시, 데이터는 클라이언트에서 로딩
   if (!trainerId) {
     return (
       <div className="space-y-4">
         <PageTitle>트레이너 관리</PageTitle>
-        <Suspense fallback={<FolderViewSkeleton />}>
-          <FolderView />
-        </Suspense>
+        <FolderLoader />
       </div>
     )
   }
@@ -40,39 +37,6 @@ export default async function OtPage({ searchParams }: OtPageProps) {
       <TrainerDetailView trainerId={trainerId} tab={tab} />
     </Suspense>
   )
-}
-
-// ─── 폴더 뷰 ─────────────────────────────────────────────
-async function FolderView() {
-  const [folders, staffList, profile] = await Promise.all([
-    getTrainerFolders(),
-    getStaffList(),
-    getCurrentProfile(),
-  ])
-  return (
-    <>
-      {(profile?.role === 'admin' || profile?.role === '관리자') && (
-        <div className="flex justify-end -mt-2">
-          <Link
-            href="/ot/recover"
-            className="text-xs text-orange-600 hover:text-orange-700 underline"
-          >
-            OT 세션 복구
-          </Link>
-        </div>
-      )}
-      <TrainerFolderGrid
-        folders={folders}
-        allStaff={staffList.map((s) => ({ id: s.id, name: s.name, role: s.role, is_approved: s.is_approved }))}
-        currentUserRole={profile?.role ?? 'fc'}
-        currentUserId={profile?.id}
-      />
-    </>
-  )
-}
-
-function FolderViewSkeleton() {
-  return <div className="flex items-center justify-center py-20 text-muted-foreground gap-3"><Loader2 className="h-6 w-6 animate-spin" /><span className="text-sm">폴더를 불러오는 중...</span></div>
 }
 
 // ─── 트레이너 상세 뷰 ────────────────────────────────────
