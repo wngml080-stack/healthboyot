@@ -1815,7 +1815,7 @@ export function TrainerCardList({ assignments, trainers = [], trainerId, trainer
 
                               return (
                                 <>
-                                  {unapprovedSessions.length > 0 && programId && (
+                                  {isAdmin && unapprovedSessions.length > 0 && programId && (
                                     <Button
                                       size="sm"
                                       className="bg-amber-600 hover:bg-amber-700 text-white"

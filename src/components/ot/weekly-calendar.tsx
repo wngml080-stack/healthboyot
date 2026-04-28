@@ -268,6 +268,8 @@ function buildPtNote(opts: {
 export function WeeklyCalendar({ assignments, trainerId, profile, workStartTime, workEndTime }: Props) {
   const router = useRouter()
   const [weekOffset, setWeekOffset] = useState(0)
+  const [viewMode, setViewMode] = useState<'week' | 'month'>('week')
+  const [monthOffset, setMonthOffset] = useState(0)
   const [, startTransition] = useTransition()
   const [schedules, setSchedules] = useState<ScheduleItem[]>([])
   const [loading, setLoading] = useState(false)
@@ -566,8 +568,17 @@ export function WeeklyCalendar({ assignments, trainerId, profile, workStartTime,
   const fetchSchedules = useCallback(async () => {
     setLoading(true)
     try {
-      const ws = weekStartStr
-      const we = format(addDays(weekStart, 6), 'yyyy-MM-dd')
+      let ws: string, we: string
+      if (viewMode === 'month') {
+        const base = new Date()
+        base.setDate(1)
+        base.setMonth(base.getMonth() + monthOffset)
+        ws = format(base, 'yyyy-MM-dd')
+        we = format(new Date(base.getFullYear(), base.getMonth() + 1, 0), 'yyyy-MM-dd')
+      } else {
+        ws = weekStartStr
+        we = format(addDays(weekStart, 6), 'yyyy-MM-dd')
+      }
       const { data, error } = await supabaseRef.current
         .from('trainer_schedules')
         .select('*')
@@ -590,7 +601,7 @@ export function WeeklyCalendar({ assignments, trainerId, profile, workStartTime,
       console.error('스케줄 조회 에러:', err)
     }
     setLoading(false)
-  }, [trainerId, weekStartStr])
+  }, [trainerId, weekStartStr, viewMode, monthOffset])
 
   useEffect(() => {
     fetchSchedules()
@@ -1172,13 +1183,27 @@ export function WeeklyCalendar({ assignments, trainerId, profile, workStartTime,
         {/* 네비게이션 */}
         <div className="flex items-center justify-between gap-1">
           <div className="flex items-center gap-1 sm:gap-2">
-            <Button variant="outline" size="icon" className="h-7 w-7 sm:h-8 sm:w-8 bg-white text-gray-700 border-gray-300" onClick={() => startTransition(() => setWeekOffset((p) => p - 1))}>
+            {/* 주간/월간 토글 */}
+            <div className="flex rounded-md border border-gray-300 overflow-hidden">
+              <button
+                className={`px-2 py-1 text-[10px] sm:text-xs font-bold ${viewMode === 'week' ? 'bg-gray-900 text-white' : 'bg-white text-gray-600 hover:bg-gray-100'}`}
+                onClick={() => setViewMode('week')}
+              >주간</button>
+              <button
+                className={`px-2 py-1 text-[10px] sm:text-xs font-bold ${viewMode === 'month' ? 'bg-gray-900 text-white' : 'bg-white text-gray-600 hover:bg-gray-100'}`}
+                onClick={() => { setViewMode('month'); setMonthOffset(0) }}
+              >월간</button>
+            </div>
+            <Button variant="outline" size="icon" className="h-7 w-7 sm:h-8 sm:w-8 bg-white text-gray-700 border-gray-300" onClick={() => startTransition(() => viewMode === 'week' ? setWeekOffset((p) => p - 1) : setMonthOffset((p) => p - 1))}>
               <ChevronLeft className="h-3.5 w-3.5 sm:h-4 sm:w-4" />
             </Button>
             <span className="text-xs sm:text-sm font-bold text-white bg-gray-900 px-2 sm:px-3 py-0.5 sm:py-1 rounded-md min-w-0 sm:min-w-[140px] text-center whitespace-nowrap">
-              {format(weekStart, 'M월', { locale: ko })} {weekNum}주차
+              {viewMode === 'week'
+                ? `${format(weekStart, 'M월', { locale: ko })} ${weekNum}주차`
+                : format(addDays(new Date(), monthOffset * 30), 'yyyy년 M월', { locale: ko })
+              }
             </span>
-            <Button variant="outline" size="icon" className="h-7 w-7 sm:h-8 sm:w-8 bg-white text-gray-700 border-gray-300" onClick={() => startTransition(() => setWeekOffset((p) => p + 1))}>
+            <Button variant="outline" size="icon" className="h-7 w-7 sm:h-8 sm:w-8 bg-white text-gray-700 border-gray-300" onClick={() => startTransition(() => viewMode === 'week' ? setWeekOffset((p) => p + 1) : setMonthOffset((p) => p + 1))}>
               <ChevronRight className="h-3.5 w-3.5 sm:h-4 sm:w-4" />
             </Button>
           </div>
@@ -1222,7 +1247,90 @@ export function WeeklyCalendar({ assignments, trainerId, profile, workStartTime,
           </div>
         )}
 
-        {/* 캘린더 */}
+        {/* 월간 뷰 */}
+        {viewMode === 'month' && (() => {
+          const baseMonth = new Date()
+          baseMonth.setDate(1)
+          baseMonth.setMonth(baseMonth.getMonth() + monthOffset)
+          const year = baseMonth.getFullYear()
+          const month = baseMonth.getMonth()
+          const firstDay = new Date(year, month, 1)
+          const lastDay = new Date(year, month + 1, 0)
+          const startDow = firstDay.getDay() // 0=일
+          const totalDays = lastDay.getDate()
+          const weeks: (number | null)[][] = []
+          let week: (number | null)[] = Array(startDow).fill(null)
+          for (let d = 1; d <= totalDays; d++) {
+            week.push(d)
+            if (week.length === 7) { weeks.push(week); week = [] }
+          }
+          if (week.length > 0) { while (week.length < 7) week.push(null); weeks.push(week) }
+
+          // 이 달의 스케줄을 날짜별 그룹
+          const monthStr = `${year}-${String(month + 1).padStart(2, '0')}`
+          const daySchedules = new Map<number, typeof schedules>()
+          for (const s of schedules) {
+            if (s.scheduled_date.startsWith(monthStr)) {
+              const day = Number(s.scheduled_date.slice(8, 10))
+              if (!daySchedules.has(day)) daySchedules.set(day, [])
+              daySchedules.get(day)!.push(s)
+            }
+          }
+
+          const typeColor: Record<string, string> = { OT: 'bg-emerald-400', PT: 'bg-blue-400', PPT: 'bg-violet-400' }
+
+          return (
+            <div className="rounded-lg border border-gray-200 bg-white -mx-4 sm:mx-0 overflow-hidden">
+              <div className="grid grid-cols-7 bg-gray-900 text-white text-xs text-center">
+                {['일', '월', '화', '수', '목', '금', '토'].map((d) => (
+                  <div key={d} className="py-2 font-bold">{d}</div>
+                ))}
+              </div>
+              {weeks.map((week, wi) => (
+                <div key={wi} className="grid grid-cols-7 border-t border-gray-200">
+                  {week.map((day, di) => {
+                    const isToday = day && new Date().getDate() === day && new Date().getMonth() === month && new Date().getFullYear() === year
+                    const dayItems = day ? (daySchedules.get(day) ?? []) : []
+                    return (
+                      <div
+                        key={di}
+                        className={`min-h-[80px] sm:min-h-[100px] border-l border-gray-100 p-1 ${!day ? 'bg-gray-50' : ''} ${isToday ? 'bg-yellow-50' : ''} ${di === 0 || di === 6 ? 'bg-red-50/30' : ''}`}
+                        onClick={() => {
+                          if (!day) return
+                          // 해당 주로 이동
+                          const clickedDate = new Date(year, month, day)
+                          const today = new Date()
+                          const diff = Math.round((clickedDate.getTime() - today.getTime()) / (7 * 86400000))
+                          setWeekOffset(diff)
+                          setViewMode('week')
+                        }}
+                      >
+                        {day && (
+                          <>
+                            <p className={`text-xs font-bold mb-0.5 ${isToday ? 'text-yellow-600' : di === 0 ? 'text-red-500' : di === 6 ? 'text-blue-500' : 'text-gray-700'}`}>{day}</p>
+                            <div className="space-y-0.5">
+                              {dayItems.slice(0, 4).map((s) => (
+                                <div key={s.id} className={`rounded px-1 py-0.5 text-[9px] sm:text-[10px] truncate text-white font-medium ${typeColor[s.schedule_type] ?? 'bg-gray-400'}`}>
+                                  {s.member_name || s.schedule_type}
+                                </div>
+                              ))}
+                              {dayItems.length > 4 && (
+                                <p className="text-[9px] text-gray-500">+{dayItems.length - 4}건</p>
+                              )}
+                            </div>
+                          </>
+                        )}
+                      </div>
+                    )
+                  })}
+                </div>
+              ))}
+            </div>
+          )
+        })()}
+
+        {/* 주간 캘린더 */}
+        {viewMode === 'week' && (
         <div ref={calendarScrollRef} className="rounded-lg border border-gray-200 bg-white overflow-x-auto -mx-4 sm:mx-0">
           {/* 헤더 */}
           <div className="flex border-b border-gray-200 sticky top-0 bg-gray-900 z-10">
@@ -1447,6 +1555,7 @@ export function WeeklyCalendar({ assignments, trainerId, profile, workStartTime,
             })}
           </div>
         </div>
+        )}
 
         {loading && <p className="text-xs text-gray-400 text-center">로딩 중...</p>}
 
