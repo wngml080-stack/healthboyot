@@ -696,11 +696,21 @@ export function TrainerCardList({ assignments, trainers = [], trainerId, trainer
       for (const s of sorted) {
         const n = s.session_number
         if (s.completed_at) {
-          // 수업일(scheduled_at)과 완료일(completed_at) 항상 분리 표기
-          const classDate = s.scheduled_at ? format(new Date(s.scheduled_at), 'MM.dd') : format(new Date(s.completed_at), 'MM.dd')
+          // 수업일(scheduled_at)과 완료처리일(completed_at)을 비교
+          // scheduled_at이 있고 완료일과 다른 날이면 → "수업" + "완료" 분리 표기
+          // 같은 날이거나 scheduled_at 없으면 → "완료"만 표기
           const completeDate = format(new Date(s.completed_at), 'MM.dd')
-          log.push({ label: `${n}차수업`, date: classDate, color: 'text-blue-600' })
-          log.push({ label: `${n}차완료`, date: completeDate, color: 'text-emerald-600' })
+          if (s.scheduled_at) {
+            const classDate = format(new Date(s.scheduled_at), 'MM.dd')
+            if (classDate !== completeDate) {
+              log.push({ label: `${n}차수업`, date: classDate, color: 'text-blue-600' })
+              log.push({ label: `${n}차완료`, date: completeDate, color: 'text-emerald-600' })
+            } else {
+              log.push({ label: `${n}차완료`, date: classDate, color: 'text-blue-600' })
+            }
+          } else {
+            log.push({ label: `${n}차완료`, date: completeDate, color: 'text-blue-600' })
+          }
           const approval = approvals.find((ap) => ap.session === n)
           if (approval?.status === '승인') {
             log.push({ label: `${n}차승인`, date: approval.approved_at ? format(new Date(approval.approved_at), 'MM.dd') : null, color: 'text-green-600' })

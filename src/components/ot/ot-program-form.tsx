@@ -47,14 +47,6 @@ function addDaysYMD(ymd: string, days: number): string {
   return `${yy}-${mm}-${dd}`
 }
 
-// 06:00 ~ 22:00 까지 10분 단위 시간 슬롯 (24시간 표기)
-const TIME_OPTIONS = Array.from({ length: 97 }, (_, i) => {
-  const h = 6 + Math.floor(i / 6)
-  const m = (i % 6) * 10
-  if (h > 22) return null
-  return `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}`
-}).filter(Boolean) as string[]
-
 const emptySession = (): OtProgramSession => ({
   date: '', time: '',
   exercises: [
@@ -628,12 +620,21 @@ export const OtProgramForm = forwardRef<OtProgramFormRef, Props>(function OtProg
       alert(`회원 서명이 필요합니다.\n서명을 먼저 받아주세요.`)
       return
     }
+    // 낙관적 UI: 즉시 제출완료로 표시
+    setSessions((prev) => prev.map((s, i) =>
+      i === sessionIdx ? { ...s, approval_status: '제출완료', submitted_at: new Date().toISOString(), rejection_reason: null } : s,
+    ))
     setSaving(true)
     setError(null)
+    // 저장 + 제출 백그라운드 처리
     const saveResult = await upsertOtProgram(a.id, a.member_id, buildSavePayload())
     if (saveResult.error) {
       setSaving(false)
       setError(saveResult.error)
+      // 실패 시 롤백
+      setSessions((prev) => prev.map((s, i) =>
+        i === sessionIdx ? { ...s, approval_status: '작성중', submitted_at: null } : s,
+      ))
       return
     }
     const programId = program?.id ?? (saveResult.data as { id?: string } | undefined)?.id
@@ -644,11 +645,12 @@ export const OtProgramForm = forwardRef<OtProgramFormRef, Props>(function OtProg
     }
     const result = await submitOtSession(programId, sessionIdx)
     setSaving(false)
-    if (result.error) setError(result.error)
-    else {
+    if (result.error) {
+      setError(result.error)
       setSessions((prev) => prev.map((s, i) =>
-        i === sessionIdx ? { ...s, approval_status: '제출완료', submitted_at: new Date().toISOString(), rejection_reason: null } : s,
+        i === sessionIdx ? { ...s, approval_status: '작성중', submitted_at: null } : s,
       ))
+    } else {
       onSaved?.()
     }
   }
@@ -933,29 +935,23 @@ export const OtProgramForm = forwardRef<OtProgramFormRef, Props>(function OtProg
                 <div className="space-y-3">
                   {/* 수업 상태 변경 — 삭제됨 */}
 
-                  <div className="grid grid-cols-2 gap-2">
+                  <div className="flex items-center gap-2 flex-wrap">
                     <div className="flex items-center gap-1">
                       <Label className="text-xs font-bold shrink-0">날짜:</Label>
-                      <Input type="date" value={session.date} onChange={(e) => updateSession(idx, 'date', e.target.value)} className="h-7 text-sm" disabled={!canEdit || isSessionLocked(session) || (isCompleted && !isExpanded)} />
+                      <Input type="date" value={session.date} onChange={(e) => updateSession(idx, 'date', e.target.value)} className="h-7 text-sm w-32" disabled={!canEdit || isSessionLocked(session) || (isCompleted && !isExpanded)} />
                     </div>
                     <div className="flex items-center gap-1">
                       <Label className="text-xs font-bold shrink-0">시간:</Label>
-                      <select
+                      <Input
+                        type="time"
+                        step={600}
                         value={session.time}
                         onChange={(e) => updateSession(idx, 'time', e.target.value)}
                         disabled={!canEdit || isSessionLocked(session) || (isCompleted && !isExpanded)}
-                        className="h-7 text-sm rounded-md border border-gray-300 bg-white px-2 w-full disabled:opacity-50"
-                      >
-                        <option value="">선택</option>
-                        {TIME_OPTIONS.map((t) => (
-                          <option key={t} value={t}>{t}</option>
-                        ))}
-                      </select>
+                        className="h-7 text-sm w-24"
+                      />
                     </div>
-                  </div>
-                  {/* 수업시간 30분/50분 */}
-                  <div className="flex items-center gap-2">
-                    <Label className="text-xs font-bold shrink-0">수업:</Label>
+                    {/* 수업시간 30분/50분 */}
                     {[30, 50].map((d) => (
                       <button
                         key={d}
