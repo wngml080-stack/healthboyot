@@ -579,6 +579,22 @@ export const OtProgramForm = forwardRef<OtProgramFormRef, Props>(function OtProg
     onSaved?.()
   }
 
+  // 자동 저장 (3초 디바운스)
+  const autoSaveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+  useEffect(() => {
+    if (!canEdit) return
+    // 초기 로드 시에는 저장하지 않음
+    if (lastSavedRef.current === null) return
+    const currentPayload = JSON.stringify(buildSavePayload())
+    if (currentPayload === lastSavedRef.current) return
+    if (autoSaveTimerRef.current) clearTimeout(autoSaveTimerRef.current)
+    autoSaveTimerRef.current = setTimeout(() => {
+      handleSave()
+    }, 3000)
+    return () => { if (autoSaveTimerRef.current) clearTimeout(autoSaveTimerRef.current) }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [sessions, consultation])
+
   // 저장 후 상담카드 데이터 갱신 (서버에서 채워줬을 수 있음)
   useEffect(() => {
     if (program?.consultation_data?.exercise_goals?.length) {
@@ -801,7 +817,7 @@ export const OtProgramForm = forwardRef<OtProgramFormRef, Props>(function OtProg
                     const rc = session.result_category
                     // result_category가 있으면 그걸 표시
                     if (rc) {
-                      const color = rc === '수업완료' ? 'bg-green-500' : rc === '노쇼' || rc === '차감노쇼' ? 'bg-red-500' : rc === '거부자' ? 'bg-orange-500' : 'bg-purple-500'
+                      const color = rc === '수업완료' ? 'bg-green-500' : rc === '수업취소' ? 'bg-red-500' : rc === '스케줄변경' ? 'bg-orange-500' : rc === '서비스수업' ? 'bg-purple-500' : 'bg-gray-500'
                       return <Badge className={`${color} text-white text-xs`}>{rc}</Badge>
                     }
                     if (otSession?.completed_at) return <Badge className="bg-green-500 text-white text-xs">수업완료</Badge>
@@ -822,25 +838,15 @@ export const OtProgramForm = forwardRef<OtProgramFormRef, Props>(function OtProg
                     >
                       <option value="">상태선택</option>
                       <option value="수업완료">수업완료</option>
-                      <option value="노쇼">노쇼</option>
-                      <option value="차감노쇼">차감노쇼</option>
-                      <option value="거부자">거부자</option>
+                      <option value="수업취소">수업취소</option>
+                      <option value="스케줄변경">스케줄변경</option>
                       <option value="서비스수업">서비스수업</option>
+                      <option value="기타">기타</option>
                     </select>
                   )}
                   {idx === activeSessionIdx && !isCompleted && <Badge className="bg-blue-400 text-white text-xs">현재</Badge>}
                 </CardTitle>
                 <div className="flex flex-wrap items-center gap-2">
-                  {canEdit && !isSessionLocked(session) && (
-                    <Button
-                      size="sm"
-                      className="h-7 text-xs font-bold bg-green-600 hover:bg-green-700 text-white"
-                      onClick={() => handleSave()}
-                      disabled={saving}
-                    >
-                      {saving ? '저장중...' : `${idx + 1}차 저장`}
-                    </Button>
-                  )}
                   {session.signature_url && (
                     <Button
                       size="sm"
@@ -1495,7 +1501,7 @@ export const OtProgramForm = forwardRef<OtProgramFormRef, Props>(function OtProg
                         )}
                       </div>
                       <div className="bg-white rounded border border-green-200 p-2">
-                        <img src={session.signature_url} alt="회원 서명" className="w-full max-h-36 object-contain" />
+                        <img src={session.signature_url} alt="회원 서명" className="w-full max-h-36 object-contain" loading="lazy" />
                       </div>
                     </div>
                   ) : (

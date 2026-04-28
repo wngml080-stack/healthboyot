@@ -209,7 +209,7 @@ export function TopNav({ profile }: Props) {
             </div>
             <div className="rounded-lg border overflow-hidden">
               {pricingUrls[pricingTab] ? (
-                <img src={pricingUrls[pricingTab]} alt={`${pricingTab} 회원권`} className="w-full" />
+                <img src={pricingUrls[pricingTab]} alt={`${pricingTab} 회원권`} className="w-full" loading="lazy" />
               ) : (
                 <div className="py-10 text-center text-sm text-gray-400">
                   {pricingTab} 회원권 이미지가 없습니다

@@ -712,6 +712,17 @@ export function TrainerCardList({ assignments, trainers = [], trainerId, trainer
 
         {/* 회원 검색 + 기간/카테고리 필터 */}
         <div className="flex flex-col sm:flex-row gap-2 items-stretch">
+          {/* 전체 필터 버튼 */}
+          <button
+            onClick={() => setFilter('전체')}
+            className={`h-9 px-4 rounded-md text-xs font-bold transition-colors shrink-0 ${
+              filter === '전체'
+                ? 'bg-yellow-400 text-black border-2 border-yellow-500'
+                : 'bg-yellow-300 text-black border border-yellow-400 hover:bg-yellow-400'
+            }`}
+          >
+            전체 {(filterCounts['전체'] ?? 0) > 0 && <span className="ml-1 text-[10px]">{filterCounts['전체']}</span>}
+          </button>
           {/* 검색창 */}
           <div className="relative flex-1 min-w-0">
             <Input
@@ -734,13 +745,13 @@ export function TrainerCardList({ assignments, trainers = [], trainerId, trainer
             )}
           </div>
           {/* 기간 필터 */}
-          <div className="flex items-center gap-1.5 bg-white border border-gray-300 rounded-md px-3 h-9 shrink-0">
+          <div className="flex items-center justify-center gap-1.5 bg-white border border-gray-300 rounded-md px-3 h-9 shrink-0">
             <span className="text-[10px] text-gray-500 font-medium shrink-0">기간</span>
             <Input
               type="date"
               value={dateFrom}
               onChange={(e) => setDateFrom(e.target.value)}
-              className="h-7 text-xs border-0 p-0 bg-white text-gray-900 w-[140px]"
+              className="h-7 text-xs border-0 p-0 bg-white text-gray-900 w-[140px] text-center"
               aria-label="시작일"
             />
             <span className="text-gray-400 text-xs shrink-0">~</span>
@@ -748,7 +759,7 @@ export function TrainerCardList({ assignments, trainers = [], trainerId, trainer
               type="date"
               value={dateTo}
               onChange={(e) => setDateTo(e.target.value)}
-              className="h-7 text-xs border-0 p-0 bg-white text-gray-900 w-[140px]"
+              className="h-7 text-xs border-0 p-0 bg-white text-gray-900 w-[140px] text-center"
               aria-label="종료일"
             />
             {(dateFrom || dateTo) && (
@@ -764,7 +775,7 @@ export function TrainerCardList({ assignments, trainers = [], trainerId, trainer
           <select
             value={categoryFilter}
             onChange={(e) => setCategoryFilter(e.target.value)}
-            className="h-9 text-sm bg-white text-gray-900 border border-gray-300 rounded-md px-3 shrink-0"
+            className="h-9 text-sm bg-white text-gray-900 border border-gray-300 rounded-md pl-3 pr-7 shrink-0 appearance-none bg-[url('data:image/svg+xml;charset=utf-8,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20width%3D%2212%22%20height%3D%2212%22%20viewBox%3D%220%200%2024%2024%22%20fill%3D%22none%22%20stroke%3D%22%23666%22%20stroke-width%3D%222%22%3E%3Cpath%20d%3D%22M6%209l6%206%206-6%22%2F%3E%3C%2Fsvg%3E')] bg-[length:12px] bg-[right_8px_center] bg-no-repeat"
             aria-label="세일즈 필터"
           >
             <option value="전체">세일즈 전체</option>
@@ -775,17 +786,6 @@ export function TrainerCardList({ assignments, trainers = [], trainerId, trainer
             <option value="스케줄미확정">스케줄미확정</option>
             <option value="거부">거부</option>
           </select>
-          {/* 전체 필터 버튼 */}
-          <button
-            onClick={() => setFilter('전체')}
-            className={`h-9 px-3 rounded-md text-xs font-medium transition-colors shrink-0 ${
-              filter === '전체'
-                ? 'bg-yellow-400 text-black'
-                : 'bg-white text-gray-600 border border-gray-300 hover:bg-gray-50'
-            }`}
-          >
-            전체 {(filterCounts['전체'] ?? 0) > 0 && <span className="ml-1 text-[10px]">{filterCounts['전체']}</span>}
-          </button>
         </div>
 
         {/* 필터 + 회원추가 */}
@@ -929,7 +929,6 @@ export function TrainerCardList({ assignments, trainers = [], trainerId, trainer
                         <span>등록 {a.member.registered_at}</span>
                         <span>시작 {a.member.start_date ?? '-'}</span>
                         {a.member.ot_category && <span>{a.member.ot_category}</span>}
-                        {a.member.exercise_time && <span className="text-blue-600">{a.member.exercise_time}</span>}
                         {a.member.phone && <span>번호) {a.member.phone.replace(/(\d{3})(\d{4})(\d{4})/, '$1-$2-$3')}</span>}
                         {a.expected_amount > 0 && <span className="text-green-600 font-medium">예상 {toManwon(a.expected_amount).toLocaleString()}만원{a.expected_sessions ? ` (${a.expected_sessions}회)` : ''}</span>}
                         {nextScheduled && <span>OT일정: {nextSession}차 {format(new Date(nextScheduled.scheduled_at!), 'M/d HH:mm')}</span>}
@@ -939,19 +938,70 @@ export function TrainerCardList({ assignments, trainers = [], trainerId, trainer
                       {/* 펼침: 상세 + OT 세션 */}
                       {isExpanded && (
                         <div className="border-t border-gray-200 bg-gray-50 p-4 space-y-4">
-                          {/* 상세 정보 */}
-                          <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 text-sm">
-                            <div><p className="text-xs text-gray-500">연락처</p><p className="font-medium">{a.member.phone ? a.member.phone.replace(/(\d{3})(\d{4})(\d{4})/, '$1-$2-$3') : '-'}</p></div>
-                            <div><p className="text-xs text-gray-500">성별</p><p className="font-medium">{a.member.gender ?? '-'}</p></div>
-                            <div><p className="text-xs text-gray-500">운동기간</p><p className="font-medium">{a.member.duration_months ?? '-'}</p></div>
-                            <div><p className="text-xs text-gray-500">PT담당</p><p className="font-medium">{a.pt_trainer?.name ?? '미배정'}</p></div>
-                          </div>
-                          {a.member.detail_info && (
-                            <div><p className="text-xs text-gray-500">상세정보</p><p className="text-sm text-gray-900 mt-0.5">{a.member.detail_info}</p></div>
-                          )}
-                          {a.member.notes && (
-                            <div><p className="text-xs text-gray-500">특이사항</p><p className="text-sm text-gray-900 mt-0.5">{a.member.notes}</p></div>
-                          )}
+                          {/* 상세 정보 — 상담카드 우선, 없으면 회원정보 */}
+                          {(() => {
+                            const ex = expandedData[a.id]
+                            const card = (ex && ex !== 'loading') ? ex.card : null
+                            if (card) {
+                              // 상담카드 기반 정보 표시
+                              return (
+                                <div className="space-y-3">
+                                  <div className="flex items-center justify-between">
+                                    <p className="text-sm font-bold text-gray-900">📋 상담카드 정보</p>
+                                    <div className="flex items-center gap-1.5">
+                                      <Button size="sm" className="h-7 text-xs bg-amber-700 hover:bg-amber-800 text-white" onClick={(e) => { e.stopPropagation(); setCardDetailTarget(card) }}>
+                                        <ClipboardList className="h-3 w-3 mr-1" />상세 보기
+                                      </Button>
+                                    </div>
+                                  </div>
+                                  <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 text-sm">
+                                    <div><p className="text-xs text-gray-500">연락처</p><p className="font-medium">{card.member_phone ?? a.member.phone?.replace(/(\d{3})(\d{4})(\d{4})/, '$1-$2-$3') ?? '-'}</p></div>
+                                    <div><p className="text-xs text-gray-500">성별</p><p className="font-medium">{card.member_gender ?? a.member.gender ?? '-'}</p></div>
+                                    <div><p className="text-xs text-gray-500">나이</p><p className="font-medium">{card.age ?? '-'}</p></div>
+                                    <div><p className="text-xs text-gray-500">PT담당</p><p className="font-medium">{a.pt_trainer?.name ?? '미배정'}</p></div>
+                                  </div>
+                                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-4 gap-y-1.5 text-xs text-gray-800">
+                                    {card.exercise_goals?.length > 0 && <p><span className="font-bold text-gray-600">운동목적:</span> {card.exercise_goals.join(', ')}{card.exercise_goal_detail ? ` — ${card.exercise_goal_detail}` : ''}</p>}
+                                    {card.body_correction_area && <p><span className="font-bold text-gray-600">체형교정:</span> {card.body_correction_area}</p>}
+                                    {card.medical_conditions?.length > 0 && <p><span className="font-bold text-gray-600">병력:</span> {card.medical_conditions.join(', ')}{card.medical_detail ? ` (${card.medical_detail})` : ''}</p>}
+                                    {card.surgery_detail && <p><span className="font-bold text-gray-600">수술:</span> {card.surgery_detail}</p>}
+                                    {card.exercise_experiences?.length > 0 && <p><span className="font-bold text-gray-600">운동경험:</span> {card.exercise_experiences.join(', ')}{card.exercise_duration ? ` / ${card.exercise_duration}` : ''}</p>}
+                                    {card.exercise_time_preference && <p><span className="font-bold text-gray-600">선호시간:</span> {card.exercise_time_preference}</p>}
+                                    {card.desired_body_type && <p><span className="font-bold text-gray-600">원하는 체형:</span> {card.desired_body_type}</p>}
+                                    {card.exercise_personality?.length > 0 && <p><span className="font-bold text-gray-600">운동성향:</span> {card.exercise_personality.join(', ')}</p>}
+                                    {card.occupation && <p><span className="font-bold text-gray-600">직업:</span> {card.occupation}</p>}
+                                    {card.residence_area && <p><span className="font-bold text-gray-600">거주지:</span> {card.residence_area}</p>}
+                                    {card.registration_product && <p><span className="font-bold text-gray-600">등록상품:</span> {card.registration_product}</p>}
+                                    {card.pt_satisfaction && <p><span className="font-bold text-gray-600">PT만족도:</span> {card.pt_satisfaction}{card.pt_satisfaction_reason ? ` — ${card.pt_satisfaction_reason}` : ''}</p>}
+                                    {card.referral_sources?.length > 0 && <p><span className="font-bold text-gray-600">유입경로:</span> {card.referral_sources.join(', ')}{card.referral_detail ? ` (${card.referral_detail})` : ''}</p>}
+                                  </div>
+                                </div>
+                              )
+                            }
+                            // 상담카드 없으면 기존 회원정보
+                            return (
+                              <>
+                                <div className="flex items-center justify-between mb-2">
+                                  <p className="text-sm font-bold text-gray-900">회원 정보</p>
+                                  <Button size="sm" className="h-7 text-xs bg-amber-600 hover:bg-amber-700 text-white" onClick={(e) => { e.stopPropagation(); openLinkCard(a) }}>
+                                    <ClipboardList className="h-3 w-3 mr-1" />상담카드 연결
+                                  </Button>
+                                </div>
+                                <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 text-sm">
+                                  <div><p className="text-xs text-gray-500">연락처</p><p className="font-medium">{a.member.phone ? a.member.phone.replace(/(\d{3})(\d{4})(\d{4})/, '$1-$2-$3') : '-'}</p></div>
+                                  <div><p className="text-xs text-gray-500">성별</p><p className="font-medium">{a.member.gender ?? '-'}</p></div>
+                                  <div><p className="text-xs text-gray-500">운동기간</p><p className="font-medium">{a.member.duration_months ?? '-'}</p></div>
+                                  <div><p className="text-xs text-gray-500">PT담당</p><p className="font-medium">{a.pt_trainer?.name ?? '미배정'}</p></div>
+                                </div>
+                                {a.member.detail_info && (
+                                  <div><p className="text-xs text-gray-500">상세정보</p><p className="text-sm text-gray-900 mt-0.5">{a.member.detail_info}</p></div>
+                                )}
+                                {a.member.notes && (
+                                  <div><p className="text-xs text-gray-500">특이사항</p><p className="text-sm text-gray-900 mt-0.5">{a.member.notes}</p></div>
+                                )}
+                              </>
+                            )
+                          })()}
 
                           {/* 상담카드 요약 + 세일즈 여정 */}
                           <div onClick={(e) => e.stopPropagation()} className="space-y-4">
@@ -1136,66 +1186,28 @@ export function TrainerCardList({ assignments, trainers = [], trainerId, trainer
                                     </div>
                                   )}
 
-                                  {/* 상담카드 요약 */}
-                                  <div className="rounded-lg border border-amber-200 bg-amber-50/40 p-4 space-y-2">
-                                    <div className="flex items-center justify-between flex-wrap gap-2">
-                                      <p className="text-sm font-bold text-amber-900">📋 상담카드 요약</p>
-                                      <div className="flex items-center gap-1.5">
-                                        {card && (
-                                          <Button
-                                            size="sm"
-                                            className="h-7 text-xs bg-amber-700 hover:bg-amber-800 text-white"
-                                            onClick={(e) => { e.stopPropagation(); setCardDetailTarget(card) }}
-                                          >
-                                            <ClipboardList className="h-3 w-3 mr-1" />상담카드 상세 보기
-                                          </Button>
-                                        )}
-                                        {!card && (
-                                          <Button
-                                            size="sm"
-                                            className="h-7 text-xs bg-amber-600 hover:bg-amber-700 text-white"
-                                            onClick={(e) => { e.stopPropagation(); openLinkCard(a) }}
-                                          >
-                                            <ClipboardList className="h-3 w-3 mr-1" />상담카드 연결
-                                          </Button>
-                                        )}
-                                      </div>
-                                    </div>
-                                    {card ? (
-                                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-4 gap-y-1 text-xs text-gray-800">
-                                        {card.exercise_goals?.length > 0 && <p><span className="font-bold">운동목적:</span> {card.exercise_goals.join(', ')}{card.exercise_goal_detail ? ` — ${card.exercise_goal_detail}` : ''}</p>}
-                                        {card.body_correction_area && <p><span className="font-bold">체형교정:</span> {card.body_correction_area}</p>}
-                                        {card.medical_conditions?.length > 0 && <p><span className="font-bold">병력:</span> {card.medical_conditions.join(', ')}{card.medical_detail ? ` (${card.medical_detail})` : ''}</p>}
-                                        {card.surgery_detail && <p><span className="font-bold">수술:</span> {card.surgery_detail}</p>}
-                                        {card.exercise_experiences?.length > 0 && <p><span className="font-bold">운동경험:</span> {card.exercise_experiences.join(', ')}{card.exercise_duration ? ` / ${card.exercise_duration}` : ''}</p>}
-                                        {card.exercise_time_preference && <p><span className="font-bold">선호 시간:</span> {card.exercise_time_preference}</p>}
-                                        {card.desired_body_type && <p><span className="font-bold">원하는 체형:</span> {card.desired_body_type}</p>}
-                                        {card.pt_satisfaction && <p><span className="font-bold">PT 만족도:</span> {card.pt_satisfaction}</p>}
-                                      </div>
-                                    ) : (
-                                      <p className="text-xs text-gray-500">작성된 상담카드가 없습니다.</p>
-                                    )}
-                                  </div>
 
-                                  {/* 미진행 사유 (거부/연락두절/스케줄미확정) */}
+
+                                  {/* 미진행 처리 (거부/제외 · 연락두절 · 스케줄미확정) */}
                                   {(() => {
                                     const isEditing = quickStatusTarget === a.id
                                     const currentStatus = a.sales_status
-                                    const isInactive = ['OT거부자', '연락두절', '스케줄미확정'].includes(currentStatus)
+                                    const isExcluded = a.is_excluded
+                                    const isInactive = isExcluded || ['OT거부자', '연락두절', '스케줄미확정'].includes(currentStatus)
+                                    const statusLabel = isExcluded ? '거부/제외' : currentStatus === 'OT거부자' ? '거부/제외' : currentStatus === '연락두절' ? '연락두절' : currentStatus === '스케줄미확정' ? '스케줄미확정' : ''
+                                    const QUICK_STATUSES = ['거부/제외', '연락두절', '스케줄미확정']
                                     return (
                                   <div className={`rounded-lg border p-4 space-y-2 ${isInactive ? 'border-red-300 bg-red-50/60' : 'border-gray-200 bg-gray-50/40'}`}>
                                     <div className="flex items-center justify-between flex-wrap gap-2">
                                       <p className="text-sm font-bold text-gray-800">⚠️ 미진행 처리</p>
                                       {isInactive && !isEditing && (
-                                        <Badge className="bg-red-500 text-white text-[10px]">
-                                          {currentStatus === 'OT거부자' ? '거부' : currentStatus}
-                                        </Badge>
+                                        <Badge className="bg-red-500 text-white text-[10px]">{statusLabel}</Badge>
                                       )}
                                     </div>
                                     {isInactive && !isEditing && (
                                       <div className="space-y-1">
-                                        {a.sales_note && (
-                                          <p className="text-xs text-gray-700"><span className="font-bold">사유:</span> {a.sales_note}</p>
+                                        {(a.excluded_reason || a.sales_note) && (
+                                          <p className="text-xs text-gray-700"><span className="font-bold">사유:</span> {a.excluded_reason || a.sales_note}</p>
                                         )}
                                         <button
                                           type="button"
@@ -1203,8 +1215,8 @@ export function TrainerCardList({ assignments, trainers = [], trainerId, trainer
                                           onClick={(e) => {
                                             e.stopPropagation()
                                             setQuickStatusTarget(a.id)
-                                            setQuickStatusValue(currentStatus === 'OT거부자' ? '거부' : currentStatus)
-                                            setQuickStatusReason(a.sales_note ?? '')
+                                            setQuickStatusValue(statusLabel)
+                                            setQuickStatusReason(a.excluded_reason || a.sales_note || '')
                                           }}
                                         >
                                           수정하기
@@ -1213,7 +1225,7 @@ export function TrainerCardList({ assignments, trainers = [], trainerId, trainer
                                     )}
                                     {!isInactive && !isEditing && (
                                       <div className="flex gap-2">
-                                        {['거부', '연락두절', '스케줄미확정'].map((s) => (
+                                        {QUICK_STATUSES.map((s) => (
                                           <button
                                             key={s}
                                             type="button"
@@ -1233,7 +1245,7 @@ export function TrainerCardList({ assignments, trainers = [], trainerId, trainer
                                     {isEditing && (
                                       <div className="space-y-2" onClick={(e) => e.stopPropagation()}>
                                         <div className="flex gap-2">
-                                          {['거부', '연락두절', '스케줄미확정'].map((s) => (
+                                          {QUICK_STATUSES.map((s) => (
                                             <button
                                               key={s}
                                               type="button"
@@ -1265,6 +1277,9 @@ export function TrainerCardList({ assignments, trainers = [], trainerId, trainer
                                                 await updateOtAssignment(a.id, {
                                                   sales_status: 'OT진행중',
                                                   status: '배정완료',
+                                                  is_excluded: false,
+                                                  excluded_reason: null,
+                                                  excluded_at: null,
                                                   sales_note: null,
                                                 })
                                                 setQuickStatusTarget(null)
@@ -1278,7 +1293,7 @@ export function TrainerCardList({ assignments, trainers = [], trainerId, trainer
                                           <Button
                                             size="sm"
                                             variant="outline"
-                                            className="h-7 text-xs text-gray-700"
+                                            className="h-7 text-xs text-gray-500 border-gray-300 bg-white hover:bg-gray-100"
                                             onClick={() => setQuickStatusTarget(null)}
                                           >
                                             취소
@@ -1289,12 +1304,22 @@ export function TrainerCardList({ assignments, trainers = [], trainerId, trainer
                                             disabled={quickStatusLoading || !quickStatusValue}
                                             onClick={async () => {
                                               setQuickStatusLoading(true)
-                                              const mappedStatus = quickStatusValue === '거부' ? 'OT거부자' : quickStatusValue
-                                              await updateOtAssignment(a.id, {
-                                                sales_status: mappedStatus,
-                                                status: quickStatusValue === '거부' ? '거부' : a.status,
-                                                sales_note: quickStatusReason || null,
-                                              })
+                                              if (quickStatusValue === '거부/제외') {
+                                                // 제외 폴더로 이동
+                                                await updateOtAssignment(a.id, {
+                                                  is_excluded: true,
+                                                  excluded_reason: quickStatusReason || null,
+                                                  excluded_at: new Date().toISOString(),
+                                                  sales_status: 'OT거부자',
+                                                  status: '거부',
+                                                })
+                                              } else {
+                                                // 연락두절, 스케줄미확정 — 제외폴더 이동 없이 상태만 변경
+                                                await updateOtAssignment(a.id, {
+                                                  sales_status: quickStatusValue as SalesStatus,
+                                                  sales_note: quickStatusReason || null,
+                                                })
+                                              }
                                               setQuickStatusTarget(null)
                                               setQuickStatusLoading(false)
                                               startTransition(() => router.refresh())
@@ -1720,16 +1745,6 @@ export function TrainerCardList({ assignments, trainers = [], trainerId, trainer
                             <Button size="sm" variant="outline" className="text-white bg-gray-800 border-gray-700" onClick={(e) => { e.stopPropagation(); router.push(`/ot/${a.id}`) }}>
                               상세 페이지
                             </Button>
-                            {isAdmin && !a.is_excluded && (
-                              <Button size="sm" className="bg-red-500 hover:bg-red-600 text-white" onClick={(e) => { e.stopPropagation(); setExcludeTarget(a); setExcludeReason('') }}>
-                                <Ban className="h-3.5 w-3.5 mr-1" />제외
-                              </Button>
-                            )}
-                            {isAdmin && a.is_excluded && (
-                              <Button size="sm" className="bg-green-600 hover:bg-green-700 text-white" onClick={(e) => { e.stopPropagation(); handleRestore(a) }}>
-                                <Undo2 className="h-3.5 w-3.5 mr-1" />복구
-                              </Button>
-                            )}
                           </div>
                         </div>
                       )}
@@ -1742,8 +1757,8 @@ export function TrainerCardList({ assignments, trainers = [], trainerId, trainer
         </Card>
       </div>
 
-      {/* 완료 처리 — OT 프로그램 팝업 */}
-      <Dialog open={!!completeTarget} onOpenChange={(open) => {
+      {/* 완료 처리 — OT 프로그램 팝업 (조건부 렌더링: 모바일 DOM 경량화) */}
+      {!!completeTarget && <Dialog open onOpenChange={(open) => {
         if (!open) {
           const dirty = programFormRef.current?.isDirty?.() ?? false
           if (dirty) {
@@ -1966,10 +1981,10 @@ export function TrainerCardList({ assignments, trainers = [], trainerId, trainer
             </div>
           )}
         </DialogContent>
-      </Dialog>
+      </Dialog>}
 
       {/* 회원 정보 퀵뷰 */}
-      <Dialog open={!!quickViewTarget} onOpenChange={() => setQuickViewTarget(null)}>
+      {!!quickViewTarget && <Dialog open onOpenChange={() => setQuickViewTarget(null)}>
         <DialogContent className="max-w-md">
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2">
@@ -2072,10 +2087,10 @@ export function TrainerCardList({ assignments, trainers = [], trainerId, trainer
             </div>
           )}
         </DialogContent>
-      </Dialog>
+      </Dialog>}
 
       {/* 세일즈 편집 바텀시트 */}
-      <Dialog open={!!salesTarget} onOpenChange={() => setSalesTarget(null)}>
+      {!!salesTarget && <Dialog open onOpenChange={() => setSalesTarget(null)}>
         <DialogContent className="max-w-md max-h-[90vh] overflow-y-auto">
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2">
@@ -2256,23 +2271,23 @@ export function TrainerCardList({ assignments, trainers = [], trainerId, trainer
             </Button>
           </div>
         </DialogContent>
-      </Dialog>
+      </Dialog>}
 
       {/* 피드백 팝업 */}
-      <Dialog open={!!feedbackPopup} onOpenChange={() => setFeedbackPopup(null)}>
+      {!!feedbackPopup && <Dialog open onOpenChange={() => setFeedbackPopup(null)}>
         <DialogContent className="max-w-sm">
           <DialogHeader>
-            <DialogTitle className="text-base">{feedbackPopup?.title}</DialogTitle>
+            <DialogTitle className="text-base">{feedbackPopup.title}</DialogTitle>
             <DialogDescription>관리자 피드백</DialogDescription>
           </DialogHeader>
           <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
-            <p className="text-sm text-gray-800 whitespace-pre-wrap">{feedbackPopup?.feedback}</p>
+            <p className="text-sm text-gray-800 whitespace-pre-wrap">{feedbackPopup.feedback}</p>
           </div>
         </DialogContent>
-      </Dialog>
+      </Dialog>}
 
       {/* 회원 추가 다이얼로그 */}
-      <Dialog open={showAddMember} onOpenChange={setShowAddMember}>
+      {showAddMember && <Dialog open onOpenChange={setShowAddMember}>
         <DialogContent className="max-w-md max-h-[90vh] overflow-y-auto">
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2">
@@ -2427,10 +2442,10 @@ export function TrainerCardList({ assignments, trainers = [], trainerId, trainer
             </Button>
           </div>
         </DialogContent>
-      </Dialog>
+      </Dialog>}
 
       {/* 상담카드 상세 보기 다이얼로그 */}
-      <Dialog open={!!cardDetailTarget} onOpenChange={(o) => { if (!o) setCardDetailTarget(null) }}>
+      {!!cardDetailTarget && <Dialog open onOpenChange={(o) => { if (!o) setCardDetailTarget(null) }}>
         <DialogContent className="w-[100vw] max-w-[100vw] sm:max-w-4xl max-h-[95vh] overflow-y-auto p-0 sm:p-0 gap-0 bg-white rounded-none sm:rounded-lg">
           {cardDetailTarget && (() => {
             const c = cardDetailTarget
@@ -2577,10 +2592,10 @@ export function TrainerCardList({ assignments, trainers = [], trainerId, trainer
             )
           })()}
         </DialogContent>
-      </Dialog>
+      </Dialog>}
 
       {/* N차 일정 잡기 다이얼로그 */}
-      <Dialog open={!!scheduleOnlyTarget} onOpenChange={(o) => { if (!o) setScheduleOnlyTarget(null) }}>
+      {!!scheduleOnlyTarget && <Dialog open onOpenChange={(o) => { if (!o) setScheduleOnlyTarget(null) }}>
         <DialogContent className="max-w-md">
           <DialogHeader>
             <DialogTitle>스케줄 추가</DialogTitle>
@@ -2673,15 +2688,15 @@ export function TrainerCardList({ assignments, trainers = [], trainerId, trainer
             </div>
           </div>
         </DialogContent>
-      </Dialog>
+      </Dialog>}
 
       {/* 상담카드 연결 다이얼로그 (배정된 회원용) */}
-      <Dialog open={!!linkCardTarget} onOpenChange={(o) => { if (!o) setLinkCardTarget(null) }}>
+      {!!linkCardTarget && <Dialog open onOpenChange={(o) => { if (!o) setLinkCardTarget(null) }}>
         <DialogContent className="max-w-md">
           <DialogHeader>
             <DialogTitle>상담카드 연결</DialogTitle>
             <DialogDescription>
-              <strong>{linkCardTarget?.member.name}</strong> 회원({linkCardTarget?.member.phone ? linkCardTarget.member.phone.replace(/(\d{3})(\d{4})(\d{4})/, '$1-$2-$3') : '-'})에게 연결할 미연결 상담카드를 선택하세요
+              <strong>{linkCardTarget.member.name}</strong> 회원({linkCardTarget.member.phone ? linkCardTarget.member.phone.replace(/(\d{3})(\d{4})(\d{4})/, '$1-$2-$3') : '-'})에게 연결할 미연결 상담카드를 선택하세요
             </DialogDescription>
           </DialogHeader>
           <div className="space-y-3">
@@ -2730,10 +2745,10 @@ export function TrainerCardList({ assignments, trainers = [], trainerId, trainer
             </Button>
           </div>
         </DialogContent>
-      </Dialog>
+      </Dialog>}
 
       {/* 제외 사유 입력 다이얼로그 */}
-      <Dialog open={!!excludeTarget} onOpenChange={() => setExcludeTarget(null)}>
+      {!!excludeTarget && <Dialog open onOpenChange={() => setExcludeTarget(null)}>
         <DialogContent className="max-w-sm">
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2 text-red-600">
@@ -2765,7 +2780,7 @@ export function TrainerCardList({ assignments, trainers = [], trainerId, trainer
             </div>
           </div>
         </DialogContent>
-      </Dialog>
+      </Dialog>}
     </>
   )
 }

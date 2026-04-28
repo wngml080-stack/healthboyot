@@ -10,7 +10,7 @@ import { Textarea } from '@/components/ui/textarea'
 import {
   Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription,
 } from '@/components/ui/dialog'
-import { CheckCircle, XCircle, Eye, ChevronDown, ChevronUp, Send } from 'lucide-react'
+import { CheckCircle, XCircle, Eye, ChevronDown, ChevronUp, Send, DollarSign, ArrowRightLeft, Search } from 'lucide-react'
 import { rejectOtProgram, getOtProgram, upsertOtProgram, approveOtSession, rejectOtSession } from '@/actions/ot-program'
 import { getOtAssignment } from '@/actions/ot'
 import { getConsultationCard } from '@/actions/consultation'
@@ -22,7 +22,7 @@ const OtProgramForm = dynamic(() => import('@/components/ot/ot-program-form').th
 import type { OtProgram, OtProgramSession, OtAssignmentWithDetails, Profile, ConsultationCard, OtRegistrationWithTrainer } from '@/types'
 
 interface Props {
-  programs: (OtProgram & { member_name?: string })[]
+  programs: (OtProgram & { member_name?: string; is_sales_target?: boolean; is_pt_conversion?: boolean })[]
   profile: Profile
   registrations?: OtRegistrationWithTrainer[]
 }
@@ -85,7 +85,6 @@ export function ApprovalList({ programs: initialPrograms, profile, registrations
 
   const handleView = async (prog: OtProgram) => {
     setLoading(true)
-    // member_id는 프로그램에 이미 있으므로 3개 요청을 모두 병렬로 실행
     const [assignment, freshProg, card] = await Promise.all([
       getOtAssignment(prog.ot_assignment_id),
       getOtProgram(prog.ot_assignment_id),
@@ -98,7 +97,6 @@ export function ApprovalList({ programs: initialPrograms, profile, registrations
         if (s.admin_feedback) feedbacks[i] = s.admin_feedback
       })
       setSessionFeedbacks(feedbacks)
-      // 모든 세션 펼침 (승인된 세션도 반려 가능하도록)
       const toExpand = new Set<number>()
       ;(freshProg ?? prog).sessions?.forEach((_, i) => toExpand.add(i))
       setExpandedSessions(toExpand)
@@ -110,12 +108,10 @@ export function ApprovalList({ programs: initialPrograms, profile, registrations
     if (!rejectId || !rejectReason) return
     const id = rejectId
     const reason = rejectReason
-    // 즉시 UI 반영
     setPrograms((prev) => prev.map((p) => p.id === id ? { ...p, approval_status: '반려' as const, rejection_reason: reason } : p))
     setRejectId(null)
     setRejectReason('')
     setViewTarget(null)
-    // 서버 반영은 백그라운드
     void rejectOtProgram(id, reason).then(() => router.refresh())
   }
 
@@ -126,25 +122,21 @@ export function ApprovalList({ programs: initialPrograms, profile, registrations
     const memberId = viewTarget.program.member_id
     const feedbackText = sessionFeedbacks[sessionIdx]
 
-    // 즉시 UI 반영 (낙관적 업데이트)
     const updatedSessions = (viewTarget.program.sessions ?? []).map((s, i) =>
       i === sessionIdx
         ? { ...s, approval_status: '승인' as const, approved_at: new Date().toISOString(), admin_feedback: feedbackText ?? s.admin_feedback, rejection_reason: null }
         : s,
     )
     const updatedProgram = { ...viewTarget.program, sessions: updatedSessions as unknown as OtProgramSession[] }
-    // 모든 세션이 승인되면 프로그램 전체 승인
     const allApproved = updatedSessions.every((s) => s.approval_status === '승인')
     if (allApproved) updatedProgram.approval_status = '승인'
     setViewTarget({ ...viewTarget, program: updatedProgram })
     setPrograms((prev) => prev.map((p) => p.id === programId ? { ...p, ...updatedProgram } : p))
 
-    // 모든 세션 승인 완료 시 자동으로 팝업 닫기
     if (allApproved) {
       setTimeout(() => { setViewTarget(null); router.refresh() }, 1000)
     }
 
-    // 서버 반영은 백그라운드
     void (async () => {
       if (feedbackText) {
         await upsertOtProgram(assignmentId, memberId, { sessions: updatedSessions as unknown as OtProgramSession[] })
@@ -160,7 +152,6 @@ export function ApprovalList({ programs: initialPrograms, profile, registrations
     const idx = sessionRejectIdx
     const reason = sessionRejectReason
 
-    // 즉시 UI 반영
     const updatedSessions = (viewTarget.program.sessions ?? []).map((s, i) =>
       i === idx ? { ...s, approval_status: '반려' as const, rejection_reason: reason } : s,
     )
@@ -182,7 +173,6 @@ export function ApprovalList({ programs: initialPrograms, profile, registrations
     if (updatedSessions[sessionIdx]) {
       updatedSessions[sessionIdx] = { ...updatedSessions[sessionIdx], admin_feedback: feedbackText }
     }
-    // 즉시 UI 반영
     setViewTarget({ ...viewTarget, program: { ...viewTarget.program, sessions: updatedSessions } })
     setFeedbackSaving(true)
     void upsertOtProgram(assignmentId, memberId, { sessions: updatedSessions as unknown as OtProgramSession[] }).then(() => {
@@ -191,24 +181,38 @@ export function ApprovalList({ programs: initialPrograms, profile, registrations
     })
   }
 
-  // 검색 + 월별 필터
-  const [search, setSearch] = useState('')
+  // 월별 필터
   const [monthFilter, setMonthFilter] = useState(() => {
     const now = new Date()
     return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`
   })
 
+  // 승인대기/처리완료 각각 검색 + 기간 필터
+  const [pendingSearch, setPendingSearch] = useState('')
+  const [processedSearch, setProcessedSearch] = useState('')
+  const [pendingMonth, setPendingMonth] = useState('')
+  const [processedMonth, setProcessedMonth] = useState('')
+
   const filteredPrograms = useMemo(() => {
     let list = programs
-    // 월별 필터
     if (monthFilter) {
       list = list.filter((p) => {
         const date = p.submitted_at ?? p.created_at
         return date?.startsWith(monthFilter)
       })
     }
-    // 검색
-    const q = search.trim().toLowerCase()
+    return list
+  }, [programs, monthFilter])
+
+  const pending = useMemo(() => {
+    let list = filteredPrograms.filter((p) => p.approval_status === '제출완료')
+    if (pendingMonth) {
+      list = list.filter((p) => {
+        const date = p.submitted_at ?? p.created_at
+        return date?.startsWith(pendingMonth)
+      })
+    }
+    const q = pendingSearch.trim().toLowerCase()
     if (q) {
       list = list.filter((p) =>
         (p.member_name ?? '').toLowerCase().includes(q) ||
@@ -216,10 +220,25 @@ export function ApprovalList({ programs: initialPrograms, profile, registrations
       )
     }
     return list
-  }, [programs, search, monthFilter])
+  }, [filteredPrograms, pendingSearch, pendingMonth])
 
-  const pending = filteredPrograms.filter((p) => p.approval_status === '제출완료')
-  const processed = filteredPrograms.filter((p) => p.approval_status !== '제출완료')
+  const processed = useMemo(() => {
+    let list = filteredPrograms.filter((p) => p.approval_status !== '제출완료')
+    if (processedMonth) {
+      list = list.filter((p) => {
+        const date = p.submitted_at ?? p.approved_at ?? p.created_at
+        return date?.startsWith(processedMonth)
+      })
+    }
+    const q = processedSearch.trim().toLowerCase()
+    if (q) {
+      list = list.filter((p) =>
+        (p.member_name ?? '').toLowerCase().includes(q) ||
+        (p.trainer_name ?? '').toLowerCase().includes(q)
+      )
+    }
+    return list
+  }, [filteredPrograms, processedSearch, processedMonth])
 
   // 트레이너별 현황
   const trainerStats = (() => {
@@ -240,14 +259,8 @@ export function ApprovalList({ programs: initialPrograms, profile, registrations
 
   return (
     <div className="space-y-6">
-      {/* 검색 + 월별 필터 */}
-      <div className="flex flex-col sm:flex-row gap-2">
-        <Input
-          value={search}
-          onChange={(e) => setSearch(e.target.value)}
-          placeholder="회원 또는 트레이너 이름 검색"
-          className="h-9 text-sm bg-white text-gray-900 border-gray-300 flex-1"
-        />
+      {/* 월별 필터만 (검색바 제거) */}
+      <div className="flex gap-2 items-center">
         <input
           type="month"
           value={monthFilter}
@@ -298,46 +311,47 @@ export function ApprovalList({ programs: initialPrograms, profile, registrations
         </div>
       )}
 
-      {/* 회원권 등록 OT 인정건수 */}
-        <div>
-          <h3 className="text-lg font-bold text-white mb-3 flex items-center gap-2">
-            회원권 등록 OT 인정건수
-            {pendingRegs.length > 0 && <Badge className="bg-yellow-500 text-white">대기 {pendingRegs.length}</Badge>}
-            <Badge className="bg-green-500 text-white">승인 {regs.filter((r) => r.approval_status === '승인').reduce((s, r) => s + r.ot_credit, 0)}건</Badge>
-          </h3>
-          <div className="grid gap-2">
-            {pendingRegs.map((r) => (
-              <Card key={r.id} className="bg-white border-l-4 border-l-emerald-400 border-y border-r border-gray-200 shadow-sm">
-                <CardContent className="py-3 px-4 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-                  <div className="flex-1 min-w-0">
-                    <div className="flex items-center gap-2 flex-wrap mb-1">
-                      <Badge className="bg-yellow-100 text-yellow-800 border border-yellow-300 text-[10px]">제출완료</Badge>
-                      <p className="font-bold text-gray-900">{r.member_name}</p>
-                      <span className="text-xs text-gray-500">{r.trainer?.name ?? '-'}</span>
-                    </div>
-                    <div className="flex items-center gap-2 text-xs flex-wrap">
-                      <span className="bg-gray-100 text-gray-700 px-2 py-0.5 rounded-full">{r.membership_type}</span>
-                      <span className="bg-blue-50 text-blue-700 px-2 py-0.5 rounded-full">{r.registration_amount.toLocaleString()}원</span>
-                      <span className="bg-emerald-50 text-emerald-700 px-2 py-0.5 rounded-full font-bold">{r.ot_credit}건</span>
-                    </div>
+      {/* 회원권 등록 OT 인정건수 — 2열 그리드 */}
+      <div>
+        <h3 className="text-lg font-bold text-white mb-3 flex items-center gap-2">
+          회원권 등록 OT 인정건수
+          {pendingRegs.length > 0 && <Badge className="bg-yellow-500 text-white">대기 {pendingRegs.length}</Badge>}
+          <Badge className="bg-green-500 text-white">승인 {regs.filter((r) => r.approval_status === '승인').reduce((s, r) => s + r.ot_credit, 0)}건</Badge>
+        </h3>
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-2">
+          {pendingRegs.map((r) => (
+            <Card key={r.id} className="bg-white border-l-4 border-l-emerald-400 border-y border-r border-gray-200 shadow-sm">
+              <CardContent className="py-3 px-4 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                <div className="flex-1 min-w-0">
+                  <div className="flex items-center gap-2 flex-wrap mb-1">
+                    <Badge className="bg-yellow-100 text-yellow-800 border border-yellow-300 text-[10px]">제출완료</Badge>
+                    <p className="font-bold text-gray-900">{r.member_name}</p>
+                    <span className="text-xs text-gray-500">{r.trainer?.name ?? '-'}</span>
                   </div>
-                  {isAdmin && (
-                    <div className="flex gap-2 shrink-0">
-                      <Button size="sm" className="bg-green-600 hover:bg-green-700 text-white h-8 text-xs" onClick={() => handleRegApprove(r.id)}>
-                        <CheckCircle className="h-3.5 w-3.5 mr-1" />승인
-                      </Button>
-                      <Button size="sm" className="bg-red-600 hover:bg-red-700 text-white h-8 text-xs" onClick={() => { setRegRejectId(r.id); setRegRejectReason('') }}>
-                        <XCircle className="h-3.5 w-3.5 mr-1" />반려
-                      </Button>
-                    </div>
-                  )}
-                </CardContent>
-              </Card>
-            ))}
-            {processedRegs.length > 0 && (
+                  <div className="flex items-center gap-2 text-xs flex-wrap">
+                    <span className="bg-gray-100 text-gray-700 px-2 py-0.5 rounded-full">{r.membership_type}</span>
+                    <span className="bg-blue-50 text-blue-700 px-2 py-0.5 rounded-full">{r.registration_amount.toLocaleString()}원</span>
+                    <span className="bg-emerald-50 text-emerald-700 px-2 py-0.5 rounded-full font-bold">{r.ot_credit}건</span>
+                  </div>
+                </div>
+                {isAdmin && (
+                  <div className="flex gap-2 shrink-0">
+                    <Button size="sm" className="bg-green-600 hover:bg-green-700 text-white h-8 text-xs" onClick={() => handleRegApprove(r.id)}>
+                      <CheckCircle className="h-3.5 w-3.5 mr-1" />승인
+                    </Button>
+                    <Button size="sm" className="bg-red-600 hover:bg-red-700 text-white h-8 text-xs" onClick={() => { setRegRejectId(r.id); setRegRejectReason('') }}>
+                      <XCircle className="h-3.5 w-3.5 mr-1" />반려
+                    </Button>
+                  </div>
+                )}
+              </CardContent>
+            </Card>
+          ))}
+          {processedRegs.length > 0 && (
+            <div className="lg:col-span-2">
               <details className="mt-1" open>
                 <summary className="text-xs text-gray-400 cursor-pointer hover:text-gray-300">처리완료 {processedRegs.length}건 보기</summary>
-                <div className="grid gap-1.5 mt-2">
+                <div className="grid grid-cols-1 lg:grid-cols-2 gap-1.5 mt-2">
                   {processedRegs.map((r) => (
                     <Card key={r.id} className="bg-white border-gray-200 shadow-sm">
                       <CardContent className="py-2 px-4 flex items-center justify-between gap-2">
@@ -352,16 +366,17 @@ export function ApprovalList({ programs: initialPrograms, profile, registrations
                   ))}
                 </div>
               </details>
-            )}
-          </div>
-          {pendingRegs.length === 0 && processedRegs.length === 0 && (
-            <Card className="bg-white/5 border-gray-700">
-              <CardContent className="py-6 text-center text-sm text-gray-400">
-                등록된 인정건수가 없습니다.
-              </CardContent>
-            </Card>
+            </div>
           )}
         </div>
+        {pendingRegs.length === 0 && processedRegs.length === 0 && (
+          <Card className="bg-white/5 border-gray-700">
+            <CardContent className="py-6 text-center text-sm text-gray-400">
+              등록된 인정건수가 없습니다.
+            </CardContent>
+          </Card>
+        )}
+      </div>
 
       {/* 승인 대기 (좌) / 처리 완료 (우) */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
@@ -369,6 +384,27 @@ export function ApprovalList({ programs: initialPrograms, profile, registrations
         <h3 className="text-lg font-bold text-white mb-3 flex items-center gap-2">
           승인 대기 <Badge className="bg-yellow-500 text-white">{pending.length}</Badge>
         </h3>
+        {/* 승인대기 검색 + 기간 */}
+        <div className="flex gap-2 mb-3">
+          <div className="relative flex-1">
+            <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-gray-400" />
+            <Input
+              value={pendingSearch}
+              onChange={(e) => setPendingSearch(e.target.value)}
+              placeholder="회원 또는 트레이너 검색"
+              className="h-9 text-sm bg-white text-gray-900 border-gray-300 pl-9"
+            />
+          </div>
+          <input
+            type="month"
+            value={pendingMonth}
+            onChange={(e) => setPendingMonth(e.target.value)}
+            className="h-9 text-sm bg-white text-gray-900 border border-gray-300 rounded-md px-2 w-[130px] shrink-0"
+          />
+          {pendingMonth && (
+            <button onClick={() => setPendingMonth('')} className="h-9 px-2 text-[10px] bg-gray-100 text-gray-600 rounded-md border border-gray-300 hover:bg-gray-200 shrink-0">전체</button>
+          )}
+        </div>
         {pending.length === 0 ? (
           <Card className="bg-white/5 border-gray-700">
             <CardContent className="py-6 text-center text-sm text-gray-400">
@@ -387,6 +423,16 @@ export function ApprovalList({ programs: initialPrograms, profile, registrations
                       <div className="flex items-center gap-2 flex-wrap mb-1.5">
                         <p className="font-bold text-gray-900 text-base">{prog.member_name}</p>
                         <Badge className="bg-yellow-100 text-yellow-800 border border-yellow-300 text-[10px]">제출완료</Badge>
+                        {prog.is_sales_target && (
+                          <Badge className="bg-red-100 text-red-700 border border-red-300 text-[10px] flex items-center gap-0.5">
+                            <DollarSign className="h-2.5 w-2.5" />매출대상
+                          </Badge>
+                        )}
+                        {prog.is_pt_conversion && (
+                          <Badge className="bg-purple-100 text-purple-700 border border-purple-300 text-[10px] flex items-center gap-0.5">
+                            <ArrowRightLeft className="h-2.5 w-2.5" />PT전환
+                          </Badge>
+                        )}
                       </div>
                       <div className="flex items-center gap-1.5 flex-wrap text-xs">
                         <span className="inline-flex items-center px-2 py-0.5 rounded-full bg-gray-100 text-gray-700 font-medium">
@@ -421,6 +467,27 @@ export function ApprovalList({ programs: initialPrograms, profile, registrations
         <h3 className="text-lg font-bold text-white mb-3 flex items-center gap-2">
           처리 완료 <Badge className="bg-gray-500 text-white">{processed.length}</Badge>
         </h3>
+        {/* 처리완료 검색 + 기간 */}
+        <div className="flex gap-2 mb-3">
+          <div className="relative flex-1">
+            <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-gray-400" />
+            <Input
+              value={processedSearch}
+              onChange={(e) => setProcessedSearch(e.target.value)}
+              placeholder="회원 또는 트레이너 검색"
+              className="h-9 text-sm bg-white text-gray-900 border-gray-300 pl-9"
+            />
+          </div>
+          <input
+            type="month"
+            value={processedMonth}
+            onChange={(e) => setProcessedMonth(e.target.value)}
+            className="h-9 text-sm bg-white text-gray-900 border border-gray-300 rounded-md px-2 w-[130px] shrink-0"
+          />
+          {processedMonth && (
+            <button onClick={() => setProcessedMonth('')} className="h-9 px-2 text-[10px] bg-gray-100 text-gray-600 rounded-md border border-gray-300 hover:bg-gray-200 shrink-0">전체</button>
+          )}
+        </div>
         {processed.length === 0 ? (
           <Card className="bg-white/5 border-gray-700">
             <CardContent className="py-6 text-center text-sm text-gray-400">
@@ -432,12 +499,22 @@ export function ApprovalList({ programs: initialPrograms, profile, registrations
             {processed.map((prog) => (
               <Card key={prog.id} className="bg-white border-gray-200 shadow-sm hover:shadow-md transition-shadow">
                 <CardContent className="py-2.5 px-4 flex flex-col sm:flex-row sm:items-center justify-between gap-2">
-                  <div className="flex items-center gap-3 flex-wrap min-w-0">
+                  <div className="flex items-center gap-2 flex-wrap min-w-0">
                     <Badge className={STATUS_BADGE[prog.approval_status] ?? 'bg-gray-200 text-gray-700'}>
                       {prog.approval_status}
                     </Badge>
                     <span className="font-bold text-gray-900 text-sm">{prog.member_name}</span>
                     <span className="text-xs text-gray-500">담당 {prog.trainer_name ?? '-'}</span>
+                    {prog.is_sales_target && (
+                      <Badge className="bg-red-100 text-red-700 border border-red-300 text-[10px] flex items-center gap-0.5">
+                        <DollarSign className="h-2.5 w-2.5" />매출대상
+                      </Badge>
+                    )}
+                    {prog.is_pt_conversion && (
+                      <Badge className="bg-purple-100 text-purple-700 border border-purple-300 text-[10px] flex items-center gap-0.5">
+                        <ArrowRightLeft className="h-2.5 w-2.5" />PT전환
+                      </Badge>
+                    )}
                     {prog.rejection_reason && (
                       <span className="text-xs text-red-600 bg-red-50 px-2 py-0.5 rounded-full border border-red-200">사유: {prog.rejection_reason}</span>
                     )}
@@ -462,7 +539,6 @@ export function ApprovalList({ programs: initialPrograms, profile, registrations
           </DialogHeader>
           {viewTarget && (
             <div className="space-y-4">
-              {/* 프로그램 폼 (읽기용) */}
               <OtProgramForm
                 assignment={viewTarget.assignment}
                 program={viewTarget.program}
@@ -472,8 +548,7 @@ export function ApprovalList({ programs: initialPrograms, profile, registrations
                 onSaved={() => router.refresh()}
               />
 
-
-              {/* 세션별 피드백 + 승인 — 각 OT 아래 */}
+              {/* 세션별 피드백 + 승인 */}
               <div className="space-y-3">
                 {viewTarget.program.sessions?.map((session, idx) => {
                   const sessStatus = session.approval_status ?? '작성중'
@@ -482,7 +557,6 @@ export function ApprovalList({ programs: initialPrograms, profile, registrations
                   return (
                   <Card key={idx} className={`border-2 ${sessStatus === '승인' ? 'border-green-400' : sessStatus === '반려' ? 'border-red-300' : 'border-gray-200'}`}>
                     <CardContent className="py-3 px-4 space-y-3">
-                      {/* 헤더 */}
                       <div className="flex items-center justify-between cursor-pointer" onClick={() => toggleSession(idx)}>
                         <div className="flex items-center gap-2">
                           <span className="font-bold text-gray-900 text-base">{idx + 1}차 OT</span>
@@ -500,10 +574,8 @@ export function ApprovalList({ programs: initialPrograms, profile, registrations
                         </div>
                       </div>
 
-                      {/* 펼침 — 운동 요약 + 피드백 + 승인 */}
                       {expandedSessions.has(idx) && (
                         <div className="space-y-3 pt-2 border-t border-gray-100">
-                          {/* 운동 내용 */}
                           {session.exercises?.filter((e) => e.name).length > 0 && (
                             <div className="bg-gray-50 rounded-lg p-3">
                               <p className="text-xs font-bold text-gray-500 mb-1">운동 내용</p>
@@ -515,23 +587,21 @@ export function ApprovalList({ programs: initialPrograms, profile, registrations
                             </div>
                           )}
 
-                          {/* 유산소 */}
                           {session.cardio?.types?.length > 0 && (
                             <div className="bg-blue-50 rounded-lg p-3">
                               <p className="text-xs font-bold text-blue-600">유산소: {session.cardio.types.join(', ')} {session.cardio.duration_min && `· ${session.cardio.duration_min}분`}</p>
                             </div>
                           )}
 
-                          {/* 인바디 */}
                           {session.inbody && (
                             <div className="bg-purple-50 rounded-lg p-3">
-                              <p className="text-xs font-bold text-purple-700 mb-1">📊 인바디 측정</p>
+                              <p className="text-xs font-bold text-purple-700 mb-1">인바디 측정</p>
                               {(session.inbody_images?.length ?? 0) > 0 && (
                                 <div className="flex gap-2 flex-wrap mt-1">
                                   {session.inbody_images!.map((url, i) => (
                                     // eslint-disable-next-line @next/next/no-img-element
                                     <a key={i} href={url} target="_blank" rel="noreferrer">
-                                      <img src={url} alt="inbody" className="h-20 w-20 object-cover rounded border" />
+                                      <img src={url} alt="inbody" className="h-20 w-20 object-cover rounded border" loading="lazy" />
                                     </a>
                                   ))}
                                 </div>
@@ -539,11 +609,10 @@ export function ApprovalList({ programs: initialPrograms, profile, registrations
                             </div>
                           )}
 
-                          {/* 세일즈 정보 */}
                           {(session.sales_status || session.expected_amount || session.closing_probability || session.sales_note || session.is_sales_target || session.is_pt_conversion || session.closing_fail_reason || session.pt_sales_amount) && (
                             <div className="bg-emerald-50 rounded-lg p-3 border border-emerald-200 space-y-2">
                               <div className="flex items-center justify-between flex-wrap gap-1">
-                                <p className="text-xs font-bold text-emerald-800">💰 세일즈 정보</p>
+                                <p className="text-xs font-bold text-emerald-800">세일즈 정보</p>
                                 <div className="flex items-center gap-1 flex-wrap">
                                   {session.sales_status && <Badge className="bg-emerald-600 text-white text-[10px]">{session.sales_status}</Badge>}
                                   {session.is_sales_target && <Badge className="bg-blue-600 text-white text-[10px]">매출대상</Badge>}
@@ -585,14 +654,13 @@ export function ApprovalList({ programs: initialPrograms, profile, registrations
                             </div>
                           )}
 
-                          {/* 수업 계획서 */}
                           {(session.plan || session.plan_detail) && (() => {
                             const pd = session.plan_detail || null
                             const hasAny = session.plan || pd?.sessions_needed || pd?.duration || pd?.current_state || pd?.target_state || (pd?.weekly_roadmap && pd.weekly_roadmap.length > 0) || pd?.notes
                             if (!hasAny) return null
                             return (
                               <div className="bg-indigo-50 rounded-lg p-3 space-y-2 border border-indigo-200">
-                                <p className="text-xs font-bold text-indigo-700">🎯 수업 계획서</p>
+                                <p className="text-xs font-bold text-indigo-700">수업 계획서</p>
                                 <div className="grid grid-cols-2 gap-2 text-xs">
                                   {pd?.sessions_needed && (
                                     <div className="bg-white rounded px-2 py-1.5">
@@ -640,7 +708,6 @@ export function ApprovalList({ programs: initialPrograms, profile, registrations
                             )
                           })()}
 
-                          {/* 트레이너 메모 */}
                           {session.tip && (
                             <div className="bg-yellow-50 rounded-lg p-3">
                               <p className="text-xs font-bold text-yellow-700 mb-1">트레이너 메모</p>
@@ -648,7 +715,6 @@ export function ApprovalList({ programs: initialPrograms, profile, registrations
                             </div>
                           )}
 
-                          {/* 관리자 피드백 입력 — 관리자 전용 */}
                           {isAdmin ? (
                             <div className="space-y-2 bg-blue-50/50 rounded-lg p-3 border border-blue-200">
                               <p className="text-sm font-bold text-blue-700">관리자 피드백</p>
@@ -674,7 +740,6 @@ export function ApprovalList({ programs: initialPrograms, profile, registrations
                                     <Button
                                       size="sm"
                                       className="bg-green-600 hover:bg-green-700 text-white"
-                                      
                                       onClick={() => handleSessionApprove(idx)}
                                       title="피드백 내용이 있으면 함께 저장됩니다"
                                     >
@@ -694,7 +759,7 @@ export function ApprovalList({ programs: initialPrograms, profile, registrations
                           ) : (
                             sessionFeedbacks[idx] && (
                               <div className="bg-blue-50 rounded-lg p-3 border border-blue-200">
-                                <p className="text-xs font-bold text-blue-700 mb-1">📋 관리자 피드백</p>
+                                <p className="text-xs font-bold text-blue-700 mb-1">관리자 피드백</p>
                                 <p className="text-sm text-gray-800 whitespace-pre-wrap">{sessionFeedbacks[idx]}</p>
                               </div>
                             )
@@ -707,7 +772,6 @@ export function ApprovalList({ programs: initialPrograms, profile, registrations
                 })}
               </div>
 
-              {/* 하단 — 닫기만 */}
               <div className="pt-2 border-t border-gray-200">
                 <Button className="w-full bg-gray-800 hover:bg-gray-700 text-white h-10 text-sm" onClick={() => setViewTarget(null)}>닫기</Button>
               </div>
@@ -726,7 +790,7 @@ export function ApprovalList({ programs: initialPrograms, profile, registrations
           <Input value={sessionRejectReason} onChange={(e) => setSessionRejectReason(e.target.value)} placeholder="반려 사유" />
           <div className="flex justify-end gap-2">
             <Button variant="outline" className="bg-white text-gray-700 border-gray-300 hover:bg-gray-50" onClick={() => setSessionRejectIdx(null)}>취소</Button>
-            <Button className="bg-red-600 hover:bg-red-700 text-white" onClick={handleSessionReject} disabled={!sessionRejectReason }>반려</Button>
+            <Button className="bg-red-600 hover:bg-red-700 text-white" onClick={handleSessionReject} disabled={!sessionRejectReason}>반려</Button>
           </div>
         </DialogContent>
       </Dialog>

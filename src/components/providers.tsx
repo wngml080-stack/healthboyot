@@ -16,8 +16,8 @@ export function Providers({ children }: { children: React.ReactNode }) {
       new QueryClient({
         defaultOptions: {
           queries: {
-            staleTime: 1000 * 30, // 30초
-            refetchOnWindowFocus: true,
+            staleTime: 1000 * 60 * 5, // 5분 — 모바일 탭 전환 시 불필요한 재요청 방지
+            refetchOnWindowFocus: false, // 포커스 복귀 시 자동 재요청 비활성화 (실시간 구독이 대체)
           },
         },
       })
