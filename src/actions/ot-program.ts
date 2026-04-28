@@ -327,7 +327,8 @@ export async function rejectOtProgram(programId: string, reason: string) {
 function rollupStatus(sessions: OtProgramSession[]): OtProgram['approval_status'] {
   const relevant = sessions.filter((s) => s.approval_status && s.approval_status !== '작성중')
   if (relevant.length === 0) return '작성중'
-  if (sessions.every((s) => s.approval_status === '승인')) return '승인'
+  // 진행된 세션이 모두 승인이면 전체 승인 (미진행 세션은 무시)
+  if (relevant.every((s) => s.approval_status === '승인')) return '승인'
   if (relevant.some((s) => s.approval_status === '제출완료')) return '제출완료'
   if (relevant.every((s) => s.approval_status === '반려')) return '반려'
   return '제출완료'
@@ -364,6 +365,24 @@ async function updateSessionApproval(
   const { error } = await supabase.from('ot_programs').update(updates).eq('id', programId)
   if (error) return { error: error.message }
   return { success: true }
+}
+
+// rollup 상태 재계산 (임의승인 후 프로그램 상태가 맞지 않는 경우 수정)
+export async function fixProgramRollup(programId: string) {
+  const supabase = await createClient()
+  const { data: existing, error: readErr } = await supabase
+    .from('ot_programs')
+    .select('*')
+    .eq('id', programId)
+    .single()
+  if (readErr || !existing) return { error: readErr?.message ?? '프로그램을 찾을 수 없습니다.' }
+  const current = normalizeProgram(existing as Record<string, unknown>)
+  const nextStatus = rollupStatus(current.sessions)
+  if (nextStatus === current.approval_status) return { success: true, unchanged: true }
+  const updates: Record<string, unknown> = { approval_status: nextStatus, updated_at: new Date().toISOString() }
+  if (nextStatus === '승인' && !current.approved_at) updates.approved_at = new Date().toISOString()
+  await supabase.from('ot_programs').update(updates).eq('id', programId)
+  return { success: true, from: current.approval_status, to: nextStatus }
 }
 
 export async function submitOtSession(programId: string, sessionIdx: number) {

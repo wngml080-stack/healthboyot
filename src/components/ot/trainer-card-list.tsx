@@ -211,7 +211,7 @@ export function TrainerCardList({ assignments, trainers = [], trainerId, trainer
   const [excludeTarget, setExcludeTarget] = useState<OtAssignmentWithDetails | null>(null)
   const [excludeReason, setExcludeReason] = useState('')
   const [excludeLoading, setExcludeLoading] = useState(false)
-  const isAdmin = profile?.role === 'admin' || profile?.role === '관리자' || profile?.role === '팀장'
+  const isAdmin = profile?.role === 'admin' || profile?.role === '관리자'
 
   const handleExclude = async () => {
     if (!excludeTarget || !excludeReason.trim()) return
@@ -1883,7 +1883,7 @@ export function TrainerCardList({ assignments, trainers = [], trainerId, trainer
                                   }).filter((s) => s.completed && s.status !== '승인')
                                 : []
                               const programId = ex && ex !== 'loading' ? ex.program?.id : null
-                              const showApproveBtn = (unapprovedSessions.length > 0 && programId) || needApprovalSet.has(a.id)
+                              const showApproveBtn = isAdmin && ((unapprovedSessions.length > 0 && programId) || needApprovalSet.has(a.id))
 
                               return (
                                 <>

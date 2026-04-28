@@ -11,7 +11,7 @@ import {
   Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription,
 } from '@/components/ui/dialog'
 import { CheckCircle, XCircle, Eye, ChevronDown, ChevronUp, Send, DollarSign, ArrowRightLeft, Search } from 'lucide-react'
-import { rejectOtProgram, getOtProgram, upsertOtProgram, approveOtSession, rejectOtSession } from '@/actions/ot-program'
+import { rejectOtProgram, getOtProgram, upsertOtProgram, approveOtSession, rejectOtSession, fixProgramRollup } from '@/actions/ot-program'
 import { getOtAssignment } from '@/actions/ot'
 import { getConsultationCard } from '@/actions/consultation'
 import dynamic from 'next/dynamic'
@@ -37,6 +37,20 @@ export function ApprovalList({ programs: initialPrograms, profile, registrations
   const router = useRouter()
   const isAdmin = ['admin', '관리자'].includes(profile.role)
   const [programs, setPrograms] = useState(initialPrograms)
+
+  // 승인 대기인데 모든 진행 세션이 승인된 프로그램 → rollup 자동 수정
+  useState(() => {
+    const stalePrograms = initialPrograms.filter((p) => {
+      if (p.approval_status !== '제출완료') return false
+      const relevant = (p.sessions ?? []).filter((s) => s.approval_status && s.approval_status !== '작성중')
+      return relevant.length > 0 && relevant.every((s) => s.approval_status === '승인')
+    })
+    if (stalePrograms.length > 0) {
+      Promise.all(stalePrograms.map((p) => fixProgramRollup(p.id))).then(() => {
+        if (stalePrograms.length > 0) router.refresh()
+      })
+    }
+  })
   const [viewTarget, setViewTarget] = useState<{ program: OtProgram; assignment: OtAssignmentWithDetails; card: ConsultationCard | null } | null>(null)
   const [loading, setLoading] = useState(false)
   const [rejectId, setRejectId] = useState<string | null>(null)
