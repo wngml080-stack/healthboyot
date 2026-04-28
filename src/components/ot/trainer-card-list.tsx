@@ -511,7 +511,7 @@ export function TrainerCardList({ assignments, trainers = [], trainerId, trainer
   }
 
   const handleCompleteOpen = (a: OtAssignmentWithDetails, sessionNumber: number) => {
-    // 다이얼로그를 즉시 열고, 프로그램 데이터는 백그라운드 로딩
+    // 다이얼로그를 즉시 열고, 데이터는 백그라운드 로딩
     setCompleteTarget({ assignment: a, sessionNumber })
     setExercises([{ name: '', sets: 3, reps: 12 }])
     setTrainerTip('')
@@ -521,15 +521,18 @@ export function TrainerCardList({ assignments, trainers = [], trainerId, trainer
     setNextTime('')
     setCompleteResult('')
     setCompleteFailReason('')
-    // OT 프로그램 데이터 — 캐시 우선, 없으면 비동기 fetch
+    // 캐시에 프로그램+상담카드 둘 다 있으면 즉시 사용
     const cached = expandedData[a.id]
     if (cached && cached !== 'loading' && cached.program) {
       setCompleteProgramData(cached.program)
     } else {
+      // 프로그램 + 상담카드를 1번의 요청으로 동시 로딩 (getAssignmentExpandData)
       setCompleteProgramLoading(true)
       setCompleteProgramData(null)
-      getOtProgram(a.id).then((prog) => {
-        setCompleteProgramData(prog)
+      getAssignmentExpandData(a.member_id, a.id).then(({ card, program }) => {
+        setCompleteProgramData(program)
+        // 상담카드도 expandedData 캐시에 저장 → OtProgramForm에서 재요청 방지
+        setExpandedData((prev) => ({ ...prev, [a.id]: { card, program } }))
         setCompleteProgramLoading(false)
       })
     }
@@ -1065,7 +1068,7 @@ export function TrainerCardList({ assignments, trainers = [], trainerId, trainer
                                     s.is_sales_target ? '매출대상 지정' : null,
                                     s.is_pt_conversion ? `PT 전환${s.pt_sales_amount ? ` · ${s.pt_sales_amount}만원` : ''}` : null,
                                     s.closing_probability ? `클로징 ${s.closing_probability}%` : null,
-                                    s.expected_amount ? `예상 ${s.expected_amount}만` : null,
+                                    s.expected_amount ? `예상 ${toManwon(s.expected_amount).toLocaleString()}만` : null,
                                     s.expected_sessions ? `${s.expected_sessions}회` : null,
                                     s.closing_fail_reason ? `실패: ${s.closing_fail_reason}` : null,
                                     s.sales_note ? s.sales_note : null,
@@ -1253,6 +1256,64 @@ export function TrainerCardList({ assignments, trainers = [], trainerId, trainer
                                   </div>
                                     )
                                   })()}
+
+                                  {/* 세일즈 정보 편집 */}
+                                  <div className="rounded-lg border border-emerald-200 bg-emerald-50/40 p-4 space-y-3" onClick={(e) => e.stopPropagation()}>
+                                    <p className="text-sm font-bold text-emerald-800">💰 세일즈 정보</p>
+                                    <button type="button"
+                                      className={`w-full h-10 rounded-lg border-2 text-sm font-bold transition-colors ${a.is_sales_target ? 'bg-blue-50 border-blue-500 text-blue-700' : 'bg-white border-gray-200 text-gray-400'}`}
+                                      onClick={() => updateOtAssignment(a.id, { is_sales_target: !a.is_sales_target }).then(() => startTransition(() => router.refresh()))}
+                                    >★ 매출대상자 {a.is_sales_target ? '✓' : ''}</button>
+
+                                    <div className="space-y-1">
+                                      <p className="text-xs font-bold text-gray-600">상태</p>
+                                      <div className="grid grid-cols-3 gap-1.5">
+                                        {(['PT전환', '클로징실패', '스케줄미확정'] as const).map((st) => {
+                                          const salesMap: Record<string, string> = { 'PT전환': '등록완료', '클로징실패': '클로징실패', '스케줄미확정': '스케줄미확정' }
+                                          const active = a.sales_status === salesMap[st] || (st === 'PT전환' && a.is_pt_conversion)
+                                          const colors: Record<string, string> = {
+                                            'PT전환': active ? 'bg-purple-600 text-white border-purple-600' : 'bg-white text-purple-600 border-purple-200',
+                                            '클로징실패': active ? 'bg-red-500 text-white border-red-500' : 'bg-white text-red-500 border-red-200',
+                                            '스케줄미확정': active ? 'bg-yellow-500 text-white border-yellow-500' : 'bg-white text-yellow-600 border-yellow-200',
+                                          }
+                                          return (
+                                            <button key={st} type="button"
+                                              className={`h-10 rounded-lg border-2 text-sm font-bold transition-colors ${colors[st]}`}
+                                              onClick={() => {
+                                                const updates: import('@/actions/ot').UpdateOtAssignmentValues = {}
+                                                if (active) {
+                                                  updates.sales_status = 'OT진행중'
+                                                  if (st === 'PT전환') updates.is_pt_conversion = false
+                                                } else {
+                                                  updates.sales_status = salesMap[st] as import('@/types').SalesStatus
+                                                  if (st === 'PT전환') updates.is_pt_conversion = true
+                                                }
+                                                updateOtAssignment(a.id, updates).then(() => startTransition(() => router.refresh()))
+                                              }}
+                                            >{st}</button>
+                                          )
+                                        })}
+                                      </div>
+                                    </div>
+
+                                    {a.sales_status === '클로징실패' && (
+                                      <div className="rounded-lg border border-red-200 bg-red-50/50 p-3 space-y-1">
+                                        <p className="text-xs font-bold text-red-600">실패 사유</p>
+                                        <p className="text-sm text-red-800">{a.closing_fail_reason || '-'}</p>
+                                      </div>
+                                    )}
+
+                                    <div className="grid grid-cols-2 gap-2">
+                                      <div className="rounded bg-white p-2 text-xs">
+                                        <p className="text-gray-500">예상 매출</p>
+                                        <p className="font-bold text-gray-900">{a.expected_amount ? `${toManwon(a.expected_amount).toLocaleString()}만` : '-'}</p>
+                                      </div>
+                                      <div className="rounded bg-white p-2 text-xs">
+                                        <p className="text-gray-500">클로징 확률</p>
+                                        <p className="font-bold text-gray-900">{a.closing_probability ? `${a.closing_probability}%` : '-'}</p>
+                                      </div>
+                                    </div>
+                                  </div>
 
                                   {/* 세일즈 여정 */}
                                   {(() => {
