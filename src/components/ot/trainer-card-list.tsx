@@ -211,7 +211,7 @@ export function TrainerCardList({ assignments, trainers = [], trainerId, trainer
   const [excludeTarget, setExcludeTarget] = useState<OtAssignmentWithDetails | null>(null)
   const [excludeReason, setExcludeReason] = useState('')
   const [excludeLoading, setExcludeLoading] = useState(false)
-  const isAdmin = profile?.role === 'admin' || profile?.role === '관리자'
+  const isAdmin = profile?.role === 'admin' || profile?.role === '관리자' || profile?.role === '팀장'
 
   const handleExclude = async () => {
     if (!excludeTarget || !excludeReason.trim()) return
@@ -263,6 +263,8 @@ export function TrainerCardList({ assignments, trainers = [], trainerId, trainer
   // 세일즈 낙관적 UI 오버라이드
   const [salesOverrides, setSalesOverrides] = useState<Record<string, { is_sales_target?: boolean; is_pt_conversion?: boolean; sales_status?: string }>>({})
 
+  // 특이사항 수정 모드
+  const [editingNoteId, setEditingNoteId] = useState<string | null>(null)
   // 미진행 사유 (거부/연락두절/스케줄미확정)
   const [quickStatusTarget, setQuickStatusTarget] = useState<string | null>(null)
   const [quickStatusValue, setQuickStatusValue] = useState<string>('')
@@ -443,6 +445,7 @@ export function TrainerCardList({ assignments, trainers = [], trainerId, trainer
       if (a.sales_status === '수업후거부') counts['수업후 거부'] = (counts['수업후 거부'] ?? 0) + 1
       if (a.is_sales_target) counts['매출대상'] = (counts['매출대상'] ?? 0) + 1
       if (a.is_pt_conversion) counts['PT전환'] = (counts['PT전환'] ?? 0) + 1
+      if (a.sales_status === '클로징실패') counts['클로징실패'] = (counts['클로징실패'] ?? 0) + 1
     }
     return counts
   }, [assignments, trainerId, needApprovalSet])
@@ -873,6 +876,16 @@ export function TrainerCardList({ assignments, trainers = [], trainerId, trainer
               PT전환 {(filterCounts['PT전환'] ?? 0) > 0 && <span className="ml-1 text-[10px]">{filterCounts['PT전환']}</span>}
             </button>
             <button
+              onClick={() => { setCategoryFilter(categoryFilter === '클로징실패' ? '전체' : '클로징실패'); setFilter('전체') }}
+              className={`h-8 px-4 rounded-md text-xs font-bold transition-colors ${
+                categoryFilter === '클로징실패'
+                  ? 'bg-pink-500 text-white border-2 border-pink-600'
+                  : 'bg-pink-50 text-pink-600 border border-pink-200 hover:bg-pink-100'
+              }`}
+            >
+              클로징실패 {(filterCounts['클로징실패'] ?? 0) > 0 && <span className="ml-1 text-[10px]">{filterCounts['클로징실패']}</span>}
+            </button>
+            <button
               onClick={() => { setFilter('수업상태변경'); setCategoryFilter('전체') }}
               className={`h-8 px-4 rounded-md text-xs font-bold transition-colors ${
                 filter === '수업상태변경'
@@ -1149,28 +1162,50 @@ export function TrainerCardList({ assignments, trainers = [], trainerId, trainer
                           {/* 특이사항 메모 (수정 가능) */}
                           {(() => {
                             const noteId = `note-${a.id}`
+                            const isEditing = editingNoteId === a.id
+                            const hasNotes = !!a.notes
                             return (
-                          <div className="rounded-lg border border-orange-200 bg-orange-50/50 p-3 space-y-2" onClick={(e) => e.stopPropagation()}>
-                            <p className="text-sm font-bold text-orange-800">📝 특이사항</p>
-                            <Textarea
-                              id={noteId}
-                              defaultValue={a.notes ?? ''}
-                              placeholder="환불, 부상, 회원 특이사항 등을 기록하세요"
-                              rows={2}
-                              className="text-sm bg-white border-orange-200"
-                            />
-                            <div className="flex gap-2 justify-end">
-                              <Button size="sm" variant="outline" className="h-7 text-xs text-gray-500 border-gray-300 bg-white hover:bg-gray-100"
-                                onClick={() => { const el = document.getElementById(noteId) as HTMLTextAreaElement | null; if (el) el.value = a.notes ?? '' }}
-                              >취소</Button>
-                              <Button size="sm" className="h-7 text-xs bg-orange-600 hover:bg-orange-700 text-white"
-                                onClick={() => {
-                                  const el = document.getElementById(noteId) as HTMLTextAreaElement | null
-                                  const val = el?.value.trim() ?? ''
-                                  updateOtAssignment(a.id, { notes: val || null }).then(() => startTransition(() => router.refresh()))
-                                }}
-                              >저장</Button>
+                          <div className={`rounded-lg border p-3 space-y-2 ${hasNotes && !isEditing ? 'border-orange-300 bg-orange-50/80' : 'border-orange-200 bg-orange-50/50'}`} onClick={(e) => e.stopPropagation()}>
+                            <div className="flex items-center justify-between">
+                              <p className="text-sm font-bold text-orange-800">📝 특이사항</p>
+                              {hasNotes && !isEditing && (
+                                <Badge className="bg-orange-500 text-white text-[10px]">기록됨</Badge>
+                              )}
                             </div>
+                            {hasNotes && !isEditing ? (
+                              <div className="space-y-1">
+                                <p className="text-sm text-gray-900 whitespace-pre-wrap"><span className="font-bold text-orange-700">내용:</span> {a.notes}</p>
+                                <button
+                                  type="button"
+                                  className="text-xs text-blue-600 hover:underline"
+                                  onClick={() => setEditingNoteId(a.id)}
+                                >
+                                  수정하기
+                                </button>
+                              </div>
+                            ) : (
+                              <>
+                                <Textarea
+                                  id={noteId}
+                                  defaultValue={a.notes ?? ''}
+                                  placeholder="환불, 부상, 회원 특이사항 등을 기록하세요"
+                                  rows={2}
+                                  className="text-sm bg-white border-orange-200"
+                                />
+                                <div className="flex gap-2 justify-end">
+                                  <Button size="sm" variant="outline" className="h-7 text-xs text-gray-500 border-gray-300 bg-white hover:bg-gray-100"
+                                    onClick={() => { const el = document.getElementById(noteId) as HTMLTextAreaElement | null; if (el) el.value = a.notes ?? ''; setEditingNoteId(null) }}
+                                  >취소</Button>
+                                  <Button size="sm" className="h-7 text-xs bg-orange-600 hover:bg-orange-700 text-white"
+                                    onClick={() => {
+                                      const el = document.getElementById(noteId) as HTMLTextAreaElement | null
+                                      const val = el?.value.trim() ?? ''
+                                      updateOtAssignment(a.id, { notes: val || null }).then(() => { startTransition(() => router.refresh()); setEditingNoteId(null) })
+                                    }}
+                                  >저장</Button>
+                                </div>
+                              </>
+                            )}
                           </div>
                             )
                           })()}
@@ -1502,9 +1537,12 @@ export function TrainerCardList({ assignments, trainers = [], trainerId, trainer
                                     )}
 
                                     {a.sales_note && (
-                                      <div className="rounded bg-white p-2 text-xs">
-                                        <p className="font-bold text-gray-600 mb-0.5">메모</p>
-                                        <p className="text-gray-800 whitespace-pre-wrap">{a.sales_note}</p>
+                                      <div className="rounded-lg border border-emerald-300 bg-white p-3 space-y-1">
+                                        <div className="flex items-center gap-2">
+                                          <p className="font-bold text-emerald-700 text-sm">세일즈 메모</p>
+                                          <Badge className="bg-emerald-500 text-white text-[10px]">기록됨</Badge>
+                                        </div>
+                                        <p className="text-sm text-gray-900 whitespace-pre-wrap"><span className="font-bold text-emerald-700">내용:</span> {a.sales_note}</p>
                                       </div>
                                     )}
 

@@ -1,16 +1,11 @@
-import { redirect } from 'next/navigation'
-import { getCurrentProfile } from '@/actions/auth'
+import { PageTitle } from '@/components/shared/page-title'
 import { ScheduleOverview } from '@/components/schedule/schedule-overview'
 
-export default async function SchedulesPage() {
-  const profile = await getCurrentProfile()
-
-  if (!profile) redirect('/login')
-
-  // 관리자/admin만 접근 가능
-  if (!['admin', '관리자'].includes(profile.role)) {
-    redirect('/ot')
-  }
-
-  return <ScheduleOverview />
+export default function SchedulesPage() {
+  return (
+    <div className="space-y-4">
+      <PageTitle>스케줄 총괄</PageTitle>
+      <ScheduleOverview />
+    </div>
+  )
 }
