@@ -211,9 +211,10 @@ export function TrainerStats({ assignments, trainerName, programs, registrations
       }
     }
 
-    // trainer_schedules를 회원명으로 그룹핑
+    // trainer_schedules를 회원명으로 그룹핑 (OT만)
     const schedulesByMember = new Map<string, TrainerScheduleItem[]>()
     for (const ts of trainerSchedules) {
+      if (ts.schedule_type !== 'OT') continue
       const list = schedulesByMember.get(ts.member_name) ?? []
       list.push(ts)
       schedulesByMember.set(ts.member_name, list)
@@ -225,28 +226,49 @@ export function TrainerStats({ assignments, trainerName, programs, registrations
         const cells: Record<string, CellData> = {}
         let totalCompleted = 0; let totalScheduled = 0
         const prog = programMap.get(a.id)
-
-        // trainer_schedules에서 해당 회원의 스케줄 가져오기
         const memberSchedules = schedulesByMember.get(a.member.name) ?? []
 
+        // 1) trainer_schedules 기준으로 셀 생성 (날짜 + 시간)
+        for (const ts of memberSchedules) {
+          const key = ts.scheduled_date
+          const d = new Date(key + 'T00:00:00')
+          if (d < dateRange.start || d > dateRange.end) continue
+          // ot_sessions에서 해당 날짜의 세션 매칭 (완료 상태 확인)
+          const matchedSession = (a.sessions ?? []).find((s) => {
+            if (!s.scheduled_at) return false
+            return format(new Date(s.scheduled_at), 'yyyy-MM-dd') === key
+          })
+          const completed = !!matchedSession?.completed_at
+          const pastDue = !completed && new Date(key + 'T23:59:59').getTime() < nowTime
+          const sessionNum = matchedSession?.session_number ?? 0
+          const progSession = sessionNum > 0 ? prog?.sessions?.[sessionNum - 1] : undefined
+          cells[key] = {
+            sessionNumber: sessionNum,
+            completed,
+            pastDue,
+            approved: progSession?.approval_status === '승인',
+            time: ts.start_time.slice(0, 5),
+          }
+          if (completed) totalCompleted++; else totalScheduled++
+        }
+
+        // 2) ot_sessions에 있지만 trainer_schedules에 없는 완료 세션도 추가 (과거 데이터 호환)
         for (const s of a.sessions ?? []) {
+          if (!s.completed_at) continue
           const dateStr = s.scheduled_at ?? s.completed_at
-          if (!dateStr) continue
           const d = new Date(dateStr)
           if (d < dateRange.start || d > dateRange.end) continue
           const key = format(d, 'yyyy-MM-dd')
-          const completed = !!s.completed_at
-          const pastDue = !completed && new Date(s.scheduled_at ?? '').getTime() < nowTime
+          if (cells[key]) continue // 이미 trainer_schedules에서 추가됨
           const progSession = prog?.sessions?.[s.session_number - 1]
-
-          // trainer_schedules에서 실제 시간 가져오기 (같은 날짜 매칭)
-          const matchedSchedule = memberSchedules.find((ts) => ts.scheduled_date === key && ts.schedule_type === 'OT')
-          const timeStr = matchedSchedule
-            ? matchedSchedule.start_time.slice(0, 5)
-            : ((s.scheduled_at ?? s.completed_at) ? format(new Date(s.scheduled_at ?? s.completed_at!), 'HH:mm') : undefined)
-
-          cells[key] = { sessionNumber: s.session_number, completed, pastDue, approved: progSession?.approval_status === '승인', time: timeStr }
-          if (completed) totalCompleted++; else totalScheduled++
+          cells[key] = {
+            sessionNumber: s.session_number,
+            completed: true,
+            pastDue: false,
+            approved: progSession?.approval_status === '승인',
+            time: s.scheduled_at ? format(new Date(s.scheduled_at), 'HH:mm') : undefined,
+          }
+          totalCompleted++
         }
 
         return {
