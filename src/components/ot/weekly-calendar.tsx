@@ -432,10 +432,11 @@ export function WeeklyCalendar({ assignments, trainerId, profile, workStartTime,
 
     const doPaste = async () => {
       setPasteSaving(true)
-      if (copiedSchedule.schedule_type === 'OT' && copiedSchedule.ot_session_id) {
-        // OT: ot_session_id로 assignment를 찾아서 upsertOtSession으로 생성
+      if (copiedSchedule.schedule_type === 'OT') {
+        // OT: assignment를 찾아서 upsertOtSession으로 생성
         const assignment = otMembers.find((a) =>
-          a.sessions?.some((s) => s.id === copiedSchedule.ot_session_id)
+          a.member.name === copiedSchedule.member_name ||
+          (copiedSchedule.ot_session_id && a.sessions?.some((s) => s.id === copiedSchedule.ot_session_id))
         )
         if (assignment) {
           const existingNums = new Set(assignment.sessions?.map((s) => s.session_number) ?? [])

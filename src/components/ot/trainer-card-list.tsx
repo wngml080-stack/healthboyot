@@ -19,7 +19,7 @@ import {
 import { CheckCircle, User, AlertTriangle, BarChart3, CalendarDays, ClipboardList, Pencil, Plus, Undo2, UserPlus, Target, HeartPulse, Dumbbell, Phone, Download, Ban } from 'lucide-react'
 import { Textarea } from '@/components/ui/textarea'
 import { upsertOtSession, updateOtAssignment, deleteOtSession } from '@/actions/ot'
-import { getOtProgram, getAssignmentExpandData, batchGetOtPrograms } from '@/actions/ot-program'
+import { getOtProgram, getAssignmentExpandData, batchGetOtPrograms, approveOtSession } from '@/actions/ot-program'
 import { quickRegisterMember } from '@/actions/members'
 import { createClient } from '@/lib/supabase/client'
 import dynamic from 'next/dynamic'
@@ -1807,15 +1807,28 @@ export function TrainerCardList({ assignments, trainers = [], trainerId, trainer
                                 : lastApproval === '제출완료' ? 'bg-yellow-500 text-white'
                                 : 'bg-emerald-500 text-white'
 
+                              // 미승인 세션 목록 (제출완료 또는 완료되었는데 승인 안 된 세션)
+                              const unapprovedSessions = progSessions
+                                .map((s, i) => ({ idx: i, status: s.approval_status, completed: s.completed }))
+                                .filter((s) => s.completed && s.status !== '승인')
+                              const programId = ex && ex !== 'loading' ? ex.program?.id : null
+
                               return (
                                 <>
-                                  {maxProgressed < 3 && (
+                                  {unapprovedSessions.length > 0 && programId && (
                                     <Button
                                       size="sm"
-                                      className="bg-indigo-600 hover:bg-indigo-700 text-white"
-                                      onClick={(e) => { e.stopPropagation(); openScheduleOnly(a, nextNumber) }}
+                                      className="bg-amber-600 hover:bg-amber-700 text-white"
+                                      onClick={async (e) => {
+                                        e.stopPropagation()
+                                        if (!confirm(`${a.member.name}의 미승인 ${unapprovedSessions.length}건을 모두 승인하시겠습니까?`)) return
+                                        for (const s of unapprovedSessions) {
+                                          await approveOtSession(programId, s.idx)
+                                        }
+                                        startTransition(() => router.refresh())
+                                      }}
                                     >
-                                      <CalendarDays className="h-4 w-4 mr-1" />스케줄잡기
+                                      <CheckCircle className="h-4 w-4 mr-1" />OT임의승인 ({unapprovedSessions.length})
                                     </Button>
                                   )}
                                 </>

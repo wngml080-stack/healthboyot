@@ -302,6 +302,32 @@ export async function upsertOtSession(values: {
     await Promise.all(statusPromises)
   }
 
+  // 프로그램 JSON의 sessions 날짜/시간도 동기화
+  if (values.scheduled_at) {
+    try {
+      const dateStr = toKstDateStr(values.scheduled_at)
+      const timeStr = toKstTimeStr(values.scheduled_at)
+      const { data: prog } = await supabase
+        .from('ot_programs')
+        .select('id, sessions')
+        .eq('ot_assignment_id', values.ot_assignment_id)
+        .single()
+
+      if (prog && Array.isArray(prog.sessions)) {
+        const idx = values.session_number - 1
+        if (idx >= 0 && idx < prog.sessions.length) {
+          const updated = [...prog.sessions]
+          updated[idx] = { ...updated[idx], date: dateStr, time: timeStr }
+          await supabase.from('ot_programs').update({ sessions: updated }).eq('id', prog.id)
+        } else if (idx === prog.sessions.length) {
+          // 새 세션 추가
+          const newSession = { date: dateStr, time: timeStr, exercises: [], tip: '', next_ot_date: '', cardio: { types: [], duration_min: '' }, inbody: false, images: [], completed: false }
+          await supabase.from('ot_programs').update({ sessions: [...prog.sessions, newSession] }).eq('id', prog.id)
+        }
+      }
+    } catch (err) { console.error('[upsertOtSession] program sync:', err) }
+  }
+
   return { success: true }
 }
 
@@ -363,13 +389,39 @@ export async function moveOtSchedule(params: {
       .eq('id', row.id)
   }
 
-  // 4. 변경 로그
+  // 4. 프로그램 JSON의 sessions 날짜/시간도 동기화
+  try {
+    const { data: otSession } = await supabase
+      .from('ot_sessions')
+      .select('session_number')
+      .eq('id', params.ot_session_id)
+      .single()
+
+    if (otSession) {
+      const { data: prog } = await supabase
+        .from('ot_programs')
+        .select('id, sessions')
+        .eq('ot_assignment_id', existingSession.ot_assignment_id)
+        .single()
+
+      if (prog && Array.isArray(prog.sessions)) {
+        const idx = otSession.session_number - 1
+        if (idx >= 0 && idx < prog.sessions.length) {
+          const updated = [...prog.sessions]
+          updated[idx] = { ...updated[idx], date: params.newDateStr, time: params.newTimeStr }
+          await supabase.from('ot_programs').update({ sessions: updated }).eq('id', prog.id)
+        }
+      }
+    }
+  } catch (err) { console.error('[moveOtSchedule] program sync 실패:', err) }
+
+  // 5. 변경 로그
   try {
     const { data: { session } } = await supabase.auth.getSession()
     await supabase.from('change_logs').insert({
       target_type: 'ot_session',
       target_id: existingSession.ot_assignment_id,
-      action: 'OT 일정 드래그 이동',
+      action: 'OT 일정 이동',
       note: `→ ${params.newDateStr} ${params.newTimeStr}`,
       changed_by: session?.user?.id ?? null,
     })
