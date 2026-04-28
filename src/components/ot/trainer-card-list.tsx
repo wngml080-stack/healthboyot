@@ -1874,31 +1874,41 @@ export function TrainerCardList({ assignments, trainers = [], trainerId, trainer
                                 : lastApproval === '제출완료' ? 'bg-yellow-500 text-white'
                                 : 'bg-emerald-500 text-white'
 
-                              // 미승인 세션 목록 (제출완료 또는 완료되었는데 승인 안 된 세션)
-                              const unapprovedSessions = progSessions
-                                .map((s, i) => ({ idx: i, status: s.approval_status, completed: s.completed }))
-                                .filter((s) => s.completed && s.status !== '승인')
+                              // 미승인 세션: progSessions 기반 또는 needApprovalSet fallback
+                              const unapprovedSessions = progSessions.length > 0
+                                ? progSessions.map((s, i) => ({ idx: i, status: s.approval_status, completed: s.completed })).filter((s) => s.completed && s.status !== '승인')
+                                : []
                               const programId = ex && ex !== 'loading' ? ex.program?.id : null
+                              const showApproveBtn = (unapprovedSessions.length > 0 && programId) || needApprovalSet.has(a.id)
 
                               return (
                                 <>
-                                  {isAdmin && unapprovedSessions.length > 0 && programId && (
+                                  {showApproveBtn && (
                                     <Button
                                       size="sm"
                                       className="bg-amber-600 hover:bg-amber-700 text-white"
                                       onClick={async (e) => {
                                         e.stopPropagation()
-                                        if (!confirm(`${a.member.name}의 미승인 ${unapprovedSessions.length}건을 모두 승인하시겠습니까?`)) return
-                                        for (const s of unapprovedSessions) {
-                                          await approveOtSession(programId, s.idx, '임의승인')
+                                        // programId가 없으면 먼저 로드
+                                        let pid = programId
+                                        let sessionsToApprove = unapprovedSessions
+                                        if (!pid) {
+                                          const prog = await getOtProgram(a.id)
+                                          if (!prog?.id) { alert('프로그램을 찾을 수 없습니다'); return }
+                                          pid = prog.id
+                                          sessionsToApprove = (prog.sessions ?? []).map((s, i) => ({ idx: i, status: s.approval_status, completed: s.completed })).filter((s) => s.completed && s.status !== '승인')
                                         }
-                                        // needApprovalSet에서 제거 + expandedData 갱신
+                                        if (sessionsToApprove.length === 0) { alert('승인할 세션이 없습니다'); return }
+                                        if (!confirm(`${a.member.name}의 미승인 ${sessionsToApprove.length}건을 모두 승인하시겠습니까?`)) return
+                                        for (const s of sessionsToApprove) {
+                                          await approveOtSession(pid, s.idx, '임의승인')
+                                        }
                                         setNeedApprovalSet((prev) => { const next = new Set(prev); next.delete(a.id); return next })
                                         setExpandedData((prev) => { const copy = { ...prev }; delete copy[a.id]; return copy })
-                                        startTransition(() => router.refresh())
+                                        router.refresh()
                                       }}
                                     >
-                                      <CheckCircle className="h-4 w-4 mr-1" />OT임의승인 ({unapprovedSessions.length})
+                                      <CheckCircle className="h-4 w-4 mr-1" />OT임의승인 {unapprovedSessions.length > 0 ? `(${unapprovedSessions.length})` : ''}
                                     </Button>
                                   )}
                                 </>
