@@ -1438,20 +1438,28 @@ export function TrainerCardList({ assignments, trainers = [], trainerId, trainer
                                     )}
 
                                     {/* 클로징실패: 사유 입력 */}
-                                    {isClosingFail && (
-                                      <div className="text-xs">
-                                        <p className="text-red-600 mb-1 font-bold">실패 사유</p>
+                                    {isClosingFail && (() => {
+                                      const tid = `fail-reason-${a.id}`
+                                      return (
+                                      <div className="text-xs space-y-2">
+                                        <p className="text-red-600 font-bold">실패 사유</p>
                                         <textarea
+                                          id={tid}
                                           defaultValue={a.closing_fail_reason ?? ''}
                                           placeholder="클로징 실패 사유를 입력해주세요"
                                           className="w-full rounded-md border border-red-300 bg-white text-sm text-gray-900 p-2 h-16 resize-none"
-                                          onBlur={(e) => {
-                                            const v = e.target.value.trim()
-                                            if (v !== (a.closing_fail_reason ?? '')) updateOtAssignment(a.id, { closing_fail_reason: v || null })
-                                          }}
                                         />
+                                        <div className="flex gap-2 justify-end">
+                                          <Button size="sm" variant="outline" className="h-7 text-xs text-gray-500 border-gray-300 bg-white hover:bg-gray-100"
+                                            onClick={() => { const el = document.getElementById(tid) as HTMLTextAreaElement | null; if (el) el.value = a.closing_fail_reason ?? '' }}
+                                          >취소</Button>
+                                          <Button size="sm" className="h-7 text-xs bg-red-600 hover:bg-red-700 text-white"
+                                            onClick={() => { const el = document.getElementById(tid) as HTMLTextAreaElement | null; updateOtAssignment(a.id, { closing_fail_reason: el?.value.trim() || null }) }}
+                                          >저장</Button>
+                                        </div>
                                       </div>
-                                    )}
+                                      )
+                                    })()}
 
                                     {a.sales_note && (
                                       <div className="rounded bg-white p-2 text-xs">

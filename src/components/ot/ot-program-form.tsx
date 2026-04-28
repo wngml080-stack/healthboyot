@@ -962,7 +962,19 @@ export const OtProgramForm = forwardRef<OtProgramFormRef, Props>(function OtProg
                             ? 'bg-gray-900 text-white border-gray-900'
                             : 'bg-white text-gray-600 border-gray-300 hover:bg-gray-100'
                         } disabled:opacity-50`}
-                        onClick={() => updateSession(idx, 'class_duration', d)}
+                        onClick={() => {
+                          updateSession(idx, 'class_duration', d)
+                          // 완료된 세션도 trainer_schedules duration 즉시 반영
+                          if (session.date && session.time) {
+                            const scheduledAt = new Date(`${session.date}T${session.time}:00+09:00`).toISOString()
+                            upsertOtSession({
+                              ot_assignment_id: a.id,
+                              session_number: idx + 1,
+                              scheduled_at: scheduledAt,
+                              duration: d,
+                            })
+                          }
+                        }}
                       >
                         {d}분
                       </button>

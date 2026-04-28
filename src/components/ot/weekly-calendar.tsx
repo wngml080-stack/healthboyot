@@ -418,6 +418,37 @@ export function WeeklyCalendar({ assignments, trainerId, profile, workStartTime,
     const dateStr = format(day, 'yyyy-MM-dd')
     const timeStr = `${String(hour).padStart(2, '0')}:${half === 0 ? '00' : '30'}`
 
+    // PT/PPT인 경우 IN/OUT 자동 판별
+    let note = copiedSchedule.note
+    if (copiedSchedule.schedule_type === 'PT' || copiedSchedule.schedule_type === 'PPT') {
+      const parsed = parsePtNote(note)
+      const newInOut = getAutoInOut(dateStr, timeStr)
+      if (parsed.inOut !== newInOut) {
+        note = buildPtNote({ ...parsed, inOut: newInOut })
+      }
+    }
+
+    const doPaste = async () => {
+      setPasteSaving(true)
+      const { error } = await supabaseRef.current.from('trainer_schedules').insert({
+        trainer_id: trainerId,
+        schedule_type: copiedSchedule.schedule_type,
+        member_name: copiedSchedule.member_name,
+        member_id: copiedSchedule.member_id,
+        scheduled_date: dateStr,
+        start_time: timeStr,
+        duration: copiedSchedule.duration,
+        note,
+      })
+      setPasteSaving(false)
+      if (error) {
+        alert('붙여넣기 실패: ' + error.message)
+        return
+      }
+      await fetchSchedules()
+      router.refresh()
+    }
+
     // 충돌 검사
     const newStartSlot = (hour - 6) * SLOTS_PER_HOUR + half
     const heightSlots = Math.max(1, Math.ceil(copiedSchedule.duration / 30))
@@ -429,38 +460,13 @@ export function WeeklyCalendar({ assignments, trainerId, profile, workStartTime,
       return newStartSlot < sEnd && newEndSlot > sStart
     })
     if (conflict) {
-      alert(`해당 시간에 이미 일정이 있습니다: ${conflict.schedule_type} ${conflict.member_name}`)
+      setConflictConfirm({
+        conflicts: [{ date: dateStr, type: conflict.schedule_type, name: conflict.member_name, time: conflict.start_time }],
+        onConfirm: doPaste,
+      })
       return
     }
-
-    // PT/PPT인 경우 IN/OUT 자동 판별
-    let note = copiedSchedule.note
-    if (copiedSchedule.schedule_type === 'PT' || copiedSchedule.schedule_type === 'PPT') {
-      const parsed = parsePtNote(note)
-      const newInOut = getAutoInOut(dateStr, timeStr)
-      if (parsed.inOut !== newInOut) {
-        note = buildPtNote({ ...parsed, inOut: newInOut })
-      }
-    }
-
-    setPasteSaving(true)
-    const { error } = await supabaseRef.current.from('trainer_schedules').insert({
-      trainer_id: trainerId,
-      schedule_type: copiedSchedule.schedule_type,
-      member_name: copiedSchedule.member_name,
-      member_id: copiedSchedule.member_id,
-      scheduled_date: dateStr,
-      start_time: timeStr,
-      duration: copiedSchedule.duration,
-      note,
-    })
-    setPasteSaving(false)
-    if (error) {
-      alert('붙여넣기 실패: ' + error.message)
-      return
-    }
-    await fetchSchedules()
-    router.refresh()
+    await doPaste()
   }
 
   // 드래그 가능 여부:
@@ -981,51 +987,56 @@ export function WeeklyCalendar({ assignments, trainerId, profile, workStartTime,
       const otherEnd = otherStart + otherHeight
       return clamped < otherEnd && newEndSlot > otherStart
     })
-    if (conflict) {
-      alert(`이동할 시간(${newDateStr} ${newTimeStr})에 이미 다른 일정이 있습니다: ${conflict.schedule_type} ${conflict.member_name}`)
+    const doMove = async () => {
+      cur.saving = true
+      try {
+        if (cur.schedule.schedule_type === 'OT' && cur.schedule.ot_session_id) {
+          const newScheduledAt = new Date(`${newDateStr}T${newTimeStr}:00+09:00`).toISOString()
+          const result = await moveOtSchedule({
+            ot_session_id: cur.schedule.ot_session_id,
+            newScheduledAtIso: newScheduledAt,
+            newDateStr,
+            newTimeStr,
+          })
+          if ('error' in result && result.error) {
+            alert('이동 실패: ' + result.error)
+          } else if ('warning' in result && result.warning) {
+            alert(result.warning)
+          }
+        } else {
+          const { error } = await supabaseRef.current
+            .from('trainer_schedules')
+            .update({ scheduled_date: newDateStr, start_time: newTimeStr })
+            .eq('id', cur.schedule.id)
+          if (error) {
+            alert('이동 실패: ' + error.message)
+          }
+        }
+      } catch (err) {
+        alert('이동 중 오류: ' + (err instanceof Error ? err.message : String(err)))
+      }
       cur.blockEl.style.transform = ''
       cur.blockEl.style.zIndex = ''
       dragStateRef.current = null
       setDraggingId(null)
+      await fetchSchedules()
+      router.refresh()
+    }
+
+    if (conflict) {
+      // 충돌 확인 팝업 — 취소 시 원위치 복구
+      cur.blockEl.style.transform = ''
+      cur.blockEl.style.zIndex = ''
+      dragStateRef.current = null
+      setDraggingId(null)
+      setConflictConfirm({
+        conflicts: [{ date: newDateStr, type: conflict.schedule_type, name: conflict.member_name, time: conflict.start_time }],
+        onConfirm: doMove,
+      })
       return
     }
 
-    // 저장
-    cur.saving = true
-    try {
-      if (cur.schedule.schedule_type === 'OT' && cur.schedule.ot_session_id) {
-        const newScheduledAt = new Date(`${newDateStr}T${newTimeStr}:00+09:00`).toISOString()
-        const result = await moveOtSchedule({
-          ot_session_id: cur.schedule.ot_session_id,
-          newScheduledAtIso: newScheduledAt,
-          newDateStr,
-          newTimeStr,
-        })
-        if ('error' in result && result.error) {
-          alert('이동 실패: ' + result.error)
-        } else if ('warning' in result && result.warning) {
-          alert(result.warning)
-        }
-      } else {
-        const { error } = await supabaseRef.current
-          .from('trainer_schedules')
-          .update({ scheduled_date: newDateStr, start_time: newTimeStr })
-          .eq('id', cur.schedule.id)
-        if (error) {
-          alert('이동 실패: ' + error.message)
-        }
-      }
-    } catch (err) {
-      alert('이동 중 오류: ' + (err instanceof Error ? err.message : String(err)))
-    }
-
-    // transform reset → fetchSchedules가 새 위치로 다시 렌더
-    cur.blockEl.style.transform = ''
-    cur.blockEl.style.zIndex = ''
-    dragStateRef.current = null
-    setDraggingId(null)
-    await fetchSchedules()
-    router.refresh()
+    await doMove()
   }
 
   const handleSchedulePointerCancel = (e: React.PointerEvent) => {
@@ -1234,8 +1245,58 @@ export function WeeklyCalendar({ assignments, trainerId, profile, workStartTime,
                     )
                   })}
 
-                  {/* 스케줄 블록 (절대 위치) */}
-                  {daySchedules.map((s) => {
+                  {/* 스케줄 블록 (절대 위치) — 중복 시 나란히 표시 */}
+                  {(() => {
+                    // 겹치는 블록 column 레이아웃 계산
+                    const items = daySchedules.map((s) => {
+                      const [sh, sm] = s.start_time.split(':').map(Number)
+                      const startMin = sh * 60 + sm
+                      const endMin = startMin + s.duration
+                      return { s, startMin, endMin }
+                    }).sort((a, b) => a.startMin - b.startMin || a.endMin - b.endMin)
+                    // 각 블록의 column index와 총 column 수 계산
+                    const colMap = new Map<string, { col: number; total: number }>()
+                    const groups: typeof items[] = []
+                    for (const item of items) {
+                      let placed = false
+                      for (const g of groups) {
+                        if (g[g.length - 1].endMin > item.startMin) {
+                          g.push(item)
+                          placed = true
+                          break
+                        }
+                      }
+                      if (!placed) groups.push([item])
+                    }
+                    // 실제 동시 겹침 처리 (greedy column assignment)
+                    const colAssign = new Map<string, number>()
+                    const processed: typeof items = []
+                    for (const item of items) {
+                      // 현재 겹치는 블록들 중 사용 중인 column 확인
+                      const usedCols = new Set<number>()
+                      for (const p of processed) {
+                        if (p.endMin > item.startMin) {
+                          usedCols.add(colAssign.get(p.s.id) ?? 0)
+                        }
+                      }
+                      let col = 0
+                      while (usedCols.has(col)) col++
+                      colAssign.set(item.s.id, col)
+                      processed.push(item)
+                    }
+                    // 각 블록의 총 column 수 = 겹치는 그룹 내 최대 column + 1
+                    for (const item of items) {
+                      const myCol = colAssign.get(item.s.id) ?? 0
+                      let maxCol = myCol
+                      for (const other of items) {
+                        if (other.s.id === item.s.id) continue
+                        if (other.startMin < item.endMin && other.endMin > item.startMin) {
+                          maxCol = Math.max(maxCol, colAssign.get(other.s.id) ?? 0)
+                        }
+                      }
+                      colMap.set(item.s.id, { col: myCol, total: maxCol + 1 })
+                    }
+                    return daySchedules.map((s) => {
                     const slot = timeToSlot(s.start_time)
                     // 시작 시간의 분 단위 오프셋 (예: 18:50 → 50분의 30분 슬롯 내 20분 오프셋)
                     const [, startMin] = s.start_time.split(':').map(Number)
@@ -1244,6 +1305,9 @@ export function WeeklyCalendar({ assignments, trainerId, profile, workStartTime,
                     const top = slot * slotH + pixelOffset
                     // duration을 정확한 픽셀 높이로 (50분이면 50/30 * slotH)
                     const height = Math.max(slotH * 0.8, (s.duration / 30) * slotH) - 2
+                    const layout = colMap.get(s.id) ?? { col: 0, total: 1 }
+                    const colWidth = 100 / layout.total
+                    const colLeft = layout.col * colWidth
                     // 회원 정보 매칭 — OT 스케줄만 ot_assignments에서 찾음
                     // PT/PPT는 동명이인 OT 회원의 매출대상자 표시가 잘못 묻어오는 문제를 방지
                     const matched = s.schedule_type === 'OT'
@@ -1272,8 +1336,8 @@ export function WeeklyCalendar({ assignments, trainerId, profile, workStartTime,
                       <div
                         key={s.id}
                         data-schedule-id={s.id}
-                        className={`absolute ${isMobile ? 'left-0 right-0' : 'left-0.5 right-0.5'} rounded border ${isMobile ? 'px-0.5 py-0' : 'px-1 py-0.5'} overflow-hidden group select-none ${draggable ? 'cursor-grab active:cursor-grabbing' : 'cursor-pointer'} ${isSales ? 'ring-2 ring-blue-400 ' : ''} ${isDragging ? 'shadow-2xl ring-2 ring-yellow-400 opacity-80' : ''} ${color}`}
-                        style={{ top, height, zIndex: isDragging ? 30 : 5, touchAction: 'none' }}
+                        className={`absolute rounded border ${isMobile ? 'px-0.5 py-0' : 'px-1 py-0.5'} overflow-hidden group select-none ${draggable ? 'cursor-grab active:cursor-grabbing' : 'cursor-pointer'} ${isSales ? 'ring-2 ring-blue-400 ' : ''} ${isDragging ? 'shadow-2xl ring-2 ring-yellow-400 opacity-80' : ''} ${color}`}
+                        style={{ top, height, zIndex: isDragging ? 30 : 5, touchAction: 'none', left: layout.total > 1 ? `${colLeft}%` : (isMobile ? 0 : 2), right: layout.total > 1 ? `${100 - colLeft - colWidth}%` : (isMobile ? 0 : 2) }}
                         onPointerDown={(e) => handleSchedulePointerDown(e, s)}
                         onPointerMove={handleSchedulePointerMove}
                         onPointerUp={handleSchedulePointerUp}
@@ -1337,7 +1401,8 @@ export function WeeklyCalendar({ assignments, trainerId, profile, workStartTime,
                         )}
                       </div>
                     )
-                  })}
+                  })
+                  })()}
                 </div>
               )
             })}
