@@ -1874,9 +1874,13 @@ export function TrainerCardList({ assignments, trainers = [], trainerId, trainer
                                 : lastApproval === '제출완료' ? 'bg-yellow-500 text-white'
                                 : 'bg-emerald-500 text-white'
 
-                              // 미승인 세션: progSessions 기반 또는 needApprovalSet fallback
+                              // 미승인 세션: progSessions + ot_sessions 양쪽에서 완료 여부 확인
+                              const otSessions = a.sessions ?? []
                               const unapprovedSessions = progSessions.length > 0
-                                ? progSessions.map((s, i) => ({ idx: i, status: s.approval_status, completed: s.completed })).filter((s) => s.completed && s.status !== '승인')
+                                ? progSessions.map((s, i) => {
+                                    const otDone = !!otSessions.find((os) => os.session_number === i + 1 && os.completed_at)
+                                    return { idx: i, status: s.approval_status, completed: s.completed || otDone }
+                                  }).filter((s) => s.completed && s.status !== '승인')
                                 : []
                               const programId = ex && ex !== 'loading' ? ex.program?.id : null
                               const showApproveBtn = (unapprovedSessions.length > 0 && programId) || needApprovalSet.has(a.id)
@@ -1896,7 +1900,11 @@ export function TrainerCardList({ assignments, trainers = [], trainerId, trainer
                                           const prog = await getOtProgram(a.id)
                                           if (!prog?.id) { alert('프로그램을 찾을 수 없습니다'); return }
                                           pid = prog.id
-                                          sessionsToApprove = (prog.sessions ?? []).map((s, i) => ({ idx: i, status: s.approval_status, completed: s.completed })).filter((s) => s.completed && s.status !== '승인')
+                                          const ots = a.sessions ?? []
+                                          sessionsToApprove = (prog.sessions ?? []).map((s, i) => {
+                                            const otDone = !!ots.find((os) => os.session_number === i + 1 && os.completed_at)
+                                            return { idx: i, status: s.approval_status, completed: s.completed || otDone }
+                                          }).filter((s) => s.completed && s.status !== '승인')
                                         }
                                         if (sessionsToApprove.length === 0) { alert('승인할 세션이 없습니다'); return }
                                         if (!confirm(`${a.member.name}의 미승인 ${sessionsToApprove.length}건을 모두 승인하시겠습니까?`)) return

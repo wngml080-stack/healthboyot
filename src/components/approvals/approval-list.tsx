@@ -190,8 +190,16 @@ export function ApprovalList({ programs: initialPrograms, profile, registrations
   // 승인대기/처리완료 각각 검색 + 기간 필터
   const [pendingSearch, setPendingSearch] = useState('')
   const [processedSearch, setProcessedSearch] = useState('')
+  const currentMonth = `${new Date().getFullYear()}-${String(new Date().getMonth() + 1).padStart(2, '0')}`
   const [pendingMonth, setPendingMonth] = useState('')
-  const [processedMonth, setProcessedMonth] = useState('')
+  const [processedMonth, setProcessedMonth] = useState(currentMonth)
+  // 트레이너 필터
+  const trainerNames = useMemo(() => {
+    const names = new Set<string>()
+    for (const p of programs) { if (p.trainer_name) names.add(p.trainer_name) }
+    return Array.from(names).sort()
+  }, [programs])
+  const [trainerFilter, setTrainerFilter] = useState('')
 
   const filteredPrograms = useMemo(() => {
     let list = programs
@@ -201,8 +209,11 @@ export function ApprovalList({ programs: initialPrograms, profile, registrations
         return date?.startsWith(monthFilter)
       })
     }
+    if (trainerFilter) {
+      list = list.filter((p) => p.trainer_name === trainerFilter)
+    }
     return list
-  }, [programs, monthFilter])
+  }, [programs, monthFilter, trainerFilter])
 
   const pending = useMemo(() => {
     let list = filteredPrograms.filter((p) => p.approval_status === '제출완료')
@@ -378,6 +389,23 @@ export function ApprovalList({ programs: initialPrograms, profile, registrations
         )}
       </div>
 
+      {/* 트레이너 필터 */}
+      {trainerNames.length > 1 && (
+        <div className="flex flex-wrap gap-2 mb-3">
+          <button
+            onClick={() => setTrainerFilter('')}
+            className={`h-8 px-3 rounded-md text-xs font-bold transition-colors ${!trainerFilter ? 'bg-yellow-400 text-black' : 'bg-white/10 text-white/70 hover:text-white'}`}
+          >전체</button>
+          {trainerNames.map((name) => (
+            <button
+              key={name}
+              onClick={() => setTrainerFilter(trainerFilter === name ? '' : name)}
+              className={`h-8 px-3 rounded-md text-xs font-bold transition-colors ${trainerFilter === name ? 'bg-yellow-400 text-black' : 'bg-white/10 text-white/70 hover:text-white'}`}
+            >{name}</button>
+          ))}
+        </div>
+      )}
+
       {/* 승인 대기 (좌) / 처리 완료 (우) */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
       <div>
@@ -496,13 +524,16 @@ export function ApprovalList({ programs: initialPrograms, profile, registrations
           </Card>
         ) : (
           <div className="grid gap-2">
-            {processed.map((prog) => (
+            {processed.map((prog) => {
+              const hasManualApproval = prog.sessions?.some((s) => s.admin_feedback === '임의승인')
+              return (
               <Card key={prog.id} className="bg-white border-gray-200 shadow-sm hover:shadow-md transition-shadow">
                 <CardContent className="py-2.5 px-4 flex flex-col sm:flex-row sm:items-center justify-between gap-2">
                   <div className="flex items-center gap-2 flex-wrap min-w-0">
                     <Badge className={STATUS_BADGE[prog.approval_status] ?? 'bg-gray-200 text-gray-700'}>
                       {prog.approval_status}
                     </Badge>
+                    {hasManualApproval && <Badge className="bg-amber-500 text-white">임의승인</Badge>}
                     <span className="font-bold text-gray-900 text-sm">{prog.member_name}</span>
                     <span className="text-xs text-gray-500">담당 {prog.trainer_name ?? '-'}</span>
                     {prog.is_sales_target && (
@@ -524,7 +555,8 @@ export function ApprovalList({ programs: initialPrograms, profile, registrations
                   </Button>
                 </CardContent>
               </Card>
-            ))}
+              )
+            })}
           </div>
         )}
       </div>

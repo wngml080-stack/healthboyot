@@ -1,33 +1,34 @@
 'use client'
 
-import { useState, useEffect, useRef } from 'react'
+import { useState, useEffect } from 'react'
 import { Loader2 } from 'lucide-react'
-import { createClient } from '@/lib/supabase/client'
+import { getAllCards } from '@/actions/consultation'
+import { getMembers } from '@/actions/members'
+import { getStaffList } from '@/actions/staff'
 import { ConsultationList } from '@/components/consultations/consultation-list'
 import type { ConsultationCard, Member } from '@/types'
 
+// 메모리 캐시 — 재방문 시 즉시 표시
+let cache: { cards: ConsultationCard[]; members: Member[]; staffList: { id: string; name: string }[]; ts: number } | null = null
+
 export function ConsultationsLoader() {
-  const [data, setData] = useState<{
-    cards: ConsultationCard[]
-    members: Member[]
-    staffList: { id: string; name: string }[]
-  } | null>(null)
-  const supabaseRef = useRef(createClient())
+  const [data, setData] = useState(cache && Date.now() - cache.ts < 60000 ? cache : null)
 
   useEffect(() => {
-    const supabase = supabaseRef.current
-    // 브라우저 → Supabase 직접 병렬 호출
-    Promise.all([
-      supabase.from('consultation_cards').select('*').order('created_at', { ascending: false }),
-      supabase.from('members').select('*').order('created_at', { ascending: false }).limit(200),
-      supabase.from('profiles').select('id, name').in('role', ['trainer', 'admin', 'fc', '강사', '관리자', '팀장']).order('name'),
-    ]).then(([cardsRes, membersRes, staffRes]) => {
-      setData({
-        cards: (cardsRes.data ?? []) as ConsultationCard[],
-        members: (membersRes.data ?? []) as Member[],
-        staffList: (staffRes.data ?? []).map((s) => ({ id: s.id, name: s.name })),
-      })
-    })
+    if (data && Date.now() - (cache?.ts ?? 0) < 30000) return
+    Promise.all([getAllCards(), getMembers(), getStaffList()]).then(
+      ([cards, members, staff]) => {
+        const result = {
+          cards: cards as ConsultationCard[],
+          members: members as Member[],
+          staffList: staff.map((s) => ({ id: s.id, name: s.name })),
+          ts: Date.now(),
+        }
+        cache = result
+        setData(result)
+      }
+    )
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
   if (!data) {
