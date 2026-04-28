@@ -165,7 +165,18 @@ export function TrainerCardList({ assignments, trainers = [], trainerId, trainer
   }, [trainerId, assignmentIdKey])
 
   const loadExpandedData = async (memberId: string, assignmentId: string) => {
-    if (expandedData[assignmentId]) return
+    const cached = expandedData[assignmentId]
+    // 프리캐시에 프로그램만 있고 상담카드가 없으면 → 상담카드만 추가 로딩
+    if (cached && cached !== 'loading' && cached.card) return
+    if (cached && cached !== 'loading' && !cached.card) {
+      const { card } = await getAssignmentExpandData(memberId, assignmentId)
+      setExpandedData((p) => {
+        const prev = p[assignmentId]
+        if (!prev || prev === 'loading') return { ...p, [assignmentId]: { card, program: null } }
+        return { ...p, [assignmentId]: { ...prev, card } }
+      })
+      return
+    }
     setExpandedData((p) => ({ ...p, [assignmentId]: 'loading' }))
     const { card, program } = await getAssignmentExpandData(memberId, assignmentId)
     setExpandedData((p) => ({ ...p, [assignmentId]: { card, program } }))
@@ -242,6 +253,9 @@ export function TrainerCardList({ assignments, trainers = [], trainerId, trainer
   const [addRole, setAddRole] = useState<'pt' | 'ppt'>('pt')
   const [addIsFloating, setAddIsFloating] = useState(false)
   const [addLoading, setAddLoading] = useState(false)
+
+  // 세일즈 낙관적 UI 오버라이드
+  const [salesOverrides, setSalesOverrides] = useState<Record<string, { is_sales_target?: boolean; is_pt_conversion?: boolean; sales_status?: string }>>({})
 
   // 미진행 사유 (거부/연락두절/스케줄미확정)
   const [quickStatusTarget, setQuickStatusTarget] = useState<string | null>(null)
@@ -1326,7 +1340,7 @@ export function TrainerCardList({ assignments, trainers = [], trainerId, trainer
                                             className="h-8 text-xs bg-white text-gray-900 border-gray-300"
                                             onBlur={(e) => {
                                               const v = Number(e.target.value) || 0
-                                              if (v !== (a.expected_sessions || 0)) updateOtAssignment(a.id, { expected_sessions: v }).then(() => startTransition(() => router.refresh()))
+                                              if (v !== (a.expected_sessions || 0)) updateOtAssignment(a.id, { expected_sessions: v })
                                             }}
                                           />
                                         </div>
@@ -1339,7 +1353,7 @@ export function TrainerCardList({ assignments, trainers = [], trainerId, trainer
                                             className="h-8 text-xs bg-white text-gray-900 border-gray-300"
                                             onBlur={(e) => {
                                               const v = Number(e.target.value) || 0
-                                              if (v !== toManwon(a.expected_amount || 0)) updateOtAssignment(a.id, { expected_amount: v }).then(() => startTransition(() => router.refresh()))
+                                              if (v !== toManwon(a.expected_amount || 0)) updateOtAssignment(a.id, { expected_amount: v })
                                             }}
                                           />
                                         </div>
@@ -1352,7 +1366,7 @@ export function TrainerCardList({ assignments, trainers = [], trainerId, trainer
                                             className="h-8 text-xs bg-white text-gray-900 border-gray-300"
                                             onBlur={(e) => {
                                               const v = Number(e.target.value.replace('%', '')) || 0
-                                              if (v !== (a.closing_probability || 0)) updateOtAssignment(a.id, { closing_probability: v }).then(() => startTransition(() => router.refresh()))
+                                              if (v !== (a.closing_probability || 0)) updateOtAssignment(a.id, { closing_probability: v })
                                             }}
                                           />
                                         </div>
@@ -1371,7 +1385,7 @@ export function TrainerCardList({ assignments, trainers = [], trainerId, trainer
                                             className="h-8 text-xs bg-white text-gray-900 border-purple-300"
                                             onBlur={(e) => {
                                               const v = Number(e.target.value) || 0
-                                              if (v !== (a.expected_sessions || 0)) updateOtAssignment(a.id, { expected_sessions: v }).then(() => startTransition(() => router.refresh()))
+                                              if (v !== (a.expected_sessions || 0)) updateOtAssignment(a.id, { expected_sessions: v })
                                             }}
                                           />
                                         </div>
@@ -1384,7 +1398,7 @@ export function TrainerCardList({ assignments, trainers = [], trainerId, trainer
                                             className="h-8 text-xs bg-white text-gray-900 border-purple-300"
                                             onBlur={(e) => {
                                               const v = Number(e.target.value) || 0
-                                              if (v !== toManwon(a.actual_sales || 0)) updateOtAssignment(a.id, { actual_sales: v }).then(() => startTransition(() => router.refresh()))
+                                              if (v !== toManwon(a.actual_sales || 0)) updateOtAssignment(a.id, { actual_sales: v })
                                             }}
                                           />
                                         </div>
@@ -1401,7 +1415,7 @@ export function TrainerCardList({ assignments, trainers = [], trainerId, trainer
                                           className="w-full rounded-md border border-red-300 bg-white text-sm text-gray-900 p-2 h-16 resize-none"
                                           onBlur={(e) => {
                                             const v = e.target.value.trim()
-                                            if (v !== (a.closing_fail_reason ?? '')) updateOtAssignment(a.id, { closing_fail_reason: v || null }).then(() => startTransition(() => router.refresh()))
+                                            if (v !== (a.closing_fail_reason ?? '')) updateOtAssignment(a.id, { closing_fail_reason: v || null })
                                           }}
                                         />
                                       </div>
@@ -1750,7 +1764,7 @@ export function TrainerCardList({ assignments, trainers = [], trainerId, trainer
                               )
                             })()}
                             <Button size="sm" variant="outline" className="text-white bg-gray-800 border-gray-700" onClick={(e) => { e.stopPropagation(); router.push(`/ot/${a.id}`) }}>
-                              상세 페이지
+                              로그기록
                             </Button>
                           </div>
                         </div>
@@ -2048,7 +2062,7 @@ export function TrainerCardList({ assignments, trainers = [], trainerId, trainer
                   router.push(`/ot/${quickViewTarget.id}`)
                 }}
               >
-                상세 페이지로 이동
+                로그기록로 이동
               </Button>
             </div>
           )}
