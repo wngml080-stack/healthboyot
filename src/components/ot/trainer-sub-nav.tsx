@@ -11,15 +11,15 @@ interface Props {
 }
 
 const TABS = [
-  { key: 'members', label: '회원관리', icon: Users },
   { key: 'schedule', label: '스케줄', icon: CalendarDays },
+  { key: 'members', label: '회원관리', icon: Users },
   { key: 'stats', label: '통계표', icon: BarChart3 },
 ]
 
 export function TrainerSubNav({ trainerId }: Props) {
   const router = useRouter()
   const searchParams = useSearchParams()
-  const currentTab = searchParams.get('tab') ?? 'members'
+  const currentTab = searchParams.get('tab') ?? 'schedule'
   const [isPending, startTransition] = useTransition()
   const [optimisticTab, setOptimisticTab] = useState<string | null>(null)
 

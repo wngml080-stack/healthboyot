@@ -196,9 +196,13 @@ export const OtProgramForm = forwardRef<OtProgramFormRef, Props>(function OtProg
         ...emptySession(),
         ...s,
         completed: isCompleted,
-        // ot_session에서 날짜/시간 채우기 (프로그램에 없으면)
-        date: s.date || (otSession?.scheduled_at ? new Date(otSession.scheduled_at).toISOString().split('T')[0] : ''),
-        time: s.time || (otSession?.scheduled_at ? new Date(otSession.scheduled_at).toTimeString().slice(0, 5) : ''),
+        // ot_session의 날짜/시간을 항상 우선 사용 (스케줄 관리가 소스)
+        date: otSession?.scheduled_at
+          ? new Date(otSession.scheduled_at).toLocaleDateString('sv-SE', { timeZone: 'Asia/Seoul' })
+          : (s.date || ''),
+        time: otSession?.scheduled_at
+          ? new Date(otSession.scheduled_at).toLocaleTimeString('en-GB', { timeZone: 'Asia/Seoul', hour: '2-digit', minute: '2-digit' })
+          : (s.time || ''),
         class_duration: s.class_duration ?? 50,
       }
     })
@@ -556,30 +560,7 @@ export const OtProgramForm = forwardRef<OtProgramFormRef, Props>(function OtProg
     const result = await upsertOtProgram(a.id, a.member_id, payload)
     if (result.error) { setSaving(false); setError(result.error); return }
 
-    // 프로그램 세션의 날짜/시간 → ot_sessions + trainer_schedules 자동 동기화 (병렬)
-    const sessionsToSync = (overrideSessions ?? sessions)
-    const syncPromises: Promise<unknown>[] = []
-    for (let i = 0; i < sessionsToSync.length; i++) {
-      const s = sessionsToSync[i]
-      if (!s.date || !s.time) continue
-      if (s.completed) continue // 완료된 세션은 스케줄 덮어쓰기 방지
-      // 시간 형식 검증: HH:MM 형식이어야 함
-      const timeMatch = s.time.match(/^(\d{1,2}):(\d{2})$/)
-      if (!timeMatch) continue
-      const hh = String(Number(timeMatch[1])).padStart(2, '0')
-      const mm = timeMatch[2]
-      const normalizedTime = `${hh}:${mm}`
-      const sessionNumber = i + 1
-      const scheduledAt = new Date(`${s.date}T${normalizedTime}:00+09:00`).toISOString()
-      if (isNaN(new Date(scheduledAt).getTime())) continue // Invalid Date 방어
-      syncPromises.push(upsertOtSession({
-        ot_assignment_id: a.id,
-        session_number: sessionNumber,
-        scheduled_at: scheduledAt,
-        duration: s.class_duration ?? 50,
-      }))
-    }
-    if (syncPromises.length > 0) await Promise.all(syncPromises)
+    // 스케줄 동기화는 스케줄 관리(캘린더)에서만 수행 — 프로그램에서는 저장만
 
     setSaving(false)
     lastSavedRef.current = JSON.stringify(payload)
@@ -945,67 +926,19 @@ export const OtProgramForm = forwardRef<OtProgramFormRef, Props>(function OtProg
                   <div className="flex items-center gap-2 flex-wrap">
                     <div className="flex items-center gap-1">
                       <Label className="text-xs font-bold shrink-0">날짜:</Label>
-                      <Input type="date" value={session.date} onChange={(e) => updateSession(idx, 'date', e.target.value)} className="h-7 text-sm w-40" disabled={!canEdit || isSessionLocked(session) || (isCompleted && !isExpanded)} />
+                      <Input type="date" value={session.date} readOnly disabled className="h-7 text-sm w-40 bg-gray-100 cursor-not-allowed" />
                     </div>
                     <div className="flex items-center gap-1">
                       <Label className="text-xs font-bold shrink-0">시간:</Label>
-                      <Input
-                        type="text"
-                        inputMode="numeric"
-                        placeholder="18:30"
-                        value={session.time}
-                        onChange={(e) => {
-                          let v = e.target.value.replace(/[^0-9:]/g, '')
-                          // 자동 콜론 삽입: 2자리 숫자 입력 후 자동으로 : 추가
-                          if (v.length === 2 && !v.includes(':') && session.time.length < 2) v += ':'
-                          if (v.length > 5) v = v.slice(0, 5)
-                          updateSession(idx, 'time', v)
-                        }}
-                        onBlur={(e) => {
-                          // 포커스 아웃 시 HH:MM 형식으로 정리
-                          let v = e.target.value.replace(/[^0-9]/g, '')
-                          if (v.length >= 3) {
-                            const h = v.slice(0, v.length - 2)
-                            const m = v.slice(-2)
-                            const hh = Math.min(23, Math.max(0, Number(h)))
-                            const mm = Math.min(59, Math.max(0, Number(m)))
-                            updateSession(idx, 'time', `${String(hh).padStart(2, '0')}:${String(mm).padStart(2, '0')}`)
-                          } else if (v.length === 2) {
-                            updateSession(idx, 'time', `${String(Math.min(23, Number(v))).padStart(2, '0')}:00`)
-                          }
-                        }}
-                        disabled={!canEdit || isSessionLocked(session) || (isCompleted && !isExpanded)}
-                        className="h-7 text-sm w-20 text-center"
-                      />
+                      <Input type="text" value={session.time || '-'} readOnly disabled className="h-7 text-sm w-24 bg-gray-100 cursor-not-allowed" />
                     </div>
-                    {/* 수업시간 30분/50분 */}
-                    {[30, 50].map((d) => (
-                      <button
-                        key={d}
-                        type="button"
-                        disabled={!canEdit || isSessionLocked(session) || (isCompleted && !isExpanded)}
-                        className={`rounded-md border px-3 py-0.5 text-xs font-bold transition-colors ${
-                          (session.class_duration ?? 50) === d
-                            ? 'bg-gray-900 text-white border-gray-900'
-                            : 'bg-white text-gray-600 border-gray-300 hover:bg-gray-100'
-                        } disabled:opacity-50`}
-                        onClick={() => {
-                          updateSession(idx, 'class_duration', d)
-                          // 미완료 세션만 trainer_schedules duration 즉시 반영
-                          if (!session.completed && session.date && session.time) {
-                            const scheduledAt = new Date(`${session.date}T${session.time}:00+09:00`).toISOString()
-                            upsertOtSession({
-                              ot_assignment_id: a.id,
-                              session_number: idx + 1,
-                              scheduled_at: scheduledAt,
-                              duration: d,
-                            })
-                          }
-                        }}
-                      >
-                        {d}분
-                      </button>
-                    ))}
+                    {!session.date && (
+                      <p className="text-[10px] text-orange-500">스케줄 관리에서 일정을 잡아주세요</p>
+                    )}
+                    {/* 수업시간 30분/50분 — 읽기 전용 표시 */}
+                    <span className={`rounded-md border px-3 py-0.5 text-xs font-bold ${
+                      (session.class_duration ?? 50) === 30 ? 'bg-gray-900 text-white' : 'bg-white text-gray-600 border-gray-300'
+                    }`}>수업: {session.class_duration ?? 50}분</span>
                   </div>
 
                   {/* 운동 */}

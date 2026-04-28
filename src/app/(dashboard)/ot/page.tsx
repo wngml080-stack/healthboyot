@@ -23,7 +23,7 @@ interface OtPageProps {
 export default async function OtPage({ searchParams }: OtPageProps) {
   const params = await searchParams
   const trainerId = params.trainer
-  const tab = params.tab ?? 'members'
+  const tab = params.tab ?? 'schedule'
 
   // 폴더 뷰
   if (!trainerId) {

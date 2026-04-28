@@ -340,9 +340,7 @@ export async function moveOtSchedule(params: {
   if (fetchErr || !existingSession) {
     return { error: '세션을 찾을 수 없습니다' }
   }
-  if (existingSession.completed_at) {
-    return { error: '완료된 세션은 이동할 수 없습니다' }
-  }
+  // 완료된 세션도 수정 허용 (추후 제한 예정)
 
   // 2. 세션 업데이트
   const { error: sessionErr } = await supabase

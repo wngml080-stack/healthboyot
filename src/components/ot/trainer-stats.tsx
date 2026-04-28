@@ -221,7 +221,7 @@ export function TrainerStats({ assignments, trainerName, programs, registrations
     }
 
     const rows = assignments
-      .filter((a) => !['거부'].includes(a.status))
+      .filter((a) => !a.is_excluded && !['거부','추후결정'].includes(a.status))
       .map((a) => {
         const cells: Record<string, CellData> = {}
         let totalCompleted = 0; let totalScheduled = 0
@@ -330,7 +330,7 @@ export function TrainerStats({ assignments, trainerName, programs, registrations
     const nwStart = addDays(cwStart, 7)
     const nwEnd = addDays(nwStart, 6)
 
-    const activeAssignments = assignments.filter((a) => !['거부'].includes(a.status))
+    const activeAssignments = assignments.filter((a) => !a.is_excluded && !['거부','추후결정'].includes(a.status))
 
     // 당월 통계
     let monthAssigned = 0, monthClassMembers = 0, monthOtCount = 0

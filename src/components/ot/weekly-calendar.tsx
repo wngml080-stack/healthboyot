@@ -349,6 +349,7 @@ export function WeeklyCalendar({ assignments, trainerId, profile, workStartTime,
 
   // 스케줄 편집 다이얼로그 (OT/식사/회의 등 일반 스케줄용 — 시간/수업시간만)
   const [editSchedule, setEditSchedule] = useState<ScheduleItem | null>(null)
+  const [editDate, setEditDate] = useState('')
   const [editTime, setEditTime] = useState('')
   const [editDuration, setEditDuration] = useState(50)
   const [editSaving, setEditSaving] = useState(false)
@@ -378,6 +379,7 @@ export function WeeklyCalendar({ assignments, trainerId, profile, workStartTime,
     blockEl: HTMLElement
     startRect: DOMRect
     saving: boolean
+    dragStarted: boolean
   }
   const dragStateRef = useRef<DragRef | null>(null)
   // 드래그 중인 schedule id만 React state로 (시각 효과용 - shadow/ring 등)
@@ -501,19 +503,10 @@ export function WeeklyCalendar({ assignments, trainerId, profile, workStartTime,
   // 드래그 가능 여부:
   // - OT: 매칭되는 ot_session이 완료되지 않았을 때 (ot_session_id 매칭 못 찾으면 fallback으로 허용)
   // - 그 외 (PT/PPT/회의/식사 등): 항상 허용
-  const canDragSchedule = useCallback((s: ScheduleItem): boolean => {
-    if (s.schedule_type !== 'OT') return true
-    // OT의 경우 ot_session_id가 있고 완료되지 않은 세션이면 드래그 가능
-    if (s.ot_session_id) {
-      for (const a of assignments) {
-        const sess = a.sessions?.find((sess) => sess.id === s.ot_session_id)
-        if (sess) return !sess.completed_at
-      }
-    }
-    // ot_session_id가 NULL이거나 매칭 못 찾는 OT (이전 데이터) — 일단 드래그 허용
-    // onUp에서 fallback 처리
+  const canDragSchedule = useCallback((_s: ScheduleItem): boolean => {
+    // 모든 스케줄 드래그 허용 (완료 세션 포함 — 수정 기간)
     return true
-  }, [assignments])
+  }, [])
 
   // ── 근무시간 판별: 주말/공휴일은 항상 IN, 평일은 근무시간 내만 IN ──
   const hasWorkHours = !!(workStartTime && workEndTime)
@@ -814,12 +807,26 @@ export function WeeklyCalendar({ assignments, trainerId, profile, workStartTime,
   }
 
   const handleDelete = async (id: string) => {
+    if (!confirm('이 스케줄을 삭제하시겠습니까?')) return
+
+    // 삭제 대상 스케줄 정보 보존
+    const target = schedules.find((s) => s.id === id)
     setSchedules((prev) => prev.filter((s) => s.id !== id))
-    const { error } = await supabaseRef.current.from('trainer_schedules').delete().eq('id', id)
-    if (error) {
-      console.error('삭제 실패:', error.message)
-      fetchSchedules() // 삭제 실패 시 목록 다시 불러오기
+
+    // OT 스케줄이면 연결된 ot_sessions + 다른 트레이너의 trainer_schedules도 삭제
+    if (target?.schedule_type === 'OT' && target.ot_session_id) {
+      // 같은 ot_session_id의 모든 trainer_schedules 삭제
+      await supabaseRef.current.from('trainer_schedules').delete().eq('ot_session_id', target.ot_session_id)
+      // ot_sessions도 삭제
+      await supabaseRef.current.from('ot_sessions').delete().eq('id', target.ot_session_id)
+    } else {
+      const { error } = await supabaseRef.current.from('trainer_schedules').delete().eq('id', id)
+      if (error) {
+        console.error('삭제 실패:', error.message)
+      }
     }
+    fetchSchedules()
+    startTransition(() => router.refresh())
   }
 
   // 스케줄 블록 클릭 → 타입에 따라 적절한 다이얼로그 분기
@@ -840,15 +847,9 @@ export function WeeklyCalendar({ assignments, trainerId, profile, workStartTime,
       setEditPtMemo(parsed.memo)
       return
     }
-    // OT 스케줄 클릭 → 바로 프로그램으로 이동
-    const matched = assignments.find((a) => a.member.name === schedule.member_name)
-    if (matched) {
-      setOtClassSchedule(schedule)
-      openProgramDialog(matched)
-      return
-    }
-    // 매칭 안 되는 스케줄은 시간 편집만
+    // OT 스케줄 클릭 → 간단한 스케줄 수정 팝업
     setEditSchedule(schedule)
+    setEditDate(schedule.scheduled_date)
     setEditTime(schedule.start_time)
     setEditDuration(schedule.duration)
   }
@@ -893,7 +894,7 @@ export function WeeklyCalendar({ assignments, trainerId, profile, workStartTime,
 
   // ── 드래그 이동: 픽셀 단위 부드러운 드래그 + 드롭 시점에만 30분 스냅 ──
   const handleSchedulePointerDown = (e: React.PointerEvent, s: ScheduleItem) => {
-    if (dragStateRef.current) return // 이미 진행 중
+    if (dragStateRef.current) return
     if (!canDragSchedule(s)) return
     if (e.button !== 0) return
     const target = e.target as HTMLElement
@@ -909,8 +910,8 @@ export function WeeklyCalendar({ assignments, trainerId, profile, workStartTime,
       blockEl,
       startRect: blockEl.getBoundingClientRect(),
       saving: false,
+      dragStarted: false,
     }
-    setDraggingId(s.id)
 
     e.preventDefault()
     e.stopPropagation()
@@ -921,9 +922,17 @@ export function WeeklyCalendar({ assignments, trainerId, profile, workStartTime,
     if (!cur || cur.saving) return
     if (cur.schedule.id !== (e.currentTarget as HTMLElement).dataset.scheduleId) return
 
-    // 직접 DOM transform — React state 업데이트 없음 → 60fps 부드러운 이동
     const dx = e.clientX - cur.startClientX
     const dy = e.clientY - cur.startClientY
+
+    // 최소 이동 거리 도달 전까지 드래그 시작 안 함 (미세한 움직임 무시)
+    if (!cur.dragStarted) {
+      if (Math.abs(dx) < 4 && Math.abs(dy) < 4) return
+      cur.dragStarted = true
+      setDraggingId(cur.schedule.id)
+    }
+
+    // 직접 DOM transform — React state 업데이트 없음 → 60fps
     cur.blockEl.style.transform = `translate(${dx}px, ${dy}px)`
     cur.blockEl.style.zIndex = '30'
   }
@@ -943,8 +952,8 @@ export function WeeklyCalendar({ assignments, trainerId, profile, workStartTime,
     const dx = e.clientX - cur.startClientX
     const dy = e.clientY - cur.startClientY
 
-    // 이동 임계값 (5px 미만 = 클릭으로 처리)
-    if (Math.abs(dx) < 5 && Math.abs(dy) < 5) {
+    // 드래그 시작 안 됐으면 클릭으로 처리
+    if (!cur.dragStarted || (Math.abs(dx) < 5 && Math.abs(dy) < 5)) {
       cur.blockEl.style.transform = ''
       cur.blockEl.style.zIndex = ''
       dragStateRef.current = null
@@ -1089,11 +1098,11 @@ export function WeeklyCalendar({ assignments, trainerId, profile, workStartTime,
     // OT 스케줄은 moveOtSchedule로 양쪽 trainer_schedules + ot_sessions 동기 업데이트
     // duration이 변경된 경우 trainer_schedules에 별도 update가 필요하므로 두 단계로 처리
     if (editSchedule.schedule_type === 'OT' && editSchedule.ot_session_id) {
-      const newScheduledAt = new Date(`${editSchedule.scheduled_date}T${editTime}:00+09:00`).toISOString()
+      const newScheduledAt = new Date(`${editDate}T${editTime}:00+09:00`).toISOString()
       const result = await moveOtSchedule({
         ot_session_id: editSchedule.ot_session_id,
         newScheduledAtIso: newScheduledAt,
-        newDateStr: editSchedule.scheduled_date,
+        newDateStr: editDate,
         newTimeStr: editTime,
       })
       if ('error' in result && result.error) {
@@ -1112,7 +1121,7 @@ export function WeeklyCalendar({ assignments, trainerId, profile, workStartTime,
       // OT가 아닌 일정 — 단일 row update
       const { error } = await supabaseRef.current
         .from('trainer_schedules')
-        .update({ start_time: editTime, duration: editDuration })
+        .update({ scheduled_date: editDate, start_time: editTime, duration: editDuration })
         .eq('id', editSchedule.id)
       if (error) {
         alert('수정 실패: ' + error.message)
@@ -2217,6 +2226,15 @@ export function WeeklyCalendar({ assignments, trainerId, profile, workStartTime,
               </DialogHeader>
               <div className="space-y-4">
                 <div className="space-y-2">
+                  <p className="text-sm font-medium text-gray-700">날짜</p>
+                  <Input
+                    type="date"
+                    value={editDate}
+                    onChange={(e) => setEditDate(e.target.value)}
+                    className="h-9 text-sm bg-white text-gray-900 border-gray-300"
+                  />
+                </div>
+                <div className="space-y-2">
                   <p className="text-sm font-medium text-gray-700">시간</p>
                   <div className="grid grid-cols-4 gap-1.5">
                     {Array.from({ length: 33 }, (_, i) => {
@@ -2269,13 +2287,31 @@ export function WeeklyCalendar({ assignments, trainerId, profile, workStartTime,
                     ))}
                   </div>
                 </div>
-                <Button
-                  className="w-full bg-gray-900 hover:bg-gray-800 text-white font-bold"
-                  onClick={handleEditScheduleSave}
-                  disabled={editSaving}
-                >
-                  {editSaving ? '저장 중...' : '수정 저장'}
-                </Button>
+                <div className="flex gap-2">
+                  {editSchedule.schedule_type === 'OT' && (() => {
+                    const matched = assignments.find((a) => a.member.name === editSchedule.member_name)
+                    if (!matched) return null
+                    return (
+                      <Button
+                        className="flex-1 bg-emerald-600 hover:bg-emerald-700 text-white font-bold"
+                        onClick={() => {
+                          setOtClassSchedule(editSchedule)
+                          openProgramDialog(matched)
+                          setEditSchedule(null)
+                        }}
+                      >
+                        프로그램
+                      </Button>
+                    )
+                  })()}
+                  <Button
+                    className="flex-1 bg-gray-900 hover:bg-gray-800 text-white font-bold"
+                    onClick={handleEditScheduleSave}
+                    disabled={editSaving}
+                  >
+                    {editSaving ? '저장 중...' : '수정 저장'}
+                  </Button>
+                </div>
               </div>
             </>
           )}
