@@ -6,11 +6,8 @@ import { getCurrentProfile } from '@/actions/auth'
 import { getAllOtPrograms } from '@/actions/ot-program'
 import { getOtRegistrationsByTrainer } from '@/actions/ot-registration'
 import { getTrainerScheduleSlots } from '@/actions/schedule'
-import { TrainerSubNav } from '@/components/ot/trainer-sub-nav'
-import { TrainerCardList } from '@/components/ot/trainer-card-list'
 import { TrainerFolderGrid } from '@/components/ot/trainer-folder-grid'
-import { TrainerStats } from '@/components/ot/trainer-stats'
-import { WeeklyCalendar } from '@/components/ot/weekly-calendar'
+import { TrainerDetailTabs } from '@/components/ot/trainer-detail-tabs'
 import { PageTitle } from '@/components/shared/page-title'
 import { NotificationBell } from '@/components/ot/notification-bell'
 import { ArrowLeft, Loader2 } from 'lucide-react'
@@ -162,35 +159,19 @@ async function TrainerDetailView({ trainerId, tab }: { trainerId: string; tab: s
         </div>
       </div>
 
-      <div className="flex flex-col lg:flex-row gap-4 lg:gap-6">
-        <TrainerSubNav trainerId={trainerId} />
-        <div className="flex-1 min-w-0">
-          {tab === 'members' && (
-            <TrainerCardList
-              assignments={trainerAssignments}
-              trainers={allTrainers}
-              trainerId={trainerId}
-              trainerName={trainerName}
-              profile={profile ?? undefined}
-              initialSchedules={scheduleSlots}
-            />
-          )}
-
-          {tab === 'schedule' && (
-            <WeeklyCalendar
-              assignments={trainerAssignments}
-              trainerId={trainerId}
-              profile={profile ?? undefined}
-              workStartTime={staffList.find((s) => s.id === trainerId)?.work_start_time ?? null}
-              workEndTime={staffList.find((s) => s.id === trainerId)?.work_end_time ?? null}
-            />
-          )}
-
-          {tab === 'stats' && (
-            <TrainerStats assignments={trainerAssignments} trainerName={trainerName} programs={trainerPrograms} registrations={trainerRegistrations} trainerId={trainerId} />
-          )}
-        </div>
-      </div>
+      <TrainerDetailTabs
+        trainerId={trainerId}
+        trainerName={trainerName}
+        initialTab={tab}
+        assignments={trainerAssignments}
+        trainers={allTrainers}
+        profile={profile ?? undefined}
+        initialSchedules={scheduleSlots}
+        workStartTime={staffList.find((s) => s.id === trainerId)?.work_start_time ?? null}
+        workEndTime={staffList.find((s) => s.id === trainerId)?.work_end_time ?? null}
+        initialPrograms={trainerPrograms}
+        initialRegistrations={trainerRegistrations}
+      />
     </div>
   )
 }
