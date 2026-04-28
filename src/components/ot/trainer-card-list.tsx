@@ -421,7 +421,7 @@ export function TrainerCardList({ assignments, trainers = [], trainerId, trainer
       const hasAny = done > 0 || scheduled > 0
       if (!hasAny && !['거부','추후결정'].includes(a.status) && !['연락두절','스케줄미확정','OT거부자','수업후거부'].includes(a.sales_status) && !a.is_excluded) counts['미진행'] = (counts['미진행'] ?? 0) + 1
       // 필터 로직과 동일하게 맞춤
-      const isInactiveStatus = ['연락두절','스케줄미확정','OT거부자','수업후거부'].includes(a.sales_status) || a.is_excluded || ['거부','추후결정'].includes(a.status)
+      const isInactiveStatus = ['연락두절','스케줄미확정','OT거부자','수업후거부'].includes(a.sales_status) || a.is_excluded || ['거부','추후결정'].includes(a.status) || a.is_pt_conversion
       if (!isInactiveStatus && ((done === 0 && scheduled > 0) || (done === 1 && scheduled === 0))) counts['1차'] = (counts['1차'] ?? 0) + 1
       if (!isInactiveStatus && ((done === 1 && scheduled > 0) || (done === 2 && scheduled === 0))) counts['2차'] = (counts['2차'] ?? 0) + 1
       if (!isInactiveStatus && ((done === 2 && scheduled > 0) || (done === 3 && scheduled === 0))) counts['3차'] = (counts['3차'] ?? 0) + 1
@@ -456,7 +456,7 @@ export function TrainerCardList({ assignments, trainers = [], trainerId, trainer
       if (filter === 'PT') return a.pt_trainer_id === trainerId
       if (filter === 'PPT') return a.ppt_trainer_id === trainerId
       if (filter === '미진행') return done === 0 && scheduled === 0 && !['거부','추후결정'].includes(a.status) && !['연락두절','스케줄미확정','OT거부자','수업후거부'].includes(a.sales_status) && !a.is_excluded
-      const isInactiveStatus = ['연락두절','스케줄미확정','OT거부자','수업후거부'].includes(a.sales_status) || a.is_excluded || ['거부','추후결정'].includes(a.status)
+      const isInactiveStatus = ['연락두절','스케줄미확정','OT거부자','수업후거부'].includes(a.sales_status) || a.is_excluded || ['거부','추후결정'].includes(a.status) || a.is_pt_conversion
       if (filter === '1차') return !isInactiveStatus && ((done === 0 && scheduled > 0) || (done === 1 && scheduled === 0))
       if (filter === '2차') return !isInactiveStatus && ((done === 1 && scheduled > 0) || (done === 2 && scheduled === 0))
       if (filter === '3차') return !isInactiveStatus && ((done === 2 && scheduled > 0) || (done === 3 && scheduled === 0))
@@ -696,21 +696,11 @@ export function TrainerCardList({ assignments, trainers = [], trainerId, trainer
       for (const s of sorted) {
         const n = s.session_number
         if (s.completed_at) {
-          // 수업 진행일 (scheduled_at)과 완료 처리일 (completed_at) 분리
-          if (s.scheduled_at) {
-            const classDate = format(new Date(s.scheduled_at), 'MM.dd')
-            const completeDate = format(new Date(s.completed_at), 'MM.dd')
-            if (classDate !== completeDate) {
-              // 수업일 ≠ 완료일 → 둘 다 표기
-              log.push({ label: `${n}차수업`, date: classDate, color: 'text-blue-600' })
-              log.push({ label: `${n}차완료`, date: completeDate, color: 'text-emerald-600' })
-            } else {
-              // 같은 날 → 하나만
-              log.push({ label: `${n}차완료`, date: classDate, color: 'text-blue-600' })
-            }
-          } else {
-            log.push({ label: `${n}차완료`, date: format(new Date(s.completed_at), 'MM.dd'), color: 'text-blue-600' })
-          }
+          // 수업일(scheduled_at)과 완료일(completed_at) 항상 분리 표기
+          const classDate = s.scheduled_at ? format(new Date(s.scheduled_at), 'MM.dd') : format(new Date(s.completed_at), 'MM.dd')
+          const completeDate = format(new Date(s.completed_at), 'MM.dd')
+          log.push({ label: `${n}차수업`, date: classDate, color: 'text-blue-600' })
+          log.push({ label: `${n}차완료`, date: completeDate, color: 'text-emerald-600' })
           const approval = approvals.find((ap) => ap.session === n)
           if (approval?.status === '승인') {
             log.push({ label: `${n}차승인`, date: approval.approved_at ? format(new Date(approval.approved_at), 'MM.dd') : null, color: 'text-green-600' })
@@ -831,9 +821,9 @@ export function TrainerCardList({ assignments, trainers = [], trainerId, trainer
           {/* 전체 / 거부·제외 버튼 */}
           <div className="flex gap-2">
             <button
-              onClick={() => setFilter('전체')}
+              onClick={() => { setFilter('전체'); setCategoryFilter('전체') }}
               className={`h-8 px-4 rounded-md text-xs font-bold transition-colors ${
-                filter === '전체'
+                filter === '전체' && categoryFilter === '전체'
                   ? 'bg-yellow-400 text-black border-2 border-yellow-500'
                   : 'bg-yellow-300 text-black border border-yellow-400 hover:bg-yellow-400'
               }`}
@@ -841,7 +831,7 @@ export function TrainerCardList({ assignments, trainers = [], trainerId, trainer
               전체 {(filterCounts['전체'] ?? 0) > 0 && <span className="ml-1 text-[10px]">{filterCounts['전체']}</span>}
             </button>
             <button
-              onClick={() => setFilter('거부/제외')}
+              onClick={() => { setFilter('거부/제외'); setCategoryFilter('전체') }}
               className={`h-8 px-4 rounded-md text-xs font-bold transition-colors ${
                 filter === '거부/제외'
                   ? 'bg-red-600 text-white border-2 border-red-700'
@@ -851,7 +841,7 @@ export function TrainerCardList({ assignments, trainers = [], trainerId, trainer
               거부/제외 {(filterCounts['거부/제외'] ?? 0) > 0 && <span className="ml-1 text-[10px]">{filterCounts['거부/제외']}</span>}
             </button>
             <button
-              onClick={() => setCategoryFilter(categoryFilter === '매출대상' ? '전체' : '매출대상')}
+              onClick={() => { setCategoryFilter(categoryFilter === '매출대상' ? '전체' : '매출대상'); setFilter('전체') }}
               className={`h-8 px-4 rounded-md text-xs font-bold transition-colors ${
                 categoryFilter === '매출대상'
                   ? 'bg-purple-600 text-white border-2 border-purple-700'
@@ -861,7 +851,7 @@ export function TrainerCardList({ assignments, trainers = [], trainerId, trainer
               매출대상 {(filterCounts['매출대상'] ?? 0) > 0 && <span className="ml-1 text-[10px]">{filterCounts['매출대상']}</span>}
             </button>
             <button
-              onClick={() => setCategoryFilter(categoryFilter === 'PT전환' ? '전체' : 'PT전환')}
+              onClick={() => { setCategoryFilter(categoryFilter === 'PT전환' ? '전체' : 'PT전환'); setFilter('전체') }}
               className={`h-8 px-4 rounded-md text-xs font-bold transition-colors ${
                 categoryFilter === 'PT전환'
                   ? 'bg-blue-600 text-white border-2 border-blue-700'
@@ -882,9 +872,9 @@ export function TrainerCardList({ assignments, trainers = [], trainerId, trainer
             return (
               <button
                 key={f}
-                onClick={() => setFilter(f)}
+                onClick={() => { setFilter(f); setCategoryFilter('전체') }}
                 className={`px-3 py-1.5 rounded-full text-xs font-medium transition-colors ${
-                  filter === f
+                  filter === f && categoryFilter === '전체'
                     ? 'bg-yellow-400 text-black'
                     : 'bg-white text-gray-600 border border-gray-300 hover:bg-gray-50'
                 }`}
