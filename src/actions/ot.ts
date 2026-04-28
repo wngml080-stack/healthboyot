@@ -65,17 +65,10 @@ export async function getOtAssignments(params?: {
     query = query.eq('status', params.status)
   }
   if (params?.trainerId) {
-    if (params.trainerId === 'excluded') {
-      // 제외회원 폴더: is_excluded = true인 회원만
-      query = query.eq('is_excluded', true)
+    if (params.trainerId === 'unassigned') {
+      query = query.is('pt_trainer_id', null).is('ppt_trainer_id', null)
     } else {
-      // 일반 폴더: 제외회원 숨기기
-      query = query.eq('is_excluded', false)
-      if (params.trainerId === 'unassigned') {
-        query = query.is('pt_trainer_id', null).is('ppt_trainer_id', null)
-      } else {
-        query = query.or(`pt_trainer_id.eq.${params.trainerId},ppt_trainer_id.eq.${params.trainerId}`)
-      }
+      query = query.or(`pt_trainer_id.eq.${params.trainerId},ppt_trainer_id.eq.${params.trainerId}`)
     }
   }
 
@@ -351,29 +344,38 @@ export async function moveOtSchedule(params: {
     return { error: '완료된 세션은 이동할 수 없습니다' }
   }
 
-  // 2. 세션 + 스케줄 + 로그 병렬 업데이트
-  const [{ error: sessionErr }, { error: tsErr }] = await Promise.all([
-    supabase
-      .from('ot_sessions')
-      .update({ scheduled_at: params.newScheduledAtIso })
-      .eq('id', params.ot_session_id),
-    supabase
-      .from('trainer_schedules')
-      .update({ scheduled_date: params.newDateStr, start_time: params.newTimeStr })
-      .eq('ot_session_id', params.ot_session_id),
-    supabase.auth.getSession().then(({ data: { session } }) =>
-      supabase.from('change_logs').insert({
-        target_type: 'ot_session',
-        target_id: existingSession.ot_assignment_id,
-        action: 'OT 일정 드래그 이동',
-        note: `→ ${params.newDateStr} ${params.newTimeStr}`,
-        changed_by: session?.user?.id ?? null,
-      })
-    ).catch((err) => console.error('[moveOtSchedule] change_log 실패:', err)),
-  ])
+  // 2. 세션 업데이트
+  const { error: sessionErr } = await supabase
+    .from('ot_sessions')
+    .update({ scheduled_at: params.newScheduledAtIso })
+    .eq('id', params.ot_session_id)
 
   if (sessionErr) return { error: 'OT 세션 업데이트 실패: ' + sessionErr.message }
-  if (tsErr) return { warning: 'trainer_schedules 일부 동기화 실패: ' + tsErr.message }
+
+  // 3. trainer_schedules — RLS가 trainer_id=auth.uid()만 허용하므로 개별 업데이트
+  const { data: tsRows } = await supabase
+    .from('trainer_schedules')
+    .select('id')
+    .eq('ot_session_id', params.ot_session_id)
+
+  for (const row of tsRows ?? []) {
+    await supabase
+      .from('trainer_schedules')
+      .update({ scheduled_date: params.newDateStr, start_time: params.newTimeStr })
+      .eq('id', row.id)
+  }
+
+  // 4. 변경 로그
+  try {
+    const { data: { session } } = await supabase.auth.getSession()
+    await supabase.from('change_logs').insert({
+      target_type: 'ot_session',
+      target_id: existingSession.ot_assignment_id,
+      action: 'OT 일정 드래그 이동',
+      note: `→ ${params.newDateStr} ${params.newTimeStr}`,
+      changed_by: session?.user?.id ?? null,
+    })
+  } catch (err) { console.error('[moveOtSchedule] change_log 실패:', err) }
 
   return { success: true }
 }

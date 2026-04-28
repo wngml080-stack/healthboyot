@@ -58,11 +58,10 @@ export const getTrainerFolders = cache(async (): Promise<TrainerFolder[]> => {
   const todayStr = toKstDateStr(nowKst())
 
   // 배정 + 오늘 스케줄 + 제외회원 수 병렬 조회 (3쿼리 → 2쿼리로 축소 가능하지만 병렬이라 차이 미미)
-  const [{ data: assignments }, { data: todaySchedules }, { count: excludedCount }] = await Promise.all([
+  const [{ data: assignments }, { data: todaySchedules }] = await Promise.all([
     supabase
       .from('ot_assignments')
       .select('status, pt_trainer_id, ppt_trainer_id, is_sales_target, is_pt_conversion, created_at, member:members!inner(id, name)')
-      .eq('is_excluded', false)
       .or(`pt_trainer_id.in.(${trainerIds.join(',')}),ppt_trainer_id.in.(${trainerIds.join(',')})`)
       .limit(2000),
     supabase
@@ -71,10 +70,6 @@ export const getTrainerFolders = cache(async (): Promise<TrainerFolder[]> => {
       .eq('scheduled_date', todayStr)
       .eq('schedule_type', 'OT')
       .in('trainer_id', trainerIds),
-    supabase
-      .from('ot_assignments')
-      .select('id', { count: 'exact', head: true })
-      .eq('is_excluded', true),
   ])
 
   // 트레이너별 assignment 미리 인덱싱 (O(N) → O(1) 조회)
@@ -139,22 +134,6 @@ export const getTrainerFolders = cache(async (): Promise<TrainerFolder[]> => {
     }
   })
 
-  // "제외회원" 폴더 — count만 사용 (head: true로 데이터 안 받아옴)
-  folders.push({
-    id: 'excluded',
-    name: '제외회원',
-    role: 'trainer',
-    color: 'bg-red-400',
-    has_password: false,
-    folder_order: 9999,
-    latestAssignmentDate: null,
-    stats: {
-      inProgress: 0,
-      pending: 0,
-      completed: 0,
-      total: excludedCount ?? 0,
-    },
-  })
 
   return folders
 })

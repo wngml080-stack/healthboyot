@@ -54,7 +54,7 @@ async function getDashboardData() {
     supabase.from('ot_assignments').select('id', { count: 'exact', head: true }).eq('status', '완료')
       .gte('updated_at', weekStart.toISOString()).lte('updated_at', weekEnd.toISOString()),
     supabase.from('ot_assignments').select(`
-      id, status, ot_category, pt_trainer_id, ppt_trainer_id, created_at,
+      id, member_id, status, ot_category, pt_trainer_id, ppt_trainer_id, created_at,
       sales_status, contact_status, is_sales_target, is_pt_conversion,
       member:members!inner(id, name, phone, ot_category, exercise_time, duration_months, detail_info, notes, registered_at, registration_source),
       pt_trainer:profiles!ot_assignments_pt_trainer_id_fkey(id, name),

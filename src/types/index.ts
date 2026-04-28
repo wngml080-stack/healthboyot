@@ -80,11 +80,14 @@ export interface OtAssignment {
   is_pt_conversion: boolean
   pt_assign_status: string
   ppt_assign_status: string
+  is_excluded: boolean
+  excluded_reason: string | null
+  excluded_at: string | null
   created_at: string
   updated_at: string
 }
 
-export type SalesStatus = 'OT진행중' | 'OT거부자' | '등록완료' | '스케줄미확정' | '연락두절' | '클로징실패'
+export type SalesStatus = 'OT진행중' | 'OT거부자' | '등록완료' | '스케줄미확정' | '연락두절' | '클로징실패' | '수업후거부'
 
 export interface OtSession {
   id: string
@@ -145,6 +148,7 @@ export interface ConsultationCard {
   body_correction_area: string | null
   exercise_experience_history: string | null
   exercise_start_date: string | null
+  special_notes: string | null
   created_by: string | null
   created_at: string
   updated_at: string
@@ -192,6 +196,7 @@ export interface OtProgramSession {
   is_sales_target?: boolean | null
   is_pt_conversion?: boolean | null
   pt_sales_amount?: number | null
+  class_duration?: number | null
 }
 
 export interface OtSessionImageRecord {
@@ -200,7 +205,7 @@ export interface OtSessionImageRecord {
   label?: 'before' | 'after' | 'video' | null
 }
 
-export type OtSessionResultCategory = '매출대상' | '등록완료' | '클로징실패' | '거부자' | '수업완료' | '노쇼' | '차감노쇼' | '서비스수업'
+export type OtSessionResultCategory = '매출대상' | '등록완료' | '클로징실패' | '거부자' | '수업완료' | '노쇼' | '차감노쇼' | '서비스수업' | '수업취소' | '스케줄변경' | '기타'
 
 export interface OtSessionPlanRoadmapItem {
   week: string

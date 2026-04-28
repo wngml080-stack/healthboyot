@@ -43,6 +43,7 @@ export const FULL_ACCESS_ROLES: Role[] = ['admin', '관리자']
 // FC: 직원관리, 통계 접근 시 팝업
 export const MENU_ACCESS: Record<string, Role[]> = {
   '/ot': ['admin', '관리자', '팀장', 'trainer', '강사', 'fc'],
+  '/schedules': ['admin', '관리자'],
   '/dashboard': ['admin', '관리자', 'fc'],
   '/consultations': ['admin', '관리자', '팀장', 'trainer', '강사', 'fc'],
   '/approvals': ['admin', '관리자'],
@@ -54,6 +55,7 @@ export const MENU_ACCESS: Record<string, Role[]> = {
 export const NAV_ITEMS = [
   { href: '/ot', label: '트레이너 관리', icon: 'ClipboardList' as const, roles: ['admin', '관리자', '팀장', 'trainer', '강사', 'fc'] as Role[] },
   { href: '/consultations', label: '상담카드', icon: 'FileText' as const, roles: ['admin', '관리자', '팀장', 'trainer', '강사', 'fc'] as Role[] },
+  { href: '/schedules', label: '스케줄 총괄', icon: 'CalendarDays' as const, roles: ['admin', '관리자'] as Role[] },
   { href: '/dashboard', label: '회원관리', icon: 'LayoutDashboard' as const, roles: ['admin', '관리자', '팀장', 'trainer', '강사', 'fc'] as Role[] },
   { href: '/approvals', label: 'OT 승인', icon: 'CheckSquare' as const, roles: ['admin', '관리자'] as Role[] },
   { href: '/staff', label: '직원 관리', icon: 'Users' as const, roles: ['admin', '관리자', '팀장', 'trainer', '강사', 'fc'] as Role[] },

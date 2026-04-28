@@ -47,6 +47,14 @@ function addDaysYMD(ymd: string, days: number): string {
   return `${yy}-${mm}-${dd}`
 }
 
+// 06:00 ~ 22:00 까지 10분 단위 시간 슬롯 (24시간 표기)
+const TIME_OPTIONS = Array.from({ length: 97 }, (_, i) => {
+  const h = 6 + Math.floor(i / 6)
+  const m = (i % 6) * 10
+  if (h > 22) return null
+  return `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}`
+}).filter(Boolean) as string[]
+
 const emptySession = (): OtProgramSession => ({
   date: '', time: '',
   exercises: [
@@ -61,6 +69,7 @@ const emptySession = (): OtProgramSession => ({
   plan: '',
   plan_detail: null,
   result_category: null, result_note: '',
+  class_duration: 50,
 })
 
 export interface OtProgramFormRef {
@@ -198,6 +207,7 @@ export const OtProgramForm = forwardRef<OtProgramFormRef, Props>(function OtProg
         // ot_session에서 날짜/시간 채우기 (프로그램에 없으면)
         date: s.date || (otSession?.scheduled_at ? new Date(otSession.scheduled_at).toISOString().split('T')[0] : ''),
         time: s.time || (otSession?.scheduled_at ? new Date(otSession.scheduled_at).toTimeString().slice(0, 5) : ''),
+        class_duration: s.class_duration ?? 50,
       }
     })
   })
@@ -554,23 +564,23 @@ export const OtProgramForm = forwardRef<OtProgramFormRef, Props>(function OtProg
     const result = await upsertOtProgram(a.id, a.member_id, payload)
     if (result.error) { setSaving(false); setError(result.error); return }
 
-    // 프로그램 세션의 날짜/시간 → ot_sessions + trainer_schedules 자동 동기화
-    // 완료되지 않은 세션만 동기화 (completed=false인 프로그램 세션만)
+    // 프로그램 세션의 날짜/시간 → ot_sessions + trainer_schedules 자동 동기화 (병렬)
     const sessionsToSync = (overrideSessions ?? sessions)
+    const syncPromises: Promise<unknown>[] = []
     for (let i = 0; i < sessionsToSync.length; i++) {
       const s = sessionsToSync[i]
       if (!s.date || !s.time) continue
-      // 프로그램에서 completed=true인 세션은 이미 완료된 수업이므로 스케줄 변경 안 함
       if (s.completed) continue
       const sessionNumber = i + 1
       const scheduledAt = new Date(`${s.date}T${s.time}:00+09:00`).toISOString()
-      await upsertOtSession({
+      syncPromises.push(upsertOtSession({
         ot_assignment_id: a.id,
         session_number: sessionNumber,
         scheduled_at: scheduledAt,
-        duration: 50,
-      })
+        duration: s.class_duration ?? 50,
+      }))
     }
+    if (syncPromises.length > 0) await Promise.all(syncPromises)
 
     setSaving(false)
     lastSavedRef.current = JSON.stringify(payload)
@@ -579,21 +589,26 @@ export const OtProgramForm = forwardRef<OtProgramFormRef, Props>(function OtProg
     onSaved?.()
   }
 
-  // 자동 저장 (3초 디바운스)
+  // 자동 저장 (3초 디바운스) — saving 중이면 스킵, 완료 후 재검사
   const autoSaveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const autoSaveEnabled = useRef(false)
+  // 초기 로드 후 첫 변경부터 자동저장 활성화
   useEffect(() => {
-    if (!canEdit) return
-    // 초기 로드 시에는 저장하지 않음
-    if (lastSavedRef.current === null) return
+    const timer = setTimeout(() => { autoSaveEnabled.current = true }, 2000)
+    return () => clearTimeout(timer)
+  }, [])
+  useEffect(() => {
+    if (!canEdit || !autoSaveEnabled.current) return
+    if (saving) return // 저장 중이면 스킵
     const currentPayload = JSON.stringify(buildSavePayload())
     if (currentPayload === lastSavedRef.current) return
     if (autoSaveTimerRef.current) clearTimeout(autoSaveTimerRef.current)
     autoSaveTimerRef.current = setTimeout(() => {
-      handleSave()
+      if (!saving) handleSave()
     }, 3000)
     return () => { if (autoSaveTimerRef.current) clearTimeout(autoSaveTimerRef.current) }
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [sessions, consultation])
+  }, [sessions, consultation, saving])
 
   // 저장 후 상담카드 데이터 갱신 (서버에서 채워줬을 수 있음)
   useEffect(() => {
@@ -609,7 +624,7 @@ export const OtProgramForm = forwardRef<OtProgramFormRef, Props>(function OtProg
       return
     }
     const sessionData = sessions[sessionIdx]
-    if (!sessionData?.signature_url && !isAdmin) {
+    if (!sessionData?.signature_url) {
       alert(`회원 서명이 필요합니다.\n서명을 먼저 받아주세요.`)
       return
     }
@@ -920,13 +935,42 @@ export const OtProgramForm = forwardRef<OtProgramFormRef, Props>(function OtProg
 
                   <div className="grid grid-cols-2 gap-2">
                     <div className="flex items-center gap-1">
-                      <Label className="text-xs font-bold">날짜:</Label>
+                      <Label className="text-xs font-bold shrink-0">날짜:</Label>
                       <Input type="date" value={session.date} onChange={(e) => updateSession(idx, 'date', e.target.value)} className="h-7 text-sm" disabled={!canEdit || isSessionLocked(session) || (isCompleted && !isExpanded)} />
                     </div>
                     <div className="flex items-center gap-1">
-                      <Label className="text-xs font-bold">시간:</Label>
-                      <Input type="time" value={session.time} onChange={(e) => updateSession(idx, 'time', e.target.value)} className="h-7 text-sm" disabled={!canEdit || isSessionLocked(session) || (isCompleted && !isExpanded)} />
+                      <Label className="text-xs font-bold shrink-0">시간:</Label>
+                      <select
+                        value={session.time}
+                        onChange={(e) => updateSession(idx, 'time', e.target.value)}
+                        disabled={!canEdit || isSessionLocked(session) || (isCompleted && !isExpanded)}
+                        className="h-7 text-sm rounded-md border border-gray-300 bg-white px-2 w-full disabled:opacity-50"
+                      >
+                        <option value="">선택</option>
+                        {TIME_OPTIONS.map((t) => (
+                          <option key={t} value={t}>{t}</option>
+                        ))}
+                      </select>
                     </div>
+                  </div>
+                  {/* 수업시간 30분/50분 */}
+                  <div className="flex items-center gap-2">
+                    <Label className="text-xs font-bold shrink-0">수업:</Label>
+                    {[30, 50].map((d) => (
+                      <button
+                        key={d}
+                        type="button"
+                        disabled={!canEdit || isSessionLocked(session) || (isCompleted && !isExpanded)}
+                        className={`rounded-md border px-3 py-0.5 text-xs font-bold transition-colors ${
+                          (session.class_duration ?? 50) === d
+                            ? 'bg-gray-900 text-white border-gray-900'
+                            : 'bg-white text-gray-600 border-gray-300 hover:bg-gray-100'
+                        } disabled:opacity-50`}
+                        onClick={() => updateSession(idx, 'class_duration', d)}
+                      >
+                        {d}분
+                      </button>
+                    ))}
                   </div>
 
                   {/* 운동 */}
@@ -1370,126 +1414,6 @@ export const OtProgramForm = forwardRef<OtProgramFormRef, Props>(function OtProg
                     )
                   })()}
 
-
-                  {/* 세일즈 정보 */}
-                  {(() => {
-                    const salesDisabled = !canEdit || isSessionLocked(session)
-                    const PROB_OPTIONS = [20, 40, 60, 80, 100]
-                    const isPtConversion = session.sales_status === 'PT전환'
-                    return (
-                      <div className="rounded-lg border border-emerald-200 bg-emerald-50/40 p-3 space-y-3">
-                        <Label className="text-xs font-bold text-emerald-700">세일즈 정보</Label>
-
-                        {/* 매출대상자 */}
-                        <button type="button" disabled={salesDisabled}
-                          className={`w-full h-10 rounded-lg border-2 text-sm font-bold transition-colors ${session.is_sales_target ? 'bg-blue-50 border-blue-500 text-blue-700' : 'bg-white border-gray-200 text-gray-400'} disabled:opacity-50`}
-                          onClick={() => updateSession(idx, 'is_sales_target', !session.is_sales_target)}
-                        >★ 매출대상자 {session.is_sales_target ? '✓' : ''}</button>
-
-                        {/* 상태: PT전환 / 클로징실패 / 스케줄미확정 */}
-                        <div className="space-y-1">
-                          <Label className="text-xs font-bold text-gray-600">상태</Label>
-                          <div className="grid grid-cols-3 gap-1.5">
-                            {(['PT전환', '클로징실패', '스케줄미확정'] as const).map((st) => {
-                              const active = session.sales_status === st
-                              const colors: Record<string, string> = {
-                                'PT전환': active ? 'bg-purple-600 text-white border-purple-600' : 'bg-white text-purple-600 border-purple-200 hover:border-purple-400',
-                                '클로징실패': active ? 'bg-red-500 text-white border-red-500' : 'bg-white text-red-500 border-red-200 hover:border-red-400',
-                                '스케줄미확정': active ? 'bg-yellow-500 text-white border-yellow-500' : 'bg-white text-yellow-600 border-yellow-200 hover:border-yellow-400',
-                              }
-                              return (
-                                <button key={st} type="button" disabled={salesDisabled}
-                                  className={`h-10 rounded-lg border-2 text-sm font-bold transition-colors ${colors[st]} disabled:opacity-50`}
-                                  onClick={() => {
-                                    const newStatus = active ? null : st
-                                    updateSession(idx, 'sales_status', newStatus)
-                                    if (st === 'PT전환') {
-                                      updateSession(idx, 'is_pt_conversion', !active)
-                                    } else if (active) {
-                                      // 해제 시
-                                    }
-                                  }}
-                                >{st}</button>
-                              )
-                            })}
-                          </div>
-                        </div>
-
-                        {/* PT전환 시 회수/금액 입력 */}
-                        {isPtConversion && (
-                          <div className="rounded-lg border border-purple-200 bg-purple-50/50 p-3 space-y-2">
-                            <Label className="text-xs font-bold text-purple-700">PT 등록 정보</Label>
-                            <div className="grid grid-cols-2 gap-2">
-                              <div className="space-y-1">
-                                <Label className="text-[10px] text-gray-500">등록 회수</Label>
-                                <div className="flex items-center gap-1">
-                                  <Input type="number" inputMode="numeric" value={session.expected_sessions ?? ''} onChange={(e) => updateSession(idx, 'expected_sessions', e.target.value === '' ? null : Number(e.target.value))} placeholder="0" className="h-8 text-sm bg-white" disabled={salesDisabled} />
-                                  <span className="text-xs text-gray-500 shrink-0">회</span>
-                                </div>
-                              </div>
-                              <div className="space-y-1">
-                                <Label className="text-[10px] text-gray-500">등록 금액</Label>
-                                <div className="flex items-center gap-1">
-                                  <Input type="number" inputMode="numeric" value={session.pt_sales_amount ?? ''} onChange={(e) => updateSession(idx, 'pt_sales_amount', e.target.value === '' ? null : Number(e.target.value))} placeholder="0" className="h-8 text-sm bg-white" disabled={salesDisabled} />
-                                  <span className="text-xs text-gray-500 shrink-0">만원</span>
-                                </div>
-                              </div>
-                            </div>
-                          </div>
-                        )}
-
-                        {/* 클로징실패 사유 */}
-                        {session.sales_status === '클로징실패' && (
-                          <div className="rounded-lg border border-red-200 bg-red-50/50 p-3 space-y-1">
-                            <Label className="text-xs font-bold text-red-600">실패 사유</Label>
-                            <Textarea value={session.closing_fail_reason ?? ''} onChange={(e) => updateSession(idx, 'closing_fail_reason', e.target.value)} className="text-sm min-h-[50px] bg-white" placeholder="실패 원인을 적어주세요" disabled={salesDisabled} />
-                          </div>
-                        )}
-
-                        {/* 예상 매출 / 클로징 확률 (PT전환이 아닐 때) */}
-                        {!isPtConversion && (
-                          <>
-                            <div className="grid grid-cols-2 gap-2">
-                              <div className="space-y-1">
-                                <Label className="text-xs font-bold text-gray-600">예상 매출</Label>
-                                <div className="flex items-center gap-1">
-                                  <Input type="number" inputMode="numeric" value={session.expected_amount ?? ''} onChange={(e) => updateSession(idx, 'expected_amount', e.target.value === '' ? null : Number(e.target.value))} className="h-8 text-sm bg-white" disabled={salesDisabled} />
-                                  <span className="text-xs text-gray-500">만원</span>
-                                </div>
-                              </div>
-                              <div className="space-y-1">
-                                <Label className="text-xs font-bold text-gray-600">예상 회수</Label>
-                                <div className="flex items-center gap-1">
-                                  <Input type="number" inputMode="numeric" value={session.expected_sessions ?? ''} onChange={(e) => updateSession(idx, 'expected_sessions', e.target.value === '' ? null : Number(e.target.value))} className="h-8 text-sm bg-white" disabled={salesDisabled} />
-                                  <span className="text-xs text-gray-500">회</span>
-                                </div>
-                              </div>
-                            </div>
-
-                            <div className="space-y-1">
-                              <Label className="text-xs font-bold text-gray-600">클로징 확률</Label>
-                              <div className="flex gap-1.5">
-                                {PROB_OPTIONS.map((p) => {
-                                  const active = session.closing_probability === p
-                                  return (
-                                    <button key={p} type="button" disabled={salesDisabled}
-                                      className={`flex-1 h-8 rounded-md border text-xs font-bold transition-colors ${active ? 'bg-emerald-600 text-white border-emerald-600' : 'bg-white text-gray-600 border-gray-200 hover:border-emerald-400'} disabled:opacity-50`}
-                                      onClick={() => updateSession(idx, 'closing_probability', active ? null : p)}
-                                    >{p}%</button>
-                                  )
-                                })}
-                              </div>
-                            </div>
-                          </>
-                        )}
-
-                        <div className="space-y-1">
-                          <Label className="text-xs font-bold text-gray-600">세일즈 메모</Label>
-                          <Textarea value={session.sales_note ?? ''} onChange={(e) => updateSession(idx, 'sales_note', e.target.value)} className="text-sm min-h-[60px] bg-white" placeholder="다음 액션, 팔로업 일정, 특이사항 등" disabled={salesDisabled} />
-                        </div>
-                      </div>
-                    )
-                  })()}
 
                   {/* 회원 서명 */}
                   {session.signature_url ? (

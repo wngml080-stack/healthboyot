@@ -421,10 +421,11 @@ export function TrainerCardList({ assignments, trainers = [], trainerId, trainer
       const hasAny = done > 0 || scheduled > 0
       if (!hasAny && !['거부','추후결정'].includes(a.status) && !['연락두절','스케줄미확정','OT거부자','수업후거부'].includes(a.sales_status) && !a.is_excluded) counts['미진행'] = (counts['미진행'] ?? 0) + 1
       // 필터 로직과 동일하게 맞춤
-      if ((done === 0 && scheduled > 0) || (done === 1 && scheduled === 0)) counts['1차'] = (counts['1차'] ?? 0) + 1
-      if ((done === 1 && scheduled > 0) || (done === 2 && scheduled === 0)) counts['2차'] = (counts['2차'] ?? 0) + 1
-      if ((done === 2 && scheduled > 0) || (done === 3 && scheduled === 0)) counts['3차'] = (counts['3차'] ?? 0) + 1
-      if ((done >= 3 && scheduled > 0) || done >= 4) counts['4차+'] = (counts['4차+'] ?? 0) + 1
+      const isInactiveStatus = ['연락두절','스케줄미확정','OT거부자','수업후거부'].includes(a.sales_status) || a.is_excluded || ['거부','추후결정'].includes(a.status)
+      if (!isInactiveStatus && ((done === 0 && scheduled > 0) || (done === 1 && scheduled === 0))) counts['1차'] = (counts['1차'] ?? 0) + 1
+      if (!isInactiveStatus && ((done === 1 && scheduled > 0) || (done === 2 && scheduled === 0))) counts['2차'] = (counts['2차'] ?? 0) + 1
+      if (!isInactiveStatus && ((done === 2 && scheduled > 0) || (done === 3 && scheduled === 0))) counts['3차'] = (counts['3차'] ?? 0) + 1
+      if (!isInactiveStatus && ((done >= 3 && scheduled > 0) || done >= 4)) counts['4차+'] = (counts['4차+'] ?? 0) + 1
       // 수업상태변경: 스케줄 확정됐는데 수업일이 지났는데 완료 처리 안 됨
       const pastScheduled = (a.sessions ?? []).filter((s) => s.scheduled_at && !s.completed_at && new Date(s.scheduled_at) < new Date()).length
       if (pastScheduled > 0) counts['수업상태변경'] = (counts['수업상태변경'] ?? 0) + 1
@@ -434,6 +435,8 @@ export function TrainerCardList({ assignments, trainers = [], trainerId, trainer
       if (a.sales_status === '연락두절') counts['연락두절'] = (counts['연락두절'] ?? 0) + 1
       if (a.sales_status === '스케줄미확정') counts['스케줄미확정'] = (counts['스케줄미확정'] ?? 0) + 1
       if (a.sales_status === '수업후거부') counts['수업후 거부'] = (counts['수업후 거부'] ?? 0) + 1
+      if (a.is_sales_target) counts['매출대상'] = (counts['매출대상'] ?? 0) + 1
+      if (a.is_pt_conversion) counts['PT전환'] = (counts['PT전환'] ?? 0) + 1
     }
     return counts
   }, [assignments, trainerId, needApprovalSet])
@@ -453,10 +456,11 @@ export function TrainerCardList({ assignments, trainers = [], trainerId, trainer
       if (filter === 'PT') return a.pt_trainer_id === trainerId
       if (filter === 'PPT') return a.ppt_trainer_id === trainerId
       if (filter === '미진행') return done === 0 && scheduled === 0 && !['거부','추후결정'].includes(a.status) && !['연락두절','스케줄미확정','OT거부자','수업후거부'].includes(a.sales_status) && !a.is_excluded
-      if (filter === '1차') return (done === 0 && scheduled > 0) || (done === 1 && scheduled === 0)
-      if (filter === '2차') return (done === 1 && scheduled > 0) || (done === 2 && scheduled === 0)
-      if (filter === '3차') return (done === 2 && scheduled > 0) || (done === 3 && scheduled === 0)
-      if (filter === '4차+') return (done >= 3 && scheduled > 0) || done >= 4
+      const isInactiveStatus = ['연락두절','스케줄미확정','OT거부자','수업후거부'].includes(a.sales_status) || a.is_excluded || ['거부','추후결정'].includes(a.status)
+      if (filter === '1차') return !isInactiveStatus && ((done === 0 && scheduled > 0) || (done === 1 && scheduled === 0))
+      if (filter === '2차') return !isInactiveStatus && ((done === 1 && scheduled > 0) || (done === 2 && scheduled === 0))
+      if (filter === '3차') return !isInactiveStatus && ((done === 2 && scheduled > 0) || (done === 3 && scheduled === 0))
+      if (filter === '4차+') return !isInactiveStatus && ((done >= 3 && scheduled > 0) || done >= 4)
       if (filter === '수업상태변경') {
         const pastSch = (a.sessions ?? []).filter((s) => s.scheduled_at && !s.completed_at && new Date(s.scheduled_at) < new Date()).length
         return pastSch > 0
@@ -690,28 +694,33 @@ export function TrainerCardList({ assignments, trainers = [], trainerId, trainer
       const sorted = [...(a.sessions ?? [])].sort((x, y) => x.session_number - y.session_number)
       log.push({ label: '대기', date: a.created_at ? format(new Date(a.created_at), 'MM.dd') : null, color: 'text-gray-500' })
       for (const s of sorted) {
-        if (!s.completed_at) continue
         const n = s.session_number
-        // 수업 진행일 (scheduled_at)과 완료 처리일 (completed_at) 분리
-        if (s.scheduled_at) {
-          const classDate = format(new Date(s.scheduled_at), 'MM.dd')
-          const completeDate = format(new Date(s.completed_at), 'MM.dd')
-          if (classDate !== completeDate) {
-            // 수업일 ≠ 완료일 → 둘 다 표기
-            log.push({ label: `${n}차수업`, date: classDate, color: 'text-blue-600' })
-            log.push({ label: `${n}차완료`, date: completeDate, color: 'text-emerald-600' })
+        if (s.completed_at) {
+          // 수업 진행일 (scheduled_at)과 완료 처리일 (completed_at) 분리
+          if (s.scheduled_at) {
+            const classDate = format(new Date(s.scheduled_at), 'MM.dd')
+            const completeDate = format(new Date(s.completed_at), 'MM.dd')
+            if (classDate !== completeDate) {
+              // 수업일 ≠ 완료일 → 둘 다 표기
+              log.push({ label: `${n}차수업`, date: classDate, color: 'text-blue-600' })
+              log.push({ label: `${n}차완료`, date: completeDate, color: 'text-emerald-600' })
+            } else {
+              // 같은 날 → 하나만
+              log.push({ label: `${n}차완료`, date: classDate, color: 'text-blue-600' })
+            }
           } else {
-            // 같은 날 → 하나만
-            log.push({ label: `${n}차완료`, date: classDate, color: 'text-blue-600' })
+            log.push({ label: `${n}차완료`, date: format(new Date(s.completed_at), 'MM.dd'), color: 'text-blue-600' })
           }
-        } else {
-          log.push({ label: `${n}차완료`, date: format(new Date(s.completed_at), 'MM.dd'), color: 'text-blue-600' })
-        }
-        const approval = approvals.find((ap) => ap.session === n)
-        if (approval?.status === '승인') {
-          log.push({ label: `${n}차승인`, date: approval.approved_at ? format(new Date(approval.approved_at), 'MM.dd') : null, color: 'text-green-600' })
-        } else if (approval?.status === '반려') {
-          log.push({ label: `${n}차반려`, date: null, color: 'text-red-600' })
+          const approval = approvals.find((ap) => ap.session === n)
+          if (approval?.status === '승인') {
+            log.push({ label: `${n}차승인`, date: approval.approved_at ? format(new Date(approval.approved_at), 'MM.dd') : null, color: 'text-green-600' })
+          } else if (approval?.status === '반려') {
+            log.push({ label: `${n}차반려`, date: null, color: 'text-red-600' })
+          }
+        } else if (s.scheduled_at) {
+          // 스케줄만 잡힌 세션 (아직 완료 안 됨) → 예정으로 표시
+          const schedDate = format(new Date(s.scheduled_at), 'MM.dd')
+          log.push({ label: `${n}차예정`, date: schedDate, color: 'text-yellow-600' })
         }
       }
       logMap.set(a.id, log)
@@ -817,17 +826,7 @@ export function TrainerCardList({ assignments, trainers = [], trainerId, trainer
                 >×</button>
               )}
             </div>
-            {/* 세일즈 필터 */}
-            <select
-              value={categoryFilter}
-              onChange={(e) => setCategoryFilter(e.target.value)}
-              className="h-9 text-sm bg-white text-gray-900 border border-gray-300 rounded-md pl-3 pr-7 shrink-0 appearance-none bg-[url('data:image/svg+xml;charset=utf-8,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20width%3D%2212%22%20height%3D%2212%22%20viewBox%3D%220%200%2024%2024%22%20fill%3D%22none%22%20stroke%3D%22%23666%22%20stroke-width%3D%222%22%3E%3Cpath%20d%3D%22M6%209l6%206%206-6%22%2F%3E%3C%2Fsvg%3E')] bg-[length:12px] bg-[right_8px_center] bg-no-repeat"
-              aria-label="세일즈 필터"
-            >
-              <option value="전체">세일즈 전체</option>
-              <option value="매출대상">매출대상자</option>
-              <option value="PT전환">PT전환</option>
-            </select>
+            {/* 세일즈 필터 — removed dropdown, now part of filter buttons */}
           </div>
           {/* 전체 / 거부·제외 버튼 */}
           <div className="flex gap-2">
@@ -850,6 +849,26 @@ export function TrainerCardList({ assignments, trainers = [], trainerId, trainer
               }`}
             >
               거부/제외 {(filterCounts['거부/제외'] ?? 0) > 0 && <span className="ml-1 text-[10px]">{filterCounts['거부/제외']}</span>}
+            </button>
+            <button
+              onClick={() => setCategoryFilter(categoryFilter === '매출대상' ? '전체' : '매출대상')}
+              className={`h-8 px-4 rounded-md text-xs font-bold transition-colors ${
+                categoryFilter === '매출대상'
+                  ? 'bg-purple-600 text-white border-2 border-purple-700'
+                  : 'bg-purple-100 text-purple-700 border border-purple-300 hover:bg-purple-200'
+              }`}
+            >
+              매출대상 {(filterCounts['매출대상'] ?? 0) > 0 && <span className="ml-1 text-[10px]">{filterCounts['매출대상']}</span>}
+            </button>
+            <button
+              onClick={() => setCategoryFilter(categoryFilter === 'PT전환' ? '전체' : 'PT전환')}
+              className={`h-8 px-4 rounded-md text-xs font-bold transition-colors ${
+                categoryFilter === 'PT전환'
+                  ? 'bg-blue-600 text-white border-2 border-blue-700'
+                  : 'bg-blue-100 text-blue-700 border border-blue-300 hover:bg-blue-200'
+              }`}
+            >
+              PT전환 {(filterCounts['PT전환'] ?? 0) > 0 && <span className="ml-1 text-[10px]">{filterCounts['PT전환']}</span>}
             </button>
           </div>
         </div>
@@ -970,10 +989,10 @@ export function TrainerCardList({ assignments, trainers = [], trainerId, trainer
                             </button>
                           ))}
                           {a.is_sales_target && (
-                            <Badge className="text-[10px] px-1.5 bg-red-500 text-white border-red-500 font-bold">★ 매출대상</Badge>
+                            <Badge className="text-[10px] px-1.5 bg-purple-600 text-white border-purple-600 font-bold">★ 매출대상</Badge>
                           )}
                           {a.is_pt_conversion && (
-                            <Badge variant="outline" className="text-[10px] px-1.5 font-bold bg-yellow-300 text-black border-yellow-500">PT전환</Badge>
+                            <Badge variant="outline" className="text-[10px] px-1.5 font-bold bg-blue-600 text-white border-blue-600">PT전환</Badge>
                           )}
                           {progressCache.isNewMap.get(a.id) && (
                             <span className="inline-flex items-center rounded px-1.5 py-0.5 text-[10px] font-bold bg-red-500 text-white">New</span>
@@ -1119,7 +1138,7 @@ export function TrainerCardList({ assignments, trainers = [], trainerId, trainer
                                   case '거부자':
                                   case 'OT거부자': return 'bg-orange-500 text-white'
                                   case '연락두절': return 'bg-gray-500 text-white'
-                                  case '매출대상': return 'bg-blue-600 text-white'
+                                  case '매출대상': return 'bg-purple-600 text-white'
                                   case 'OT완료': return 'bg-emerald-500 text-white'
                                   default: return 'bg-gray-400 text-white'
                                 }
@@ -1296,8 +1315,11 @@ export function TrainerCardList({ assignments, trainers = [], trainerId, trainer
 
                                   {/* 세일즈 정보 (통합) */}
                                   {(() => {
-                                    const isPtConversion = a.is_pt_conversion || programSessions.some((s) => s.is_pt_conversion)
-                                    const isClosingFail = a.sales_status === '클로징실패'
+                                    const so = salesOverrides[a.id]
+                                    const isSalesTarget = so?.is_sales_target ?? a.is_sales_target
+                                    const isPtConversion = so?.is_pt_conversion ?? (a.is_pt_conversion || programSessions.some((s) => s.is_pt_conversion))
+                                    const currentSalesStatus = so?.sales_status ?? a.sales_status
+                                    const isClosingFail = currentSalesStatus === '클로징실패'
                                     return (
                                   <div className="rounded-lg border border-emerald-200 bg-emerald-50/40 p-4 space-y-3" onClick={(e) => e.stopPropagation()}>
                                     <p className="text-sm font-bold text-emerald-800">💰 세일즈 정보</p>
@@ -1305,25 +1327,35 @@ export function TrainerCardList({ assignments, trainers = [], trainerId, trainer
                                     {/* 상태 버튼: 매출대상자 / PT전환 / 클로징실패 */}
                                     <div className="grid grid-cols-3 gap-1.5">
                                       <button type="button"
-                                        className={`h-10 rounded-lg border-2 text-sm font-bold transition-colors ${a.is_sales_target ? 'bg-blue-50 border-blue-500 text-blue-700' : 'bg-white border-gray-200 text-gray-400'}`}
-                                        onClick={() => updateOtAssignment(a.id, { is_sales_target: !a.is_sales_target }).then(() => startTransition(() => router.refresh()))}
-                                      >★ 매출대상자 {a.is_sales_target ? '✓' : ''}</button>
-                                      <button type="button"
-                                        className={`h-10 rounded-lg border-2 text-sm font-bold transition-colors ${isPtConversion ? 'bg-purple-600 text-white border-purple-600' : 'bg-white text-purple-600 border-purple-200'}`}
+                                        className={`h-10 rounded-lg border-2 text-sm font-bold transition-colors ${isSalesTarget ? 'bg-purple-600 text-white border-purple-600' : 'bg-white border-purple-200 text-purple-600'}`}
                                         onClick={() => {
-                                          const updates: import('@/actions/ot').UpdateOtAssignmentValues = isPtConversion
-                                            ? { is_pt_conversion: false, sales_status: 'OT진행중' }
-                                            : { is_pt_conversion: true, sales_status: '등록완료' }
-                                          updateOtAssignment(a.id, updates).then(() => startTransition(() => router.refresh()))
+                                          const next = !isSalesTarget
+                                          setSalesOverrides((prev) => ({ ...prev, [a.id]: { ...prev[a.id], is_sales_target: next } }))
+                                          updateOtAssignment(a.id, { is_sales_target: next })
+                                        }}
+                                      >★ 매출대상자 {isSalesTarget ? '✓' : ''}</button>
+                                      <button type="button"
+                                        className={`h-10 rounded-lg border-2 text-sm font-bold transition-colors ${isPtConversion ? 'bg-blue-600 text-white border-blue-600' : 'bg-white text-blue-600 border-blue-200'}`}
+                                        onClick={() => {
+                                          if (isPtConversion) {
+                                            setSalesOverrides((prev) => ({ ...prev, [a.id]: { ...prev[a.id], is_pt_conversion: false, sales_status: 'OT진행중' } }))
+                                            updateOtAssignment(a.id, { is_pt_conversion: false, sales_status: 'OT진행중' })
+                                          } else {
+                                            setSalesOverrides((prev) => ({ ...prev, [a.id]: { ...prev[a.id], is_pt_conversion: true, sales_status: '등록완료' } }))
+                                            updateOtAssignment(a.id, { is_pt_conversion: true, sales_status: '등록완료' })
+                                          }
                                         }}
                                       >PT전환 {isPtConversion ? '✓' : ''}</button>
                                       <button type="button"
                                         className={`h-10 rounded-lg border-2 text-sm font-bold transition-colors ${isClosingFail ? 'bg-red-500 text-white border-red-500' : 'bg-white text-red-500 border-red-200'}`}
                                         onClick={() => {
-                                          const updates: import('@/actions/ot').UpdateOtAssignmentValues = isClosingFail
-                                            ? { sales_status: 'OT진행중', closing_fail_reason: null }
-                                            : { sales_status: '클로징실패' }
-                                          updateOtAssignment(a.id, updates).then(() => startTransition(() => router.refresh()))
+                                          if (isClosingFail) {
+                                            setSalesOverrides((prev) => ({ ...prev, [a.id]: { ...prev[a.id], is_pt_conversion: false, sales_status: 'OT진행중' } }))
+                                            updateOtAssignment(a.id, { sales_status: 'OT진행중', closing_fail_reason: null, is_pt_conversion: false })
+                                          } else {
+                                            setSalesOverrides((prev) => ({ ...prev, [a.id]: { ...prev[a.id], is_pt_conversion: false, sales_status: '클로징실패' } }))
+                                            updateOtAssignment(a.id, { sales_status: '클로징실패', is_pt_conversion: false })
+                                          }
                                         }}
                                       >클로징실패 {isClosingFail ? '✓' : ''}</button>
                                     </div>
@@ -2086,8 +2118,8 @@ export function TrainerCardList({ assignments, trainers = [], trainerId, trainer
                 type="button"
                 className={`flex-1 rounded-lg border-2 py-3 text-sm font-bold transition-colors ${
                   isSalesTarget
-                    ? 'bg-blue-50 border-blue-500 text-blue-700'
-                    : 'bg-white border-gray-200 text-gray-400'
+                    ? 'bg-purple-600 text-white border-purple-600'
+                    : 'bg-white border-purple-200 text-purple-600'
                 }`}
                 onClick={() => setIsSalesTarget(!isSalesTarget)}
               >
@@ -2097,8 +2129,8 @@ export function TrainerCardList({ assignments, trainers = [], trainerId, trainer
                 type="button"
                 className={`flex-1 rounded-lg border-2 py-3 text-sm font-bold transition-colors ${
                   isPtConversion
-                    ? 'bg-purple-50 border-purple-500 text-purple-700'
-                    : 'bg-white border-gray-200 text-gray-400'
+                    ? 'bg-blue-600 text-white border-blue-600'
+                    : 'bg-white border-blue-200 text-blue-600'
                 }`}
                 onClick={() => setIsPtConversion(!isPtConversion)}
               >

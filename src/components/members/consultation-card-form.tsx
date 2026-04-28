@@ -82,6 +82,7 @@ export function ConsultationCardForm({ member, card, onSaved, isStandalone, card
   const [ptSatisfaction, setPtSatisfaction] = useState(card?.pt_satisfaction ?? '')
   const [ptSatisfactionReason, setPtSatisfactionReason] = useState(card?.pt_satisfaction_reason ?? '')
   const [exercisePersonality, setExercisePersonality] = useState<string[]>(card?.exercise_personality ?? [])
+  const [specialNotes, setSpecialNotes] = useState(card?.special_notes ?? '')
   const [memberName, setMemberName] = useState(card?.member_name || member.name || '')
   const [memberPhone, setMemberPhone] = useState(card?.member_phone || member.phone || '')
 
@@ -124,6 +125,7 @@ export function ConsultationCardForm({ member, card, onSaved, isStandalone, card
       pt_satisfaction: ptSatisfaction || null,
       pt_satisfaction_reason: ptSatisfactionReason || null,
       exercise_personality: exercisePersonality,
+      special_notes: specialNotes || null,
     }
 
     // 즉시 성공 표시 (낙관적 업데이트)
@@ -421,6 +423,18 @@ export function ConsultationCardForm({ member, card, onSaved, isStandalone, card
             </div>
           </div>
         </div>
+      </div>
+
+      {/* 특이사항 */}
+      <div className="border border-red-200 rounded-lg p-4 bg-red-50/30">
+        <p className="text-sm font-bold mb-2 text-red-800">특이사항</p>
+        <textarea
+          value={specialNotes}
+          onChange={(e) => setSpecialNotes(e.target.value)}
+          placeholder="부상, 주의사항, 기타 특이사항을 자유롭게 작성해주세요"
+          rows={3}
+          className="w-full rounded-md border border-gray-300 bg-white px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-red-300"
+        />
       </div>
 
       {/* 저장 버튼 */}

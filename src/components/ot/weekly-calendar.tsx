@@ -149,6 +149,7 @@ const OT_SALES_BUTTON_COLORS: Record<SalesStatus, string> = {
   '스케줄미확정': 'bg-yellow-500 border-yellow-500 text-white',
   '연락두절': 'bg-gray-500 border-gray-500 text-white',
   '클로징실패': 'bg-red-500 border-red-500 text-white',
+  '수업후거부': 'bg-red-600 border-red-600 text-white',
 }
 const OT_SALES_TEXT_COLORS: Record<SalesStatus, string> = {
   'OT진행중': 'text-green-700',
@@ -157,6 +158,7 @@ const OT_SALES_TEXT_COLORS: Record<SalesStatus, string> = {
   '스케줄미확정': 'text-yellow-700',
   '연락두절': 'text-gray-700',
   '클로징실패': 'text-red-600',
+  '수업후거부': 'text-red-700',
 }
 const OT_SALES_LABEL: Record<SalesStatus, string> = {
   'OT진행중': '진행중',
@@ -165,6 +167,7 @@ const OT_SALES_LABEL: Record<SalesStatus, string> = {
   '스케줄미확정': '스케줄미확정',
   '연락두절': '연락두절',
   '클로징실패': '클로징실패',
+  '수업후거부': '수업후거부',
 }
 
 // ISO timestamp → "M/d HH:mm" KST 표시 (브라우저 TZ 무관)
@@ -304,6 +307,11 @@ export function WeeklyCalendar({ assignments, trainerId, profile, workStartTime,
   }
   // 반복 생성: 추가로 같이 생성할 요일 (월=1 ... 일=0). createDate 자체는 항상 포함.
   const [createRepeatDows, setCreateRepeatDows] = useState<number[]>([])
+  // 충돌 확인 다이얼로그
+  const [conflictConfirm, setConflictConfirm] = useState<{
+    conflicts: { date: string; type: string; name: string; time: string }[]
+    onConfirm: () => void
+  } | null>(null)
   // OT 회원 검색 필터
   const [createOtFilter, setCreateOtFilter] = useState('')
 
@@ -391,8 +399,7 @@ export function WeeklyCalendar({ assignments, trainerId, profile, workStartTime,
       if (e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement) return
       // Ctrl+C: 마지막 클릭한 스케줄 복사
       if ((e.ctrlKey || e.metaKey) && e.key === 'c' && lastClickedScheduleRef.current) {
-        // OT는 복사 불가 (ot_session 연동 때문)
-        if (lastClickedScheduleRef.current.schedule_type === 'OT') return
+        // OT도 복사 가능
         setCopiedSchedule(lastClickedScheduleRef.current)
         e.preventDefault()
       }
@@ -615,25 +622,52 @@ export function WeeklyCalendar({ assignments, trainerId, profile, workStartTime,
       const existingNums = new Set(assignment.sessions?.map((s) => s.session_number) ?? [])
       let nextN = 1
       while (existingNums.has(nextN)) nextN++
-      const result = await upsertOtSession({
-        ot_assignment_id: assignment.id,
-        session_number: nextN,
-        // KST(+09:00) 명시 — 다른 타임존에서 접속해도 정확한 KST 시간으로 저장
-        scheduled_at: new Date(`${createDate}T${createTime}:00+09:00`).toISOString(),
-        duration: createDuration,
+
+      // OT 충돌 검사
+      const otDurationSlots = Math.max(1, Math.ceil(createDuration / 30))
+      const otStartSlot = timeToSlot(createTime)
+      const otEndSlot = otStartSlot + otDurationSlots
+      const otConflict = schedules.find((s) => {
+        if (s.scheduled_date !== createDate) return false
+        const sStart = timeToSlot(s.start_time)
+        const sEnd = sStart + Math.max(1, Math.ceil(s.duration / 30))
+        return otStartSlot < sEnd && otEndSlot > sStart
       })
-      if (result?.error) {
-        alert('저장 실패: ' + result.error)
+
+      const doOtCreate = async () => {
+        const result = await upsertOtSession({
+          ot_assignment_id: assignment.id,
+          session_number: nextN,
+          scheduled_at: new Date(`${createDate}T${createTime}:00+09:00`).toISOString(),
+          duration: createDuration,
+        })
+        if (result?.error) {
+          alert('저장 실패: ' + result.error)
+          stopCreateSaving()
+          return
+        }
+        if (createIsSalesTarget || createExpectedAmount > 0) {
+          await updateOtAssignment(assignment.id, {
+            is_sales_target: createIsSalesTarget,
+            expected_amount: createExpectedAmount,
+            closing_probability: createClosingProb,
+          })
+        }
+        setShowCreate(false)
+        startTransition(() => router.refresh())
+        fetchSchedules()
         stopCreateSaving()
+      }
+
+      if (otConflict) {
+        setConflictConfirm({
+          conflicts: [{ date: createDate, type: otConflict.schedule_type, name: otConflict.member_name, time: otConflict.start_time }],
+          onConfirm: doOtCreate,
+        })
         return
       }
-      if (createIsSalesTarget || createExpectedAmount > 0) {
-        await updateOtAssignment(assignment.id, {
-          is_sales_target: createIsSalesTarget,
-          expected_amount: createExpectedAmount,
-          closing_probability: createClosingProb,
-        })
-      }
+      await doOtCreate()
+      return
     } else {
       // OT가 아닌 일정 — 다중 요일 반복 생성 가능
       // RANGE_TYPES (식사/회의/당직 등)는 createEndTime - createTime = duration 자동 계산
@@ -678,12 +712,10 @@ export function WeeklyCalendar({ assignments, trainerId, profile, workStartTime,
       const dateList = Array.from(targetDates).sort()
 
       // 2) 모든 날짜에 대해 충돌 사전 검사 (현재 schedules 기준)
-      // duration이 60분 이상이면 더 많은 슬롯을 차지하지만 timeToSlot은 30분 단위.
-      // 충돌 검사용으로 슬롯 수를 ceil(duration / 30)로 계산.
       const newDurationSlots = Math.max(1, Math.ceil(effectiveDuration / 30))
       const newStartSlot = timeToSlot(createTime)
       const newEndSlot = newStartSlot + newDurationSlots
-      const conflicts: string[] = []
+      const foundConflicts: { date: string; type: string; name: string; time: string }[] = []
       for (const d of dateList) {
         const conflict = schedules.find((s) => {
           if (s.scheduled_date !== d) return false
@@ -692,13 +724,8 @@ export function WeeklyCalendar({ assignments, trainerId, profile, workStartTime,
           return newStartSlot < sEnd && newEndSlot > sStart
         })
         if (conflict) {
-          conflicts.push(`${d} (${conflict.schedule_type} ${conflict.member_name})`)
+          foundConflicts.push({ date: d, type: conflict.schedule_type, name: conflict.member_name, time: conflict.start_time })
         }
-      }
-      if (conflicts.length > 0) {
-        alert(`다음 날짜에 이미 일정이 있어 추가할 수 없습니다:\n${conflicts.join('\n')}`)
-        stopCreateSaving()
-        return
       }
 
       // 3) 이름 결정
@@ -715,30 +742,40 @@ export function WeeklyCalendar({ assignments, trainerId, profile, workStartTime,
           })
         : (createNote || null)
 
-      // 5) 일괄 INSERT
-      const rows = dateList.map((d) => ({
-        trainer_id: trainerId,
-        schedule_type: createType,
-        member_name: memberName,
-        member_id: null,
-        scheduled_date: d,
-        start_time: createTime,
-        duration: effectiveDuration,
-        note: noteValue,
-      }))
-      const { error } = await supabaseRef.current.from('trainer_schedules').insert(rows)
-      if (error) {
-        alert('저장 실패: ' + error.message)
+      const doNonOtCreate = async () => {
+        // 일괄 INSERT
+        const rows = dateList.map((d) => ({
+          trainer_id: trainerId,
+          schedule_type: createType,
+          member_name: memberName,
+          member_id: null,
+          scheduled_date: d,
+          start_time: createTime,
+          duration: effectiveDuration,
+          note: noteValue,
+        }))
+        const { error } = await supabaseRef.current.from('trainer_schedules').insert(rows)
+        if (error) {
+          alert('저장 실패: ' + error.message)
+          stopCreateSaving()
+          return
+        }
+        setShowCreate(false)
+        startTransition(() => router.refresh())
+        fetchSchedules()
         stopCreateSaving()
+      }
+
+      if (foundConflicts.length > 0) {
+        setConflictConfirm({
+          conflicts: foundConflicts,
+          onConfirm: doNonOtCreate,
+        })
         return
       }
+      await doNonOtCreate()
+      return
     }
-
-    setShowCreate(false)
-    stopCreateSaving()
-    await fetchSchedules()
-    // 부모 서버 컴포넌트의 trainerAssignments(ot_sessions 포함) 갱신 → 회원관리 탭에도 반영
-    router.refresh()
   }
 
   const handleDelete = async (id: string) => {
@@ -1281,15 +1318,13 @@ export function WeeklyCalendar({ assignments, trainerId, profile, workStartTime,
                             </p>
                           </div>
                           <div className="flex shrink-0">
-                            {s.schedule_type !== 'OT' && (
-                              <button
-                                className="opacity-0 group-hover:opacity-100 group-active:opacity-100 [@media(pointer:coarse)]:opacity-100 transition-opacity text-green-600 hover:text-green-800 active:text-green-800 shrink-0 min-w-[28px] min-h-[28px] flex items-center justify-center"
-                                onPointerDown={(e) => e.stopPropagation()}
-                                onClick={(e) => { e.stopPropagation(); setCopiedSchedule(s) }}
-                              >
-                                <Copy className="h-3 w-3" />
-                              </button>
-                            )}
+                            <button
+                              className="opacity-0 group-hover:opacity-100 group-active:opacity-100 [@media(pointer:coarse)]:opacity-100 transition-opacity text-green-600 hover:text-green-800 active:text-green-800 shrink-0 min-w-[28px] min-h-[28px] flex items-center justify-center"
+                              onPointerDown={(e) => e.stopPropagation()}
+                              onClick={(e) => { e.stopPropagation(); setCopiedSchedule(s) }}
+                            >
+                              <Copy className="h-3 w-3" />
+                            </button>
                             <button
                               className="opacity-0 group-hover:opacity-100 group-active:opacity-100 [@media(pointer:coarse)]:opacity-100 transition-opacity text-red-500 hover:text-red-700 active:text-red-700 shrink-0 min-w-[28px] min-h-[28px] flex items-center justify-center"
                               onPointerDown={(e) => e.stopPropagation()}
@@ -2378,6 +2413,52 @@ export function WeeklyCalendar({ assignments, trainerId, profile, workStartTime,
           )}
           {programTarget && !profile && (
             <p className="text-sm text-red-600">프로필 정보가 없어 프로그램을 열 수 없습니다. 관리자에게 문의하세요.</p>
+          )}
+        </DialogContent>
+      </Dialog>
+
+      {/* 스케줄 충돌 확인 다이얼로그 */}
+      <Dialog open={!!conflictConfirm} onOpenChange={() => { setConflictConfirm(null); stopCreateSaving() }}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle className="text-red-600">⚠️ 시간 중복 확인</DialogTitle>
+            <DialogDescription>동시간대에 이미 일정이 있습니다. 중복으로 진행하시겠습니까?</DialogDescription>
+          </DialogHeader>
+          {conflictConfirm && (
+            <div className="space-y-4">
+              <div className="grid grid-cols-2 gap-3">
+                {conflictConfirm.conflicts.map((c, i) => (
+                  <div key={i} className="rounded-lg border-2 border-red-200 bg-red-50 p-3 text-center">
+                    <p className="text-sm font-bold text-red-800">{c.name}</p>
+                    <p className="text-xs text-red-600 mt-1">{c.type} · {c.time}</p>
+                    <p className="text-[10px] text-gray-500 mt-0.5">{c.date}</p>
+                  </div>
+                ))}
+              </div>
+              <p className="text-sm text-center text-gray-700 font-medium">
+                {conflictConfirm.conflicts.map((c) => c.name).join(', ')} 회원의 수업시간입니다.<br />
+                중복으로 동시간대에 진행하시겠습니까?
+              </p>
+              <div className="grid grid-cols-2 gap-3">
+                <Button
+                  variant="outline"
+                  className="font-bold"
+                  onClick={() => { setConflictConfirm(null); stopCreateSaving() }}
+                >
+                  취소
+                </Button>
+                <Button
+                  className="bg-red-600 hover:bg-red-700 text-white font-bold"
+                  onClick={async () => {
+                    const fn = conflictConfirm.onConfirm
+                    setConflictConfirm(null)
+                    await fn()
+                  }}
+                >
+                  중복 진행
+                </Button>
+              </div>
+            </div>
           )}
         </DialogContent>
       </Dialog>
