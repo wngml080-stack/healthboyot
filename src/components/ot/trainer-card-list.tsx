@@ -1107,21 +1107,33 @@ export function TrainerCardList({ assignments, trainers = [], trainerId, trainer
                           })()}
 
                           {/* 특이사항 메모 (수정 가능) */}
+                          {(() => {
+                            const noteId = `note-${a.id}`
+                            return (
                           <div className="rounded-lg border border-orange-200 bg-orange-50/50 p-3 space-y-2" onClick={(e) => e.stopPropagation()}>
                             <p className="text-sm font-bold text-orange-800">📝 특이사항</p>
                             <Textarea
+                              id={noteId}
                               defaultValue={a.notes ?? ''}
                               placeholder="환불, 부상, 회원 특이사항 등을 기록하세요"
                               rows={2}
                               className="text-sm bg-white border-orange-200"
-                              onBlur={(e) => {
-                                const val = e.target.value.trim()
-                                if (val !== (a.notes ?? '')) {
-                                  updateOtAssignment(a.id, { notes: val || null })
-                                }
-                              }}
                             />
+                            <div className="flex gap-2 justify-end">
+                              <Button size="sm" variant="outline" className="h-7 text-xs text-gray-500 border-gray-300 bg-white hover:bg-gray-100"
+                                onClick={() => { const el = document.getElementById(noteId) as HTMLTextAreaElement | null; if (el) el.value = a.notes ?? '' }}
+                              >취소</Button>
+                              <Button size="sm" className="h-7 text-xs bg-orange-600 hover:bg-orange-700 text-white"
+                                onClick={() => {
+                                  const el = document.getElementById(noteId) as HTMLTextAreaElement | null
+                                  const val = el?.value.trim() ?? ''
+                                  updateOtAssignment(a.id, { notes: val || null }).then(() => startTransition(() => router.refresh()))
+                                }}
+                              >저장</Button>
+                            </div>
                           </div>
+                            )
+                          })()}
 
                           {/* 상담카드 요약 + 세일즈 여정 */}
                           <div onClick={(e) => e.stopPropagation()} className="space-y-4">
@@ -1381,81 +1393,83 @@ export function TrainerCardList({ assignments, trainers = [], trainerId, trainer
                                     </div>
 
                                     {/* 매출대상자: 예상횟수, 예상금액, 클로징확률 */}
-                                    {a.is_sales_target && (
-                                      <div className="grid grid-cols-3 gap-2 text-xs">
-                                        <div>
-                                          <p className="text-gray-500 mb-1">예상 횟수</p>
-                                          <Input
-                                            type="number"
-                                            defaultValue={a.expected_sessions || ''}
-                                            placeholder="회"
-                                            className="h-8 text-xs bg-white text-gray-900 border-gray-300"
-                                            onBlur={(e) => {
-                                              const v = Number(e.target.value) || 0
-                                              if (v !== (a.expected_sessions || 0)) updateOtAssignment(a.id, { expected_sessions: v })
-                                            }}
-                                          />
+                                    {a.is_sales_target && (() => {
+                                      const sid = `sales-${a.id}`
+                                      return (
+                                      <div className="space-y-2">
+                                        <div className="grid grid-cols-3 gap-2 text-xs">
+                                          <div>
+                                            <p className="text-gray-500 mb-1">예상 횟수</p>
+                                            <Input id={`${sid}-sessions`} type="number" defaultValue={a.expected_sessions || ''} placeholder="회" className="h-8 text-xs bg-white text-gray-900 border-gray-300" />
+                                          </div>
+                                          <div>
+                                            <p className="text-gray-500 mb-1">예상 금액 (만원)</p>
+                                            <Input id={`${sid}-amount`} type="number" defaultValue={a.expected_amount ? toManwon(a.expected_amount) : ''} placeholder="만원" className="h-8 text-xs bg-white text-gray-900 border-gray-300" />
+                                          </div>
+                                          <div>
+                                            <p className="text-gray-500 mb-1">클로징 확률</p>
+                                            <Input id={`${sid}-prob`} type="text" defaultValue={a.closing_probability ? `${a.closing_probability}%` : ''} placeholder="%" className="h-8 text-xs bg-white text-gray-900 border-gray-300" />
+                                          </div>
                                         </div>
-                                        <div>
-                                          <p className="text-gray-500 mb-1">예상 금액 (만원)</p>
-                                          <Input
-                                            type="number"
-                                            defaultValue={a.expected_amount ? toManwon(a.expected_amount) : ''}
-                                            placeholder="만원"
-                                            className="h-8 text-xs bg-white text-gray-900 border-gray-300"
-                                            onBlur={(e) => {
-                                              const v = Number(e.target.value) || 0
-                                              if (v !== toManwon(a.expected_amount || 0)) updateOtAssignment(a.id, { expected_amount: v })
+                                        <div className="flex gap-2 justify-end">
+                                          <Button size="sm" variant="outline" className="h-7 text-xs text-gray-500 border-gray-300 bg-white hover:bg-gray-100"
+                                            onClick={() => {
+                                              const s = document.getElementById(`${sid}-sessions`) as HTMLInputElement | null
+                                              const am = document.getElementById(`${sid}-amount`) as HTMLInputElement | null
+                                              const p = document.getElementById(`${sid}-prob`) as HTMLInputElement | null
+                                              if (s) s.value = String(a.expected_sessions || '')
+                                              if (am) am.value = a.expected_amount ? String(toManwon(a.expected_amount)) : ''
+                                              if (p) p.value = a.closing_probability ? `${a.closing_probability}%` : ''
                                             }}
-                                          />
-                                        </div>
-                                        <div>
-                                          <p className="text-gray-500 mb-1">클로징 확률</p>
-                                          <Input
-                                            type="text"
-                                            defaultValue={a.closing_probability ? `${a.closing_probability}%` : ''}
-                                            placeholder="%"
-                                            className="h-8 text-xs bg-white text-gray-900 border-gray-300"
-                                            onBlur={(e) => {
-                                              const v = Number(e.target.value.replace('%', '')) || 0
-                                              if (v !== (a.closing_probability || 0)) updateOtAssignment(a.id, { closing_probability: v })
+                                          >취소</Button>
+                                          <Button size="sm" className="h-7 text-xs bg-purple-600 hover:bg-purple-700 text-white"
+                                            onClick={() => {
+                                              const sessions = Number((document.getElementById(`${sid}-sessions`) as HTMLInputElement)?.value) || 0
+                                              const amount = Number((document.getElementById(`${sid}-amount`) as HTMLInputElement)?.value) || 0
+                                              const prob = Number((document.getElementById(`${sid}-prob`) as HTMLInputElement)?.value.replace('%', '')) || 0
+                                              updateOtAssignment(a.id, { expected_sessions: sessions, expected_amount: amount, closing_probability: prob }).then(() => startTransition(() => router.refresh()))
                                             }}
-                                          />
+                                          >저장</Button>
                                         </div>
                                       </div>
-                                    )}
+                                      )
+                                    })()}
 
                                     {/* PT전환: 클로징횟수, 클로징금액 */}
-                                    {isPtConversion && (
-                                      <div className="grid grid-cols-2 gap-2 text-xs">
-                                        <div>
-                                          <p className="text-purple-600 mb-1 font-bold">클로징 횟수</p>
-                                          <Input
-                                            type="number"
-                                            defaultValue={a.expected_sessions || ''}
-                                            placeholder="회"
-                                            className="h-8 text-xs bg-white text-gray-900 border-purple-300"
-                                            onBlur={(e) => {
-                                              const v = Number(e.target.value) || 0
-                                              if (v !== (a.expected_sessions || 0)) updateOtAssignment(a.id, { expected_sessions: v })
-                                            }}
-                                          />
+                                    {isPtConversion && (() => {
+                                      const pid = `pt-${a.id}`
+                                      return (
+                                      <div className="space-y-2">
+                                        <div className="grid grid-cols-2 gap-2 text-xs">
+                                          <div>
+                                            <p className="text-blue-600 mb-1 font-bold">클로징 횟수</p>
+                                            <Input id={`${pid}-sessions`} type="number" defaultValue={a.expected_sessions || ''} placeholder="회" className="h-8 text-xs bg-white text-gray-900 border-blue-300" />
+                                          </div>
+                                          <div>
+                                            <p className="text-blue-600 mb-1 font-bold">클로징 금액 (만원)</p>
+                                            <Input id={`${pid}-amount`} type="number" defaultValue={a.actual_sales ? toManwon(a.actual_sales) : ''} placeholder="만원" className="h-8 text-xs bg-white text-gray-900 border-blue-300" />
+                                          </div>
                                         </div>
-                                        <div>
-                                          <p className="text-purple-600 mb-1 font-bold">클로징 금액 (만원)</p>
-                                          <Input
-                                            type="number"
-                                            defaultValue={a.actual_sales ? toManwon(a.actual_sales) : ''}
-                                            placeholder="만원"
-                                            className="h-8 text-xs bg-white text-gray-900 border-purple-300"
-                                            onBlur={(e) => {
-                                              const v = Number(e.target.value) || 0
-                                              if (v !== toManwon(a.actual_sales || 0)) updateOtAssignment(a.id, { actual_sales: v })
+                                        <div className="flex gap-2 justify-end">
+                                          <Button size="sm" variant="outline" className="h-7 text-xs text-gray-500 border-gray-300 bg-white hover:bg-gray-100"
+                                            onClick={() => {
+                                              const s = document.getElementById(`${pid}-sessions`) as HTMLInputElement | null
+                                              const am = document.getElementById(`${pid}-amount`) as HTMLInputElement | null
+                                              if (s) s.value = String(a.expected_sessions || '')
+                                              if (am) am.value = a.actual_sales ? String(toManwon(a.actual_sales)) : ''
                                             }}
-                                          />
+                                          >취소</Button>
+                                          <Button size="sm" className="h-7 text-xs bg-blue-600 hover:bg-blue-700 text-white"
+                                            onClick={() => {
+                                              const sessions = Number((document.getElementById(`${pid}-sessions`) as HTMLInputElement)?.value) || 0
+                                              const amount = Number((document.getElementById(`${pid}-amount`) as HTMLInputElement)?.value) || 0
+                                              updateOtAssignment(a.id, { expected_sessions: sessions, actual_sales: amount }).then(() => startTransition(() => router.refresh()))
+                                            }}
+                                          >저장</Button>
                                         </div>
                                       </div>
-                                    )}
+                                      )
+                                    })()}
 
                                     {/* 클로징실패: 사유 입력 */}
                                     {isClosingFail && (() => {
