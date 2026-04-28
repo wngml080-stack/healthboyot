@@ -92,6 +92,21 @@ export async function getOtProgram(assignmentId: string): Promise<OtProgram | nu
   return normalizeProgram(data as Record<string, unknown>)
 }
 
+export async function getOtProgramByMemberId(memberId: string): Promise<OtProgram | null> {
+  const supabase = await createClient()
+
+  const { data, error } = await supabase
+    .from('ot_programs')
+    .select('*')
+    .eq('member_id', memberId)
+    .order('created_at', { ascending: false })
+    .limit(1)
+    .maybeSingle()
+
+  if (error || !data) return null
+  return normalizeProgram(data as Record<string, unknown>)
+}
+
 // 상담카드 + OT 프로그램 한 번의 요청으로 병렬 조회 (카드 펼침 속도 개선)
 export async function getAssignmentExpandData(
   memberId: string,
@@ -119,45 +134,71 @@ export async function getAssignmentExpandData(
   return { card, program }
 }
 
+/** 여러 assignment의 프로그램을 한 번에 조회 (프리페치용) */
+export async function batchGetOtPrograms(
+  assignmentIds: string[]
+): Promise<Record<string, OtProgram>> {
+  if (assignmentIds.length === 0) return {}
+  const supabase = await createClient()
+  const { data } = await supabase
+    .from('ot_programs')
+    .select('*')
+    .in('ot_assignment_id', assignmentIds)
+    .order('created_at', { ascending: false })
+  if (!data) return {}
+  // assignment당 최신 1개만 유지
+  const result: Record<string, OtProgram> = {}
+  for (const row of data) {
+    const aid = row.ot_assignment_id as string
+    if (!result[aid]) {
+      result[aid] = normalizeProgram(row as Record<string, unknown>)
+    }
+  }
+  return result
+}
+
 export async function upsertOtProgram(
   assignmentId: string,
   memberId: string,
   values: Partial<Omit<OtProgram, 'id' | 'ot_assignment_id' | 'member_id' | 'created_at' | 'updated_at' | 'created_by'>>
 ) {
   const supabase = await createClient()
-  const { data: { user } } = await supabase.auth.getUser()
 
-  // 상담카드 데이터 자동 연동 (비어있으면 항상 채우기)
+  // 상담카드 + 유저 + 기존 프로그램을 병렬 조회
   const hasConsultation = values.consultation_data &&
     (values.consultation_data.exercise_goals?.length > 0 || values.consultation_data.medical_conditions?.length > 0)
-  if (!hasConsultation) {
-    const card = await getConsultationCard(memberId)
-    if (card) {
-      values.consultation_data = {
-        exercise_goals: card.exercise_goals ?? [],
-        exercise_goal_detail: card.exercise_goal_detail ?? null,
-        body_correction_area: card.body_correction_area ?? null,
-        medical_conditions: card.medical_conditions ?? [],
-        medical_detail: card.medical_detail,
-        surgery_detail: card.surgery_detail,
-        exercise_experiences: card.exercise_experiences ?? [],
-        exercise_experience_history: card.exercise_experience_history ?? null,
-        exercise_duration: card.exercise_duration,
-        exercise_personality: card.exercise_personality ?? [],
-        desired_body_type: card.desired_body_type,
-      }
+
+  const [{ data: { session } }, card, existing] = await Promise.all([
+    supabase.auth.getSession(),
+    hasConsultation ? Promise.resolve(null) : getConsultationCard(memberId).catch(() => null),
+    getOtProgram(assignmentId),
+  ])
+
+  if (card) {
+    values.consultation_data = {
+      exercise_goals: card.exercise_goals ?? [],
+      exercise_goal_detail: card.exercise_goal_detail ?? null,
+      body_correction_area: card.body_correction_area ?? null,
+      medical_conditions: card.medical_conditions ?? [],
+      medical_detail: card.medical_detail,
+      surgery_detail: card.surgery_detail,
+      exercise_experiences: card.exercise_experiences ?? [],
+      exercise_experience_history: card.exercise_experience_history ?? null,
+      exercise_duration: card.exercise_duration,
+      exercise_personality: card.exercise_personality ?? [],
+      desired_body_type: card.desired_body_type,
     }
   }
 
-  // 세일즈 데이터를 세션에서 추출하여 assignment에 동기화
+  // 세일즈 + 결과 상태를 한번에 수집하여 assignment 업데이트 (1회만)
   const sessionsArr = values.sessions as OtProgramSession[] | undefined
+  const assignmentUpdates: Record<string, unknown> = {}
   if (sessionsArr?.length) {
-    // 가장 최근 세션에서 세일즈 데이터 추출 (뒤에서부터 찾기)
+    // 세일즈 데이터 (뒤에서부터 찾기)
     const latestSales = [...sessionsArr].reverse().find((s) =>
       s.expected_amount || s.expected_sessions || s.closing_probability || s.sales_status || s.is_sales_target || s.is_pt_conversion
     )
     if (latestSales) {
-      const assignmentUpdates: Record<string, unknown> = {}
       if (latestSales.expected_amount) assignmentUpdates.expected_amount = latestSales.expected_amount
       if (latestSales.expected_sessions) assignmentUpdates.expected_sessions = latestSales.expected_sessions
       if (latestSales.closing_probability) assignmentUpdates.closing_probability = latestSales.closing_probability
@@ -165,76 +206,70 @@ export async function upsertOtProgram(
         assignmentUpdates.sales_status = latestSales.sales_status === 'PT전환' ? '등록완료' : latestSales.sales_status
       }
       if (latestSales.is_sales_target) assignmentUpdates.is_sales_target = true
-      // PT전환 상태이면 is_pt_conversion + actual_sales 동기화
       if (latestSales.sales_status === 'PT전환' || latestSales.is_pt_conversion) {
         assignmentUpdates.is_pt_conversion = true
         if (latestSales.pt_sales_amount) assignmentUpdates.actual_sales = latestSales.pt_sales_amount
         if (latestSales.expected_sessions) assignmentUpdates.expected_sessions = latestSales.expected_sessions
       }
       if (latestSales.sales_note) assignmentUpdates.notes = latestSales.sales_note
-
-      if (Object.keys(assignmentUpdates).length > 0) {
-        await supabase.from('ot_assignments').update(assignmentUpdates).eq('id', assignmentId)
-      }
     }
-  }
 
-  // result_category 변경 시 ot_assignments 상태 연동
-  if (sessionsArr?.length) {
-    const assignmentUpdatesFromResult: Record<string, unknown> = {}
+    // result_category + class_status → assignment 상태 연동
     for (const s of sessionsArr) {
-      if (!s.result_category) continue
-      switch (s.result_category) {
+      const status = s.result_category || (s as unknown as Record<string, unknown>).class_status as string | null
+      if (!status) continue
+      switch (status) {
         case '노쇼':
         case '차감노쇼':
-          assignmentUpdatesFromResult.status = '노쇼'
+          assignmentUpdates.status = '노쇼'
           break
         case '거부자':
-          assignmentUpdatesFromResult.status = '거부'
-          assignmentUpdatesFromResult.sales_status = 'OT거부자'
+          assignmentUpdates.status = '거부'
+          assignmentUpdates.sales_status = 'OT거부자'
           break
         case '수업완료':
         case '서비스수업':
-          // 모든 세션이 완료 계열이면 '완료'
-          if (sessionsArr.every((ss) => ['수업완료', '서비스수업'].includes(ss.result_category ?? ''))) {
-            assignmentUpdatesFromResult.status = '완료'
+          if (sessionsArr.every((ss) => {
+            const st = ss.result_category || (ss as unknown as Record<string, unknown>).class_status as string | null
+            return ['수업완료', '서비스수업'].includes(st ?? '')
+          })) {
+            assignmentUpdates.status = '완료'
+          } else {
+            assignmentUpdates.status = '진행중'
           }
+          break
+        case '상담':
+        case '기타':
+          // 상담/기타는 진행중 상태 유지
+          assignmentUpdates.status = '진행중'
           break
       }
     }
-    if (Object.keys(assignmentUpdatesFromResult).length > 0) {
-      await supabase.from('ot_assignments').update(assignmentUpdatesFromResult).eq('id', assignmentId)
-    }
   }
+  // assignment 업데이트 + program upsert 병렬 실행
+  const assignPromise = Object.keys(assignmentUpdates).length > 0
+    ? supabase.from('ot_assignments').update(assignmentUpdates).eq('id', assignmentId)
+    : Promise.resolve({ error: null })
 
-  // 기존 프로그램이 있으면 업데이트
-  const existing = await getOtProgram(assignmentId)
-  if (existing) {
-    const { data, error } = await supabase
-      .from('ot_programs')
-      .update({ ...values, updated_at: new Date().toISOString() })
-      .eq('id', existing.id)
-      .select()
-      .single()
+  const programPromise = existing
+    ? supabase.from('ot_programs')
+        .update({ ...values, updated_at: new Date().toISOString() })
+        .eq('id', existing.id)
+        .select()
+        .single()
+    : supabase.from('ot_programs')
+        .insert({
+          ot_assignment_id: assignmentId,
+          member_id: memberId,
+          ...values,
+          created_by: session?.user?.id,
+        })
+        .select()
+        .single()
 
-    if (error) return { error: error.message }
-    return { data }
-  }
-
-  // 새로 생성
-  const { data, error } = await supabase
-    .from('ot_programs')
-    .insert({
-      ot_assignment_id: assignmentId,
-      member_id: memberId,
-      ...values,
-      created_by: user?.id,
-    })
-    .select()
-    .single()
-
-  if (error) return { error: error.message }
-  return { data }
+  const [, programResult] = await Promise.all([assignPromise, programPromise])
+  if (programResult.error) return { error: programResult.error.message }
+  return { data: programResult.data }
 }
 
 export async function submitOtProgram(programId: string) {
@@ -444,7 +479,7 @@ export async function getPendingOtPrograms(): Promise<(OtProgram & { member_name
   })
 }
 
-export async function getAllOtPrograms(options?: { includeAll?: boolean }): Promise<(OtProgram & { member_name?: string })[]> {
+export async function getAllOtPrograms(options?: { includeAll?: boolean }): Promise<(OtProgram & { member_name?: string; is_sales_target?: boolean; is_pt_conversion?: boolean })[]> {
   const supabase = await createClient()
 
   // 목록/통계용: 무거운 JSON 컬럼 제외 (consultation_data, inbody_data, images, session_1~3)
@@ -454,7 +489,8 @@ export async function getAllOtPrograms(options?: { includeAll?: boolean }): Prom
     exercise_duration_min, target_heart_rate, member_start_date, member_end_date,
     submitted_at, approved_at, approved_by, rejection_reason, share_token,
     created_at, updated_at, created_by,
-    member:members!inner(name)
+    member:members!inner(name),
+    assignment:ot_assignments!inner(is_sales_target, is_pt_conversion)
   `
 
   let query = supabase
@@ -473,7 +509,13 @@ export async function getAllOtPrograms(options?: { includeAll?: boolean }): Prom
 
   return data.map((row) => {
     const member = row.member as unknown as { name: string }
+    const assignment = row.assignment as unknown as { is_sales_target: boolean; is_pt_conversion: boolean } | null
     const prog = normalizeProgram(row as Record<string, unknown>)
-    return { ...prog, member_name: member?.name }
+    return {
+      ...prog,
+      member_name: member?.name,
+      is_sales_target: assignment?.is_sales_target ?? false,
+      is_pt_conversion: assignment?.is_pt_conversion ?? false,
+    }
   })
 }

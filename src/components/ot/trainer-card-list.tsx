@@ -19,7 +19,7 @@ import {
 import { CheckCircle, User, AlertTriangle, BarChart3, CalendarDays, ClipboardList, Pencil, Plus, Undo2, UserPlus, Target, HeartPulse, Dumbbell, Phone, Download, Ban } from 'lucide-react'
 import { Textarea } from '@/components/ui/textarea'
 import { upsertOtSession, updateOtAssignment, deleteOtSession } from '@/actions/ot'
-import { getOtProgram, getAssignmentExpandData } from '@/actions/ot-program'
+import { getOtProgram, getAssignmentExpandData, batchGetOtPrograms } from '@/actions/ot-program'
 import { quickRegisterMember } from '@/actions/members'
 import { createClient } from '@/lib/supabase/client'
 import dynamic from 'next/dynamic'
@@ -124,29 +124,43 @@ export function TrainerCardList({ assignments, trainers = [], trainerId, trainer
     if (!trainerId || !assignmentIdKey) return
     const ids = assignmentIdKey.split(',').filter(Boolean)
     if (ids.length === 0) return
-    const supabase = createClient()
-    supabase.from('ot_programs').select('ot_assignment_id, sessions').in('ot_assignment_id', ids).then(({ data }) => {
-      if (!data) return
+
+    // 프로그램 전체 데이터를 1회 배치 조회 → 피드백/승인 정보 추출 + expandedData 프리캐시
+    batchGetOtPrograms(ids).then((programMap) => {
       const map: Record<string, { session: number; feedback: string }[]> = {}
       const approvalNeeded = new Set<string>()
       const approvals: Record<string, { session: number; status: string; approved_at?: string | null }[]> = {}
-      for (const p of data) {
-        const sessions = p.sessions as { admin_feedback?: string | null; completed?: boolean; approval_status?: string; approved_at?: string | null }[] | null
+
+      for (const [aid, prog] of Object.entries(programMap)) {
+        const sessions = prog.sessions
         if (!sessions) continue
         const feedbacks = sessions
-          .map((s, i) => ({ session: i + 1, feedback: s.admin_feedback ?? '' }))
+          .map((s, i) => ({ session: i + 1, feedback: (s as unknown as { admin_feedback?: string }).admin_feedback ?? '' }))
           .filter((f) => f.feedback)
-        if (feedbacks.length > 0) map[p.ot_assignment_id] = feedbacks
+        if (feedbacks.length > 0) map[aid] = feedbacks
         const hasUnapproved = sessions.some((s) => s.completed && s.approval_status !== '승인')
-        if (hasUnapproved) approvalNeeded.add(p.ot_assignment_id)
+        if (hasUnapproved) approvalNeeded.add(aid)
         const approvalEntries = sessions
           .map((s, i) => ({ session: i + 1, status: s.approval_status ?? '', approved_at: s.approved_at }))
           .filter((e) => e.status)
-        if (approvalEntries.length > 0) approvals[p.ot_assignment_id] = approvalEntries
+        if (approvalEntries.length > 0) approvals[aid] = approvalEntries
       }
       setFeedbackMap(map)
       setNeedApprovalSet(approvalNeeded)
       setApprovalMap(approvals)
+
+      // expandedData에 프로그램 프리캐시 → 팝업 열 때 네트워크 요청 불필요
+      setExpandedData((prev) => {
+        const next = { ...prev }
+        for (const [aid, prog] of Object.entries(programMap)) {
+          if (!next[aid] || next[aid] === 'loading') {
+            next[aid] = { card: null, program: prog }
+          } else {
+            next[aid] = { ...next[aid] as { card: unknown; program: unknown }, program: prog } as typeof next[string]
+          }
+        }
+        return next
+      })
     })
   }, [trainerId, assignmentIdKey])
 
@@ -521,17 +535,26 @@ export function TrainerCardList({ assignments, trainers = [], trainerId, trainer
     setNextTime('')
     setCompleteResult('')
     setCompleteFailReason('')
-    // 캐시에 프로그램+상담카드 둘 다 있으면 즉시 사용
+    // 프리캐시된 프로그램이 있으면 즉시 사용 (상담카드만 없으면 백그라운드 fetch)
     const cached = expandedData[a.id]
     if (cached && cached !== 'loading' && cached.program) {
       setCompleteProgramData(cached.program)
+      // 상담카드가 없으면 백그라운드에서 가져와서 캐시
+      if (!cached.card) {
+        getAssignmentExpandData(a.member_id, a.id).then(({ card }) => {
+          setExpandedData((prev) => {
+            const existing = prev[a.id]
+            if (!existing || existing === 'loading') return prev
+            return { ...prev, [a.id]: { ...existing, card } }
+          })
+        })
+      }
     } else {
-      // 프로그램 + 상담카드를 1번의 요청으로 동시 로딩 (getAssignmentExpandData)
+      // 캐시 미스 → 프로그램 + 상담카드 동시 로딩
       setCompleteProgramLoading(true)
       setCompleteProgramData(null)
       getAssignmentExpandData(a.member_id, a.id).then(({ card, program }) => {
         setCompleteProgramData(program)
-        // 상담카드도 expandedData 캐시에 저장 → OtProgramForm에서 재요청 방지
         setExpandedData((prev) => ({ ...prev, [a.id]: { card, program } }))
         setCompleteProgramLoading(false)
       })
@@ -1257,111 +1280,131 @@ export function TrainerCardList({ assignments, trainers = [], trainerId, trainer
                                     )
                                   })()}
 
-                                  {/* 세일즈 정보 편집 */}
+                                  {/* 세일즈 정보 (통합) */}
+                                  {(() => {
+                                    const isPtConversion = a.is_pt_conversion || programSessions.some((s) => s.is_pt_conversion)
+                                    const isClosingFail = a.sales_status === '클로징실패'
+                                    return (
                                   <div className="rounded-lg border border-emerald-200 bg-emerald-50/40 p-4 space-y-3" onClick={(e) => e.stopPropagation()}>
                                     <p className="text-sm font-bold text-emerald-800">💰 세일즈 정보</p>
-                                    <button type="button"
-                                      className={`w-full h-10 rounded-lg border-2 text-sm font-bold transition-colors ${a.is_sales_target ? 'bg-blue-50 border-blue-500 text-blue-700' : 'bg-white border-gray-200 text-gray-400'}`}
-                                      onClick={() => updateOtAssignment(a.id, { is_sales_target: !a.is_sales_target }).then(() => startTransition(() => router.refresh()))}
-                                    >★ 매출대상자 {a.is_sales_target ? '✓' : ''}</button>
 
-                                    <div className="space-y-1">
-                                      <p className="text-xs font-bold text-gray-600">상태</p>
-                                      <div className="grid grid-cols-3 gap-1.5">
-                                        {(['PT전환', '클로징실패', '스케줄미확정'] as const).map((st) => {
-                                          const salesMap: Record<string, string> = { 'PT전환': '등록완료', '클로징실패': '클로징실패', '스케줄미확정': '스케줄미확정' }
-                                          const active = a.sales_status === salesMap[st] || (st === 'PT전환' && a.is_pt_conversion)
-                                          const colors: Record<string, string> = {
-                                            'PT전환': active ? 'bg-purple-600 text-white border-purple-600' : 'bg-white text-purple-600 border-purple-200',
-                                            '클로징실패': active ? 'bg-red-500 text-white border-red-500' : 'bg-white text-red-500 border-red-200',
-                                            '스케줄미확정': active ? 'bg-yellow-500 text-white border-yellow-500' : 'bg-white text-yellow-600 border-yellow-200',
-                                          }
-                                          return (
-                                            <button key={st} type="button"
-                                              className={`h-10 rounded-lg border-2 text-sm font-bold transition-colors ${colors[st]}`}
-                                              onClick={() => {
-                                                const updates: import('@/actions/ot').UpdateOtAssignmentValues = {}
-                                                if (active) {
-                                                  updates.sales_status = 'OT진행중'
-                                                  if (st === 'PT전환') updates.is_pt_conversion = false
-                                                } else {
-                                                  updates.sales_status = salesMap[st] as import('@/types').SalesStatus
-                                                  if (st === 'PT전환') updates.is_pt_conversion = true
-                                                }
-                                                updateOtAssignment(a.id, updates).then(() => startTransition(() => router.refresh()))
-                                              }}
-                                            >{st}</button>
-                                          )
-                                        })}
-                                      </div>
+                                    {/* 상태 버튼: 매출대상자 / PT전환 / 클로징실패 */}
+                                    <div className="grid grid-cols-3 gap-1.5">
+                                      <button type="button"
+                                        className={`h-10 rounded-lg border-2 text-sm font-bold transition-colors ${a.is_sales_target ? 'bg-blue-50 border-blue-500 text-blue-700' : 'bg-white border-gray-200 text-gray-400'}`}
+                                        onClick={() => updateOtAssignment(a.id, { is_sales_target: !a.is_sales_target }).then(() => startTransition(() => router.refresh()))}
+                                      >★ 매출대상자 {a.is_sales_target ? '✓' : ''}</button>
+                                      <button type="button"
+                                        className={`h-10 rounded-lg border-2 text-sm font-bold transition-colors ${isPtConversion ? 'bg-purple-600 text-white border-purple-600' : 'bg-white text-purple-600 border-purple-200'}`}
+                                        onClick={() => {
+                                          const updates: import('@/actions/ot').UpdateOtAssignmentValues = isPtConversion
+                                            ? { is_pt_conversion: false, sales_status: 'OT진행중' }
+                                            : { is_pt_conversion: true, sales_status: '등록완료' }
+                                          updateOtAssignment(a.id, updates).then(() => startTransition(() => router.refresh()))
+                                        }}
+                                      >PT전환 {isPtConversion ? '✓' : ''}</button>
+                                      <button type="button"
+                                        className={`h-10 rounded-lg border-2 text-sm font-bold transition-colors ${isClosingFail ? 'bg-red-500 text-white border-red-500' : 'bg-white text-red-500 border-red-200'}`}
+                                        onClick={() => {
+                                          const updates: import('@/actions/ot').UpdateOtAssignmentValues = isClosingFail
+                                            ? { sales_status: 'OT진행중', closing_fail_reason: null }
+                                            : { sales_status: '클로징실패' }
+                                          updateOtAssignment(a.id, updates).then(() => startTransition(() => router.refresh()))
+                                        }}
+                                      >클로징실패 {isClosingFail ? '✓' : ''}</button>
                                     </div>
 
-                                    {a.sales_status === '클로징실패' && (
-                                      <div className="rounded-lg border border-red-200 bg-red-50/50 p-3 space-y-1">
-                                        <p className="text-xs font-bold text-red-600">실패 사유</p>
-                                        <p className="text-sm text-red-800">{a.closing_fail_reason || '-'}</p>
+                                    {/* 매출대상자: 예상횟수, 예상금액, 클로징확률 */}
+                                    {a.is_sales_target && (
+                                      <div className="grid grid-cols-3 gap-2 text-xs">
+                                        <div>
+                                          <p className="text-gray-500 mb-1">예상 횟수</p>
+                                          <Input
+                                            type="number"
+                                            defaultValue={a.expected_sessions || ''}
+                                            placeholder="회"
+                                            className="h-8 text-xs bg-white text-gray-900 border-gray-300"
+                                            onBlur={(e) => {
+                                              const v = Number(e.target.value) || 0
+                                              if (v !== (a.expected_sessions || 0)) updateOtAssignment(a.id, { expected_sessions: v }).then(() => startTransition(() => router.refresh()))
+                                            }}
+                                          />
+                                        </div>
+                                        <div>
+                                          <p className="text-gray-500 mb-1">예상 금액 (만원)</p>
+                                          <Input
+                                            type="number"
+                                            defaultValue={a.expected_amount ? toManwon(a.expected_amount) : ''}
+                                            placeholder="만원"
+                                            className="h-8 text-xs bg-white text-gray-900 border-gray-300"
+                                            onBlur={(e) => {
+                                              const v = Number(e.target.value) || 0
+                                              if (v !== toManwon(a.expected_amount || 0)) updateOtAssignment(a.id, { expected_amount: v }).then(() => startTransition(() => router.refresh()))
+                                            }}
+                                          />
+                                        </div>
+                                        <div>
+                                          <p className="text-gray-500 mb-1">클로징 확률</p>
+                                          <Input
+                                            type="text"
+                                            defaultValue={a.closing_probability ? `${a.closing_probability}%` : ''}
+                                            placeholder="%"
+                                            className="h-8 text-xs bg-white text-gray-900 border-gray-300"
+                                            onBlur={(e) => {
+                                              const v = Number(e.target.value.replace('%', '')) || 0
+                                              if (v !== (a.closing_probability || 0)) updateOtAssignment(a.id, { closing_probability: v }).then(() => startTransition(() => router.refresh()))
+                                            }}
+                                          />
+                                        </div>
                                       </div>
                                     )}
 
-                                    <div className="grid grid-cols-2 gap-2">
-                                      <div className="rounded bg-white p-2 text-xs">
-                                        <p className="text-gray-500">예상 매출</p>
-                                        <p className="font-bold text-gray-900">{a.expected_amount ? `${toManwon(a.expected_amount).toLocaleString()}만` : '-'}</p>
+                                    {/* PT전환: 클로징횟수, 클로징금액 */}
+                                    {isPtConversion && (
+                                      <div className="grid grid-cols-2 gap-2 text-xs">
+                                        <div>
+                                          <p className="text-purple-600 mb-1 font-bold">클로징 횟수</p>
+                                          <Input
+                                            type="number"
+                                            defaultValue={a.expected_sessions || ''}
+                                            placeholder="회"
+                                            className="h-8 text-xs bg-white text-gray-900 border-purple-300"
+                                            onBlur={(e) => {
+                                              const v = Number(e.target.value) || 0
+                                              if (v !== (a.expected_sessions || 0)) updateOtAssignment(a.id, { expected_sessions: v }).then(() => startTransition(() => router.refresh()))
+                                            }}
+                                          />
+                                        </div>
+                                        <div>
+                                          <p className="text-purple-600 mb-1 font-bold">클로징 금액 (만원)</p>
+                                          <Input
+                                            type="number"
+                                            defaultValue={a.actual_sales ? toManwon(a.actual_sales) : ''}
+                                            placeholder="만원"
+                                            className="h-8 text-xs bg-white text-gray-900 border-purple-300"
+                                            onBlur={(e) => {
+                                              const v = Number(e.target.value) || 0
+                                              if (v !== toManwon(a.actual_sales || 0)) updateOtAssignment(a.id, { actual_sales: v }).then(() => startTransition(() => router.refresh()))
+                                            }}
+                                          />
+                                        </div>
                                       </div>
-                                      <div className="rounded bg-white p-2 text-xs">
-                                        <p className="text-gray-500">클로징 확률</p>
-                                        <p className="font-bold text-gray-900">{a.closing_probability ? `${a.closing_probability}%` : '-'}</p>
-                                      </div>
-                                    </div>
-                                  </div>
+                                    )}
 
-                                  {/* 세일즈 여정 */}
-                                  {(() => {
-                                    // 세션에서 가장 최근 입력값을 assignment 레벨 fallback으로 사용
-                                    const latestSessionWithData = [...programSessions].reverse().find((s) =>
-                                      s.expected_amount || s.expected_sessions || s.closing_probability || s.sales_status || s.is_sales_target || s.is_pt_conversion || s.pt_sales_amount,
-                                    )
-                                    const expAmount = toManwon(a.expected_amount || latestSessionWithData?.expected_amount || 0)
-                                    const expSessions = a.expected_sessions || latestSessionWithData?.expected_sessions || 0
-                                    const closeProb = a.closing_probability || latestSessionWithData?.closing_probability || 0
-                                    const ptSalesSum = programSessions.reduce((acc, s) => acc + (s.pt_sales_amount || 0), 0)
-                                    const actSales = toManwon(a.actual_sales || ptSalesSum)
-                                    const salesStatus = a.sales_status || latestSessionWithData?.sales_status
-                                    const isSalesTarget = a.is_sales_target || programSessions.some((s) => s.is_sales_target)
-                                    const isPtConversion = a.is_pt_conversion || programSessions.some((s) => s.is_pt_conversion)
-                                    return (
-                                  <div className="rounded-lg border border-blue-200 bg-blue-50/40 p-4 space-y-3">
-                                    <div className="flex items-center justify-between flex-wrap gap-2">
-                                      <p className="text-sm font-bold text-blue-900">🛣️ 세일즈 · 등록 여정</p>
-                                      <div className="flex items-center gap-1.5 flex-wrap">
-                                        {isSalesTarget && <Badge className="bg-blue-600 text-white text-[10px]">매출대상</Badge>}
-                                        {isPtConversion && <Badge className="bg-purple-600 text-white text-[10px]">PT전환</Badge>}
-                                        {salesStatus && <Badge className={`${statusBadgeColor(salesStatus)} text-[10px]`}>{salesStatus}</Badge>}
-                                        {actSales > 0 && <Badge className="bg-green-700 text-white text-[10px]">실매출 {actSales}만</Badge>}
+                                    {/* 클로징실패: 사유 입력 */}
+                                    {isClosingFail && (
+                                      <div className="text-xs">
+                                        <p className="text-red-600 mb-1 font-bold">실패 사유</p>
+                                        <textarea
+                                          defaultValue={a.closing_fail_reason ?? ''}
+                                          placeholder="클로징 실패 사유를 입력해주세요"
+                                          className="w-full rounded-md border border-red-300 bg-white text-sm text-gray-900 p-2 h-16 resize-none"
+                                          onBlur={(e) => {
+                                            const v = e.target.value.trim()
+                                            if (v !== (a.closing_fail_reason ?? '')) updateOtAssignment(a.id, { closing_fail_reason: v || null }).then(() => startTransition(() => router.refresh()))
+                                          }}
+                                        />
                                       </div>
-                                    </div>
-
-                                    <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 text-xs">
-                                      <div className="rounded bg-white p-2">
-                                        <p className="text-gray-500">예상 매출</p>
-                                        <p className="font-bold text-gray-900">{expAmount ? `${expAmount.toLocaleString()}만` : '-'}</p>
-                                      </div>
-                                      <div className="rounded bg-white p-2">
-                                        <p className="text-gray-500">예상 회수</p>
-                                        <p className="font-bold text-gray-900">{expSessions ? `${expSessions}회` : '-'}</p>
-                                      </div>
-                                      <div className="rounded bg-white p-2">
-                                        <p className="text-gray-500">클로징 확률</p>
-                                        <p className="font-bold text-gray-900">{closeProb ? `${closeProb}%` : '-'}</p>
-                                      </div>
-                                      <div className="rounded bg-white p-2">
-                                        <p className="text-gray-500">실제 매출</p>
-                                        <p className="font-bold text-green-700">{actSales ? `${actSales.toLocaleString()}만` : '-'}</p>
-                                      </div>
-                                    </div>
-
-                                    {journey.length === 0 && (
-                                      <p className="text-xs text-gray-500">차수별 세일즈 기록이 아직 없습니다.</p>
                                     )}
 
                                     {a.sales_note && (
@@ -1370,23 +1413,8 @@ export function TrainerCardList({ assignments, trainers = [], trainerId, trainer
                                         <p className="text-gray-800 whitespace-pre-wrap">{a.sales_note}</p>
                                       </div>
                                     )}
-                                    {a.closing_fail_reason && (
-                                      <div className="rounded bg-red-50 border border-red-200 p-2 text-xs">
-                                        <p className="font-bold text-red-700 mb-0.5">클로징 실패 사유</p>
-                                        <p className="text-red-800 whitespace-pre-wrap">{a.closing_fail_reason}</p>
-                                      </div>
-                                    )}
-                                    {a.is_excluded && a.excluded_reason && (
-                                      <div className="rounded bg-red-100 border-2 border-red-300 p-3 text-xs">
-                                        <p className="font-bold text-red-700 mb-1">제외 사유</p>
-                                        <p className="text-red-800 whitespace-pre-wrap">{a.excluded_reason}</p>
-                                        {a.excluded_at && (
-                                          <p className="text-red-400 mt-1.5 text-[10px]">{new Date(a.excluded_at).toLocaleDateString('ko')} 제외 처리</p>
-                                        )}
-                                      </div>
-                                    )}
                                   </div>
-                                  )
+                                    )
                                   })()}
 
                                   {/* 관리자 피드백 요약 — 모든 세션의 admin_feedback을 한 박스에 모아 표시 */}
@@ -1906,55 +1934,14 @@ export function TrainerCardList({ assignments, trainers = [], trainerId, trainer
               )}
             </div>
 
-            {/* 다음 OT 일정 */}
-            {completeTarget && (
-              <div className="space-y-2">
-                <Label>다음 OT 일정 ({completeTarget.sessionNumber + 1}차)</Label>
-                <div className="flex gap-2">
-                  <Input
-                    type="date"
-                    value={nextDate}
-                    onChange={(e) => setNextDate(e.target.value)}
-                    min={today}
-                    className="flex-1"
-                  />
-                  <select
-                    className="flex-1 rounded-md border border-gray-300 bg-white px-3 py-2 text-sm"
-                    value={nextTime}
-                    onChange={(e) => setNextTime(e.target.value)}
-                  >
-                    <option value="">시간 선택</option>
-                    {TIME_SLOTS.map((t) => (
-                      <option key={t} value={t}>{t}</option>
-                    ))}
-                  </select>
-                </div>
-              </div>
-            )}
+
 
           </div>}
 
           {/* 다음 OT 일정 + 결과 분류 + 완료 버튼 (프로그램 폼이 있을 때) */}
           {profile && completeTarget && (
             <div className="space-y-4">
-              {completeTarget.sessionNumber < 3 && (
-                <div className="border-t pt-4 space-y-2">
-                  <Label className="font-bold">다음 OT 일정 ({completeTarget.sessionNumber + 1}차)</Label>
-                  <div className="flex gap-2">
-                    <Input type="date" value={nextDate} onChange={(e) => setNextDate(e.target.value)} min={today} className="flex-1" />
-                    <select className="flex-1 rounded-md border border-gray-300 bg-white px-3 py-2 text-sm" value={nextTime} onChange={(e) => setNextTime(e.target.value)}>
-                      <option value="">시간 선택</option>
-                      {(() => {
-                        const booked = getBookedSlots(nextDate)
-                        return TIME_SLOTS.map((t) => {
-                          const bookedBy = booked.get(t)
-                          return <option key={t} value={t} disabled={!!bookedBy}>{bookedBy ? `${t} (${bookedBy})` : t}</option>
-                        })
-                      })()}
-                    </select>
-                  </div>
-                </div>
-              )}
+
 
 
             </div>
