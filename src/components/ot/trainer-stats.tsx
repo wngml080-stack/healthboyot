@@ -279,6 +279,7 @@ export function TrainerStats({ assignments, trainerName, programs, registrations
           totalSessions: totalCompleted + totalScheduled,
         }
       })
+      .filter((r) => r.totalSessions > 0 || r.isSalesTarget || r.isPtConversion)
       .sort((a, b) => b.totalSessions - a.totalSessions || a.name.localeCompare(b.name))
 
     const totals: Record<string, number> = {}

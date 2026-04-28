@@ -105,7 +105,7 @@ export function TrainerCardList({ assignments, trainers = [], trainerId, trainer
 
   // 필터
   const [filter, setFilter] = useState<string>('미진행')
-  const FILTERS = ['미진행', '1차', '2차', '3차', '4차+', '연락두절', '스케줄미확정', '수업후 거부']
+  const FILTERS = ['미진행', '1차', '2차', '3차', '4차+', '연락두절', '스케줄미확정', '수업후 거부', '거부/제외']
 
   // 펼침
   const [expandedId, setExpandedId] = useState<string | null>(null)
@@ -115,7 +115,7 @@ export function TrainerCardList({ assignments, trainers = [], trainerId, trainer
   const [feedbackMap, setFeedbackMap] = useState<Record<string, { session: number; feedback: string }[]>>({})
   const [feedbackPopup, setFeedbackPopup] = useState<{ title: string; feedback: string } | null>(null)
   const [needApprovalSet, setNeedApprovalSet] = useState<Set<string>>(new Set())
-  const [approvalMap, setApprovalMap] = useState<Record<string, { session: number; status: string; approved_at?: string | null }[]>>({})
+  const [approvalMap, setApprovalMap] = useState<Record<string, { session: number; status: string; approved_at?: string | null; admin_feedback?: string | null }[]>>({})
 
   // assignments ID 안정화 (참조 동일성 유지)
   const assignmentIdKey = useMemo(() => assignments.map((a) => a.id).join(','), [assignments])
@@ -147,7 +147,7 @@ export function TrainerCardList({ assignments, trainers = [], trainerId, trainer
         })
         if (hasUnapproved) approvalNeeded.add(aid)
         const approvalEntries = sessions
-          .map((s, i) => ({ session: i + 1, status: s.approval_status ?? '', approved_at: s.approved_at }))
+          .map((s, i) => ({ session: i + 1, status: s.approval_status ?? '', approved_at: s.approved_at, admin_feedback: s.admin_feedback }))
           .filter((e) => e.status)
         if (approvalEntries.length > 0) approvals[aid] = approvalEntries
       }
@@ -692,7 +692,9 @@ export function TrainerCardList({ assignments, trainers = [], trainerId, trainer
       else {
         const approvals = approvalMap[a.id] ?? []
         const lastApproval = approvals.find((ap) => ap.session === done)?.status
-        if (done > 0 && lastApproval === '승인') info = { label: `${done}차승인완료`, color: 'bg-green-100 text-green-700' }
+        const lastApprovalEntry = approvals.find((ap) => ap.session === done)
+        if (done > 0 && lastApproval === '승인' && lastApprovalEntry?.admin_feedback === '임의승인') info = { label: `${done}차임의승인`, color: 'bg-amber-100 text-amber-700' }
+        else if (done > 0 && lastApproval === '승인') info = { label: `${done}차승인완료`, color: 'bg-green-100 text-green-700' }
         else if (done > 0) info = { label: `${done}차수업완료`, color: 'bg-blue-100 text-blue-700' }
       }
       infoMap.set(a.id, info)
@@ -718,7 +720,8 @@ export function TrainerCardList({ assignments, trainers = [], trainerId, trainer
           }
           const approval = approvals.find((ap) => ap.session === n)
           if (approval?.status === '승인') {
-            log.push({ label: `${n}차승인`, date: approval.approved_at ? format(new Date(approval.approved_at), 'MM.dd') : null, color: 'text-green-600' })
+            const isManual = approval.admin_feedback === '임의승인'
+            log.push({ label: isManual ? `${n}차임의승인` : `${n}차승인`, date: approval.approved_at ? format(new Date(approval.approved_at), 'MM.dd') : null, color: isManual ? 'text-amber-600' : 'text-green-600' })
           } else if (approval?.status === '반려') {
             log.push({ label: `${n}차반려`, date: null, color: 'text-red-600' })
           }
@@ -846,16 +849,6 @@ export function TrainerCardList({ assignments, trainers = [], trainerId, trainer
               전체 {(filterCounts['전체'] ?? 0) > 0 && <span className="ml-1 text-[10px]">{filterCounts['전체']}</span>}
             </button>
             <button
-              onClick={() => { setFilter('거부/제외'); setCategoryFilter('전체') }}
-              className={`h-8 px-4 rounded-md text-xs font-bold transition-colors ${
-                filter === '거부/제외'
-                  ? 'bg-red-600 text-white border-2 border-red-700'
-                  : 'bg-red-100 text-red-700 border border-red-300 hover:bg-red-200'
-              }`}
-            >
-              거부/제외 {(filterCounts['거부/제외'] ?? 0) > 0 && <span className="ml-1 text-[10px]">{filterCounts['거부/제외']}</span>}
-            </button>
-            <button
               onClick={() => { setCategoryFilter(categoryFilter === '매출대상' ? '전체' : '매출대상'); setFilter('전체') }}
               className={`h-8 px-4 rounded-md text-xs font-bold transition-colors ${
                 categoryFilter === '매출대상'
@@ -918,6 +911,7 @@ export function TrainerCardList({ assignments, trainers = [], trainerId, trainer
             const colorMap: Record<string, { active: string; inactive: string }> = {
               '수업상태변경': { active: 'bg-amber-300 text-amber-900 border-amber-400', inactive: 'bg-amber-50 text-amber-700 border border-amber-200 hover:bg-amber-100' },
               '승인필요': { active: 'bg-green-400 text-green-900 border-green-500', inactive: 'bg-green-50 text-green-700 border border-green-200 hover:bg-green-100' },
+              '거부/제외': { active: 'bg-red-600 text-white border-red-700', inactive: 'bg-red-100 text-red-700 border border-red-300 hover:bg-red-200' },
             }
             const custom = colorMap[f]
             return (
@@ -1031,6 +1025,9 @@ export function TrainerCardList({ assignments, trainers = [], trainerId, trainer
                           ))}
                           {a.is_sales_target && (
                             <Badge className="text-[10px] px-1.5 bg-purple-600 text-white border-purple-600 font-bold">★ 매출대상</Badge>
+                          )}
+                          {a.sales_status === '클로징실패' && (
+                            <Badge className="text-[10px] px-1.5 bg-pink-500 text-white border-pink-500 font-bold">클로징실패</Badge>
                           )}
                           {a.is_pt_conversion && (
                             <Badge variant="outline" className="text-[10px] px-1.5 font-bold bg-blue-600 text-white border-blue-600">PT전환</Badge>
