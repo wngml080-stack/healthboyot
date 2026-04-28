@@ -105,7 +105,7 @@ export function TrainerCardList({ assignments, trainers = [], trainerId, trainer
 
   // 필터
   const [filter, setFilter] = useState<string>('미진행')
-  const FILTERS = ['미진행', '1차', '2차', '3차', '4차+', '수업상태변경', '승인필요', '연락두절', '스케줄미확정', '수업후 거부']
+  const FILTERS = ['미진행', '1차', '2차', '3차', '4차+', '연락두절', '스케줄미확정', '수업후 거부']
 
   // 펼침
   const [expandedId, setExpandedId] = useState<string | null>(null)
@@ -866,6 +866,26 @@ export function TrainerCardList({ assignments, trainers = [], trainerId, trainer
             >
               PT전환 {(filterCounts['PT전환'] ?? 0) > 0 && <span className="ml-1 text-[10px]">{filterCounts['PT전환']}</span>}
             </button>
+            <button
+              onClick={() => { setFilter('수업상태변경'); setCategoryFilter('전체') }}
+              className={`h-8 px-4 rounded-md text-xs font-bold transition-colors ${
+                filter === '수업상태변경'
+                  ? 'bg-amber-400 text-amber-900 border-2 border-amber-500'
+                  : 'bg-amber-50 text-amber-700 border border-amber-200 hover:bg-amber-100'
+              }`}
+            >
+              수업상태변경 {(filterCounts['수업상태변경'] ?? 0) > 0 && <span className="ml-1 text-[10px]">{filterCounts['수업상태변경']}</span>}
+            </button>
+            <button
+              onClick={() => { setFilter('승인필요'); setCategoryFilter('전체') }}
+              className={`h-8 px-4 rounded-md text-xs font-bold transition-colors ${
+                filter === '승인필요'
+                  ? 'bg-green-400 text-green-900 border-2 border-green-500'
+                  : 'bg-green-50 text-green-700 border border-green-200 hover:bg-green-100'
+              }`}
+            >
+              승인필요 {(filterCounts['승인필요'] ?? 0) > 0 && <span className="ml-1 text-[10px]">{filterCounts['승인필요']}</span>}
+            </button>
           </div>
         </div>
 
@@ -875,14 +895,20 @@ export function TrainerCardList({ assignments, trainers = [], trainerId, trainer
           )}
           {FILTERS.map((f) => {
             const count = filterCounts[f] ?? 0
+            const isActive = filter === f && categoryFilter === '전체'
+            const colorMap: Record<string, { active: string; inactive: string }> = {
+              '수업상태변경': { active: 'bg-amber-300 text-amber-900 border-amber-400', inactive: 'bg-amber-50 text-amber-700 border border-amber-200 hover:bg-amber-100' },
+              '승인필요': { active: 'bg-green-400 text-green-900 border-green-500', inactive: 'bg-green-50 text-green-700 border border-green-200 hover:bg-green-100' },
+            }
+            const custom = colorMap[f]
             return (
               <button
                 key={f}
                 onClick={() => { setFilter(f); setCategoryFilter('전체') }}
                 className={`px-3 py-1.5 rounded-full text-xs font-medium transition-colors ${
-                  filter === f && categoryFilter === '전체'
-                    ? 'bg-yellow-400 text-black'
-                    : 'bg-white text-gray-600 border border-gray-300 hover:bg-gray-50'
+                  isActive
+                    ? (custom?.active ?? 'bg-yellow-400 text-black')
+                    : (custom?.inactive ?? 'bg-white text-gray-600 border border-gray-300 hover:bg-gray-50')
                 }`}
               >
                 {f} {count > 0 && <span className="ml-1 text-[10px]">{count}</span>}
@@ -1825,9 +1851,10 @@ export function TrainerCardList({ assignments, trainers = [], trainerId, trainer
                                         for (const s of unapprovedSessions) {
                                           await approveOtSession(programId, s.idx)
                                         }
-                                        // expandedData 갱신 + 페이지 새로고침
+                                        // needApprovalSet에서 제거 + expandedData 갱신
+                                        setNeedApprovalSet((prev) => { const next = new Set(prev); next.delete(a.id); return next })
                                         setExpandedData((prev) => { const copy = { ...prev }; delete copy[a.id]; return copy })
-                                        router.refresh()
+                                        startTransition(() => router.refresh())
                                       }}
                                     >
                                       <CheckCircle className="h-4 w-4 mr-1" />OT임의승인 ({unapprovedSessions.length})
