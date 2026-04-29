@@ -22,7 +22,7 @@ export async function middleware(request: NextRequest) {
         if (profile.role === 'fc' && pathname.startsWith('/ot')) {
           return NextResponse.redirect(new URL('/members', request.url))
         }
-        if (profile.role !== 'admin' && profile.role !== '관리자' && pathname.startsWith('/stats')) {
+        if (profile.role !== 'admin' && profile.role !== '관리자' && (pathname.startsWith('/stats') || pathname.startsWith('/schedules'))) {
           return NextResponse.redirect(new URL('/dashboard', request.url))
         }
       } catch (err) {
