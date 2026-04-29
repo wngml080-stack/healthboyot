@@ -1,10 +1,10 @@
-const CACHE_NAME = 'healthboy-v1'
+const CACHE_NAME = 'healthboy-v2'
 
 // 설치 시 기본 셸 캐싱
 self.addEventListener('install', (event) => {
   event.waitUntil(
     caches.open(CACHE_NAME).then((cache) =>
-      cache.addAll(['/ot', '/dashboard', '/manifest.json'])
+      cache.addAll(['/manifest.json'])
     )
   )
   self.skipWaiting()
@@ -38,26 +38,35 @@ self.addEventListener('fetch', (event) => {
     return
   }
 
+  // HTML 네비게이션 요청은 항상 네트워크에서 가져옴 (캐시 불일치 방지)
+  if (event.request.mode === 'navigate') {
+    event.respondWith(
+      fetch(event.request).catch(() =>
+        caches.match(event.request).then((cached) =>
+          cached || new Response('오프라인 상태입니다. 네트워크를 확인해주세요.', {
+            status: 503,
+            headers: { 'Content-Type': 'text/html; charset=utf-8' },
+          })
+        )
+      )
+    )
+    return
+  }
+
+  // 정적 리소스만 캐싱 (JS, CSS, 이미지, 폰트)
   event.respondWith(
     fetch(event.request)
       .then((response) => {
-        // 성공 응답을 캐시에 저장
         if (response.status === 200) {
           const clone = response.clone()
           caches.open(CACHE_NAME).then((cache) => cache.put(event.request, clone))
         }
         return response
       })
-      .catch(() => {
-        // 네트워크 실패 시 캐시에서 반환
-        return caches.match(event.request).then((cached) => {
-          if (cached) return cached
-          // 네비게이션 요청이면 오프라인 페이지 대신 캐시된 /ot 반환
-          if (event.request.mode === 'navigate') {
-            return caches.match('/ot')
-          }
-          return new Response('Offline', { status: 503 })
-        })
-      })
+      .catch(() =>
+        caches.match(event.request).then((cached) =>
+          cached || new Response('Offline', { status: 503 })
+        )
+      )
   )
 })
