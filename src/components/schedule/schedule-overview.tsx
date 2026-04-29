@@ -189,6 +189,12 @@ export function ScheduleOverview() {
     startTransition(() => {
       setData(result)
       setLoading(false)
+      // 첫 로드 시 오종민을 기본 선택
+      setSelectedTrainer((prev) => {
+        if (prev !== null) return prev
+        const ojm = result.find((t) => t.trainer_name === '오종민')
+        return ojm?.trainer_id ?? null
+      })
     })
   }, [])
 
