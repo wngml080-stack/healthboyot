@@ -3,7 +3,7 @@
 import { useState, useCallback, useTransition } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
 import { cn } from '@/lib/utils'
-import { Users, CalendarDays, BarChart3, Loader2, ChevronDown } from 'lucide-react'
+import { Users, CalendarDays, BarChart3, Loader2 } from 'lucide-react'
 import { TrainerCardList } from './trainer-card-list'
 import { WeeklyCalendar } from './weekly-calendar'
 import { TrainerStats } from './trainer-stats'
@@ -90,22 +90,23 @@ export function TrainerDetailTabs({
 
   return (
     <div className="space-y-3">
-      {/* 관리자용 트레이너 선택 드롭다운 */}
-      {isAdmin && trainerOptions && trainerOptions.length > 0 && (
-        <div className="flex items-center gap-3">
-          <div className="relative">
-            <select
-              value={trainerId}
-              onChange={(e) => switchTrainer(e.target.value)}
-              className="appearance-none bg-gray-800 border border-gray-600 text-white rounded-lg pl-3 pr-8 py-2 text-sm font-medium focus:outline-none focus:ring-2 focus:ring-yellow-400 cursor-pointer"
+      {/* 트레이너 선택 탭 바 — 관리자: 전체 트레이너, 트레이너: 자기만 */}
+      {trainerOptions && trainerOptions.length > 0 && (
+        <div className="flex gap-1 overflow-x-auto pb-1 scrollbar-hide">
+          {(isAdmin ? trainerOptions : trainerOptions.filter((t) => t.id === trainerId)).map((t) => (
+            <button
+              key={t.id}
+              onClick={() => switchTrainer(t.id)}
+              className={cn(
+                'px-3 py-1.5 rounded-full text-sm font-medium whitespace-nowrap transition-all shrink-0',
+                t.id === trainerId
+                  ? 'bg-yellow-400 text-black shadow-sm'
+                  : 'bg-gray-800 text-gray-400 hover:bg-gray-700 hover:text-white'
+              )}
             >
-              {trainerOptions.map((t) => (
-                <option key={t.id} value={t.id}>{t.name}</option>
-              ))}
-            </select>
-            <ChevronDown className="absolute right-2 top-1/2 -translate-y-1/2 h-4 w-4 text-gray-400 pointer-events-none" />
-          </div>
-          <span className="text-xs text-gray-500">담당자 변경</span>
+              {t.name}
+            </button>
+          ))}
         </div>
       )}
 

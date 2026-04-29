@@ -117,9 +117,7 @@ async function TrainerDetailView({ trainerId, tab }: { trainerId: string; tab: s
   return (
     <div className="space-y-4">
       <div className="flex items-center gap-3">
-        <div>
-          <PageTitle>{trainerName}</PageTitle>
-        </div>
+        <PageTitle>트레이너 관리</PageTitle>
         <div className="ml-auto">
           <NotificationBell assignments={trainerAssignments} programs={trainerPrograms} />
         </div>
