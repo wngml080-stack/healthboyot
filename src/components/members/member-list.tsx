@@ -277,6 +277,7 @@ export function MemberList({ initialMembers, trainers = [] }: Props) {
             <SelectItem value="배정완료">배정완료</SelectItem>
             <SelectItem value="추후결정">보류</SelectItem>
             <SelectItem value="거부">거부</SelectItem>
+            <SelectItem value="watchlist">관리대상</SelectItem>
           </SelectContent>
         </Select>
 
@@ -473,6 +474,18 @@ export function MemberList({ initialMembers, trainers = [] }: Props) {
                             }}
                           >
                             제외
+                          </button>
+                        )}
+                        {m.assignment?.is_watchlist && (
+                          <button
+                            type="button"
+                            className="ml-1 inline-flex items-center rounded px-1.5 py-0.5 text-[10px] font-bold bg-amber-500 text-white hover:bg-amber-600 transition-colors"
+                            onClick={(e) => {
+                              e.stopPropagation()
+                              alert(`관리대상 사유:\n${m.assignment?.watchlist_reason || '사유 없음'}`)
+                            }}
+                          >
+                            관리대상
                           </button>
                         )}
                       </TableCell>

@@ -105,7 +105,7 @@ export function TrainerCardList({ assignments, trainers = [], trainerId, trainer
 
   // 필터
   const [filter, setFilter] = useState<string>('미진행')
-  const FILTERS = ['미진행', '1차', '2차', '3차', '4차+', '연락두절', '스케줄미확정', '수업후 거부', '거부/제외']
+  const FILTERS = ['미진행', '1차', '2차', '3차', '4차+', '관리대상', '연락두절', '스케줄미확정', '수업후 거부', '거부/제외']
 
   // 펼침
   const [expandedId, setExpandedId] = useState<string | null>(null)
@@ -234,6 +234,25 @@ export function TrainerCardList({ assignments, trainers = [], trainerId, trainer
       excluded_reason: null,
       excluded_at: null,
     })
+    router.refresh()
+  }
+
+  // 관리대상 토글
+  const [watchlistTarget, setWatchlistTarget] = useState<OtAssignmentWithDetails | null>(null)
+  const [watchlistReason, setWatchlistReason] = useState('')
+  const [watchlistLoading, setWatchlistLoading] = useState(false)
+
+  const handleWatchlistToggle = async () => {
+    if (!watchlistTarget) return
+    setWatchlistLoading(true)
+    if (watchlistTarget.is_watchlist) {
+      await updateOtAssignment(watchlistTarget.id, { is_watchlist: false, watchlist_reason: null })
+    } else {
+      await updateOtAssignment(watchlistTarget.id, { is_watchlist: true, watchlist_reason: watchlistReason.trim() || null })
+    }
+    setWatchlistTarget(null)
+    setWatchlistReason('')
+    setWatchlistLoading(false)
     router.refresh()
   }
 
@@ -439,6 +458,7 @@ export function TrainerCardList({ assignments, trainers = [], trainerId, trainer
       if (pastScheduled > 0) counts['수업상태변경'] = (counts['수업상태변경'] ?? 0) + 1
       // 승인필요: 수업 완료됐는데 프로그램 승인 안 된 회원
       if (needApprovalSet.has(a.id)) counts['승인필요'] = (counts['승인필요'] ?? 0) + 1
+      if (a.is_watchlist) counts['관리대상'] = (counts['관리대상'] ?? 0) + 1
       if (a.status === '거부' || a.is_excluded) counts['거부/제외'] = (counts['거부/제외'] ?? 0) + 1
       if (a.sales_status === '연락두절') counts['연락두절'] = (counts['연락두절'] ?? 0) + 1
       if (a.sales_status === '스케줄미확정') counts['스케줄미확정'] = (counts['스케줄미확정'] ?? 0) + 1
@@ -475,6 +495,7 @@ export function TrainerCardList({ assignments, trainers = [], trainerId, trainer
         return pastSch > 0
       }
       if (filter === '승인필요') return needApprovalSet.has(a.id)
+      if (filter === '관리대상') return a.is_watchlist
       if (filter === '거부/제외') return a.status === '거부' || a.is_excluded
       if (filter === '연락두절') return a.sales_status === '연락두절'
       if (filter === '스케줄미확정') return a.sales_status === '스케줄미확정'
@@ -911,6 +932,7 @@ export function TrainerCardList({ assignments, trainers = [], trainerId, trainer
               const colorMap: Record<string, { active: string; inactive: string }> = {
                 '수업상태변경': { active: 'bg-amber-300 text-amber-900 border-amber-400', inactive: 'bg-amber-50 text-amber-700 border border-amber-200 hover:bg-amber-100' },
                 '승인필요': { active: 'bg-green-400 text-green-900 border-green-500', inactive: 'bg-green-50 text-green-700 border border-green-200 hover:bg-green-100' },
+                '관리대상': { active: 'bg-amber-500 text-white border-amber-600', inactive: 'bg-amber-50 text-amber-700 border border-amber-200 hover:bg-amber-100' },
                 '거부/제외': { active: 'bg-red-600 text-white border-red-700', inactive: 'bg-red-100 text-red-700 border border-red-300 hover:bg-red-200' },
               }
               const custom = colorMap[f]
@@ -1419,6 +1441,32 @@ export function TrainerCardList({ assignments, trainers = [], trainerId, trainer
                                   </div>
                                     )
                                   })()}
+
+                                  {/* 관리대상 토글 */}
+                                  <div className={`rounded-lg border p-3 ${a.is_watchlist ? 'border-amber-300 bg-amber-50/60' : 'border-gray-200 bg-gray-50/40'}`} onClick={(e) => e.stopPropagation()}>
+                                    <div className="flex items-center justify-between">
+                                      <p className="text-sm font-bold text-gray-800">관리대상</p>
+                                      <button
+                                        type="button"
+                                        className={`px-3 py-1 rounded-md text-xs font-bold border transition-colors ${a.is_watchlist ? 'bg-amber-500 text-white border-amber-600 hover:bg-amber-600' : 'bg-white text-gray-600 border-gray-300 hover:bg-amber-50 hover:border-amber-300 hover:text-amber-700'}`}
+                                        onClick={async () => {
+                                          if (a.is_watchlist) {
+                                            if (!confirm(`${a.member.name}님을 관리대상에서 해제하시겠습니까?`)) return
+                                            await updateOtAssignment(a.id, { is_watchlist: false, watchlist_reason: null })
+                                            router.refresh()
+                                          } else {
+                                            setWatchlistTarget(a)
+                                            setWatchlistReason('')
+                                          }
+                                        }}
+                                      >
+                                        {a.is_watchlist ? '해제' : '관리대상 지정'}
+                                      </button>
+                                    </div>
+                                    {a.is_watchlist && a.watchlist_reason && (
+                                      <p className="text-xs text-amber-700 mt-1"><span className="font-bold">사유:</span> {a.watchlist_reason}</p>
+                                    )}
+                                  </div>
 
                                   {/* 세일즈 정보 (통합) */}
                                   {(() => {
@@ -2979,6 +3027,40 @@ export function TrainerCardList({ assignments, trainers = [], trainerId, trainer
       </Dialog>}
 
       {/* 제외 사유 입력 다이얼로그 */}
+      {!!watchlistTarget && <Dialog open onOpenChange={() => setWatchlistTarget(null)}>
+        <DialogContent className="max-w-sm">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2 text-amber-600">
+              <AlertTriangle className="h-5 w-5" />
+              관리대상 지정 — {watchlistTarget?.member.name}
+            </DialogTitle>
+            <DialogDescription>관리대상 사유를 입력해주세요 (선택).</DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4">
+            <div className="space-y-2">
+              <Label>사유</Label>
+              <Textarea
+                value={watchlistReason}
+                onChange={(e) => setWatchlistReason(e.target.value)}
+                placeholder="관리가 필요한 사유를 입력해주세요 (선택)"
+                rows={3}
+                className="bg-white text-gray-900 border-gray-300"
+              />
+            </div>
+            <div className="flex justify-end gap-2">
+              <Button variant="outline" className="text-gray-900 border-gray-400 bg-gray-100 hover:bg-gray-200" onClick={() => setWatchlistTarget(null)}>취소</Button>
+              <Button
+                className="bg-amber-500 hover:bg-amber-600 text-white"
+                onClick={handleWatchlistToggle}
+                disabled={watchlistLoading}
+              >
+                {watchlistLoading ? '처리 중...' : '관리대상 지정'}
+              </Button>
+            </div>
+          </div>
+        </DialogContent>
+      </Dialog>}
+
       {!!excludeTarget && <Dialog open onOpenChange={() => setExcludeTarget(null)}>
         <DialogContent className="max-w-sm">
           <DialogHeader>

@@ -32,7 +32,7 @@ export async function getMembers(filters?: {
       .from('ot_assignments')
       .select(`
         id, status, ot_category, pt_trainer_id, ppt_trainer_id, sales_status, contact_status,
-        is_sales_target, is_pt_conversion, notes, pt_assign_status, ppt_assign_status, created_at,
+        is_sales_target, is_pt_conversion, is_watchlist, watchlist_reason, notes, pt_assign_status, ppt_assign_status, created_at,
         member:members!inner(id, name, phone, gender, ot_category, exercise_time, duration_months, detail_info, notes, registered_at, registration_source, is_existing_member, is_renewal, is_completed, start_date),
         pt_trainer:profiles!ot_assignments_pt_trainer_id_fkey(id, name),
         ppt_trainer:profiles!ot_assignments_ppt_trainer_id_fkey(id, name),
@@ -50,7 +50,11 @@ export async function getMembers(filters?: {
     }
 
     if (filters.status && filters.status !== 'all') {
-      query = query.eq('status', filters.status)
+      if (filters.status === 'watchlist') {
+        query = query.eq('is_watchlist', true)
+      } else {
+        query = query.eq('status', filters.status)
+      }
     }
 
     if (filters.from) {
@@ -92,7 +96,7 @@ export async function getMembers(filters?: {
       assignment:ot_assignments(
         id, status, ot_category, pt_trainer_id, ppt_trainer_id,
         sales_status, contact_status, is_sales_target, is_pt_conversion,
-        is_excluded, excluded_reason,
+        is_excluded, excluded_reason, is_watchlist, watchlist_reason,
         notes, pt_assign_status, ppt_assign_status, created_at,
         pt_trainer:profiles!ot_assignments_pt_trainer_id_fkey(id, name),
         ppt_trainer:profiles!ot_assignments_ppt_trainer_id_fkey(id, name),
