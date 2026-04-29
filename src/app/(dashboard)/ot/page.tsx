@@ -6,11 +6,10 @@ import { getAllOtPrograms } from '@/actions/ot-program'
 import { getOtRegistrationsByTrainer } from '@/actions/ot-registration'
 import { getTrainerScheduleSlots } from '@/actions/schedule'
 import { TrainerDetailTabs } from '@/components/ot/trainer-detail-tabs'
-import { FolderLoader } from './folder-loader'
 import { PageTitle } from '@/components/shared/page-title'
 import { NotificationBell } from '@/components/ot/notification-bell'
-import { ArrowLeft, Loader2 } from 'lucide-react'
-import Link from 'next/link'
+import { Loader2 } from 'lucide-react'
+import { redirect } from 'next/navigation'
 
 interface OtPageProps {
   searchParams: Promise<{ trainer?: string; tab?: string }>
@@ -18,17 +17,28 @@ interface OtPageProps {
 
 export default async function OtPage({ searchParams }: OtPageProps) {
   const params = await searchParams
-  const trainerId = params.trainer
+  let trainerId = params.trainer
   const tab = params.tab ?? 'schedule'
 
-  // 폴더 뷰 — 제목 즉시, 데이터는 클라이언트에서 로딩
+  // trainerId가 없으면 → 역할별 자동 진입
   if (!trainerId) {
-    return (
-      <div className="space-y-4">
-        <PageTitle>트레이너 관리</PageTitle>
-        <FolderLoader />
-      </div>
+    const profile = await getCurrentProfile()
+    if (!profile) redirect('/login')
+
+    const isAdmin = ['admin', '관리자'].includes(profile.role)
+
+    if (!isAdmin) {
+      // 트레이너/FC → 바로 자기 스케줄로 이동
+      redirect(`/ot?trainer=${profile.id}&tab=schedule`)
+    }
+
+    // 관리자 → 첫 번째 트레이너로 자동 진입
+    const staffList = await getStaffList()
+    const firstTrainer = staffList.find((s) =>
+      ['trainer', '강사', '팀장'].includes(s.role) && s.is_approved
     )
+    trainerId = firstTrainer?.id ?? 'unassigned'
+    redirect(`/ot?trainer=${trainerId}&tab=schedule`)
   }
 
   // 트레이너 상세 — 쉘 먼저 표시, 콘텐츠는 스트리밍
@@ -73,12 +83,6 @@ async function TrainerDetailView({ trainerId, tab }: { trainerId: string; tab: s
     console.error('[OtPage] Error loading trainer data:', err)
     return (
       <div className="space-y-4">
-        <div className="flex items-center gap-3">
-          <Link href="/ot" className="flex items-center gap-1 text-sm text-muted-foreground hover:text-foreground transition-colors">
-            <ArrowLeft className="h-4 w-4" />
-            전체 목록
-          </Link>
-        </div>
         <div className="rounded-lg border border-red-200 bg-red-50 p-6 text-center">
           <p className="text-red-700 font-medium">데이터를 불러오는 중 오류가 발생했습니다</p>
           <p className="text-sm text-red-500 mt-1">{err instanceof Error ? err.message : '알 수 없는 오류'}</p>
@@ -87,9 +91,20 @@ async function TrainerDetailView({ trainerId, tab }: { trainerId: string; tab: s
     )
   }
 
+  const isAdmin = profile && ['admin', '관리자'].includes(profile.role)
+
   const allTrainers = staffList
     .filter((s) => !['admin'].includes(s.role))
     .map((s) => ({ id: s.id, name: s.name }))
+
+  // 관리자용 드롭다운 옵션: 트레이너 + 미배정 + 제외회원
+  const trainerOptions = [
+    ...staffList
+      .filter((s) => ['trainer', '강사', '팀장'].includes(s.role) && s.is_approved)
+      .map((s) => ({ id: s.id, name: s.name })),
+    { id: 'unassigned', name: '미배정' },
+    { id: 'excluded', name: '제외회원' },
+  ]
 
   const trainerName = trainerId === 'unassigned'
     ? '미배정'
@@ -97,28 +112,13 @@ async function TrainerDetailView({ trainerId, tab }: { trainerId: string; tab: s
       ? '제외회원'
       : staffList.find((s) => s.id === trainerId)?.name ?? '트레이너'
 
-  const myRole = profile ? (() => {
-    const isPT = trainerAssignments.some((a) => a.pt_trainer_id === profile.id)
-    const isPPT = trainerAssignments.some((a) => a.ppt_trainer_id === profile.id)
-    if (isPT && isPPT) return 'PT / PPT 담당'
-    if (isPT) return 'PT 담당'
-    if (isPPT) return 'PPT 담당'
-    if (profile.role === 'admin') return '관리자'
-    return ''
-  })() : ''
-
   const trainerPrograms = allPrograms.filter((p) => p.trainer_name === trainerName)
 
   return (
     <div className="space-y-4">
       <div className="flex items-center gap-3">
-        <Link href="/ot" className="flex items-center gap-1 text-sm text-muted-foreground hover:text-foreground transition-colors">
-          <ArrowLeft className="h-4 w-4" />
-          전체 목록
-        </Link>
         <div>
           <PageTitle>{trainerName}</PageTitle>
-          {myRole && <p className="text-xs text-blue-500 font-medium">{myRole}</p>}
         </div>
         <div className="ml-auto">
           <NotificationBell assignments={trainerAssignments} programs={trainerPrograms} />
@@ -137,6 +137,8 @@ async function TrainerDetailView({ trainerId, tab }: { trainerId: string; tab: s
         workEndTime={staffList.find((s) => s.id === trainerId)?.work_end_time ?? null}
         initialPrograms={trainerPrograms}
         initialRegistrations={trainerRegistrations}
+        isAdmin={!!isAdmin}
+        trainerOptions={trainerOptions}
       />
     </div>
   )

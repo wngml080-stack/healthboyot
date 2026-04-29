@@ -3,7 +3,7 @@
 import { useState, useCallback, useTransition } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
 import { cn } from '@/lib/utils'
-import { Users, CalendarDays, BarChart3, Loader2 } from 'lucide-react'
+import { Users, CalendarDays, BarChart3, Loader2, ChevronDown } from 'lucide-react'
 import { TrainerCardList } from './trainer-card-list'
 import { WeeklyCalendar } from './weekly-calendar'
 import { TrainerStats } from './trainer-stats'
@@ -29,12 +29,15 @@ interface Props {
   workEndTime: string | null
   initialPrograms: OtProgram[]
   initialRegistrations: OtRegistration[]
+  isAdmin?: boolean
+  trainerOptions?: { id: string; name: string }[]
 }
 
 export function TrainerDetailTabs({
   trainerId, trainerName, initialTab, assignments, trainers,
   profile, initialSchedules, workStartTime, workEndTime,
   initialPrograms, initialRegistrations,
+  isAdmin, trainerOptions,
 }: Props) {
   const router = useRouter()
   const searchParams = useSearchParams()
@@ -57,14 +60,12 @@ export function TrainerDetailTabs({
     if (tabKey === activeTab) return
     setActiveTab(tabKey)
 
-    // URL도 업데이트 (뒤로가기 지원) — 서버 재요청 없이 shallow하게
     const params = new URLSearchParams(searchParams.toString())
     params.set('tab', tabKey)
     startTransition(() => {
       router.replace(`/ot?${params.toString()}`, { scroll: false })
     })
 
-    // stats 탭 첫 진입 시 추가 데이터 로딩
     if (tabKey === 'stats' && !statsData.loaded) {
       setStatsLoading(true)
       Promise.all([
@@ -79,72 +80,99 @@ export function TrainerDetailTabs({
     }
   }, [activeTab, searchParams, router, startTransition, statsData.loaded, trainerId])
 
+  // 관리자: 트레이너 변경 시 페이지 이동
+  const switchTrainer = useCallback((newTrainerId: string) => {
+    if (newTrainerId === trainerId) return
+    router.push(`/ot?trainer=${newTrainerId}&tab=${activeTab}`)
+  }, [trainerId, activeTab, router])
+
   const trainerPrograms = statsData.programs.filter((p) => p.trainer_name === trainerName)
 
   return (
-    <div className="flex flex-col lg:flex-row gap-4 lg:gap-6">
-      {/* 탭 네비게이션 — 클라이언트 사이드 전환 */}
-      <nav className="w-full lg:w-44 lg:shrink-0 flex lg:flex-col gap-1 overflow-x-auto pb-2 lg:pb-0">
-        {TABS.map((tab) => {
-          const Icon = tab.icon
-          const isActive = activeTab === tab.key
-          return (
-            <button
-              key={tab.key}
-              onClick={() => switchTab(tab.key)}
-              className={cn(
-                'flex items-center gap-2 rounded-lg px-3 py-2 md:py-2.5 text-sm font-medium transition-all whitespace-nowrap',
-                isActive
-                  ? 'bg-yellow-400 text-black shadow-sm'
-                  : 'text-gray-400 hover:bg-white/10 hover:text-white'
-              )}
+    <div className="space-y-3">
+      {/* 관리자용 트레이너 선택 드롭다운 */}
+      {isAdmin && trainerOptions && trainerOptions.length > 0 && (
+        <div className="flex items-center gap-3">
+          <div className="relative">
+            <select
+              value={trainerId}
+              onChange={(e) => switchTrainer(e.target.value)}
+              className="appearance-none bg-gray-800 border border-gray-600 text-white rounded-lg pl-3 pr-8 py-2 text-sm font-medium focus:outline-none focus:ring-2 focus:ring-yellow-400 cursor-pointer"
             >
-              <Icon className="h-4 w-4" />
-              {tab.label}
-            </button>
-          )
-        })}
-      </nav>
+              {trainerOptions.map((t) => (
+                <option key={t.id} value={t.id}>{t.name}</option>
+              ))}
+            </select>
+            <ChevronDown className="absolute right-2 top-1/2 -translate-y-1/2 h-4 w-4 text-gray-400 pointer-events-none" />
+          </div>
+          <span className="text-xs text-gray-500">담당자 변경</span>
+        </div>
+      )}
 
-      {/* 탭 콘텐츠 */}
-      <div className="flex-1 min-w-0">
-        {activeTab === 'members' && (
-          <TrainerCardList
-            assignments={assignments}
-            trainers={trainers}
-            trainerId={trainerId}
-            trainerName={trainerName}
-            profile={profile}
-            initialSchedules={initialSchedules}
-          />
-        )}
+      <div className="flex flex-col lg:flex-row gap-4 lg:gap-6">
+        {/* 탭 네비게이션 */}
+        <nav className="w-full lg:w-44 lg:shrink-0 flex lg:flex-col gap-1 overflow-x-auto pb-2 lg:pb-0">
+          {TABS.map((tab) => {
+            const Icon = tab.icon
+            const isActive = activeTab === tab.key
+            return (
+              <button
+                key={tab.key}
+                onClick={() => switchTab(tab.key)}
+                className={cn(
+                  'flex items-center gap-2 rounded-lg px-3 py-2 md:py-2.5 text-sm font-medium transition-all whitespace-nowrap',
+                  isActive
+                    ? 'bg-yellow-400 text-black shadow-sm'
+                    : 'text-gray-400 hover:bg-white/10 hover:text-white'
+                )}
+              >
+                <Icon className="h-4 w-4" />
+                {tab.label}
+              </button>
+            )
+          })}
+        </nav>
 
-        {activeTab === 'schedule' && (
-          <WeeklyCalendar
-            assignments={assignments}
-            trainerId={trainerId}
-            profile={profile}
-            workStartTime={workStartTime}
-            workEndTime={workEndTime}
-          />
-        )}
-
-        {activeTab === 'stats' && (
-          statsLoading ? (
-            <div className="flex items-center justify-center py-20 text-gray-400 gap-2">
-              <Loader2 className="h-5 w-5 animate-spin" />
-              <span className="text-sm">통계 데이터 로드 중...</span>
-            </div>
-          ) : (
-            <TrainerStats
+        {/* 탭 콘텐츠 */}
+        <div className="flex-1 min-w-0">
+          {activeTab === 'members' && (
+            <TrainerCardList
               assignments={assignments}
-              trainerName={trainerName}
-              programs={trainerPrograms}
-              registrations={statsData.registrations}
+              trainers={trainers}
               trainerId={trainerId}
+              trainerName={trainerName}
+              profile={profile}
+              initialSchedules={initialSchedules}
             />
-          )
-        )}
+          )}
+
+          {activeTab === 'schedule' && (
+            <WeeklyCalendar
+              assignments={assignments}
+              trainerId={trainerId}
+              profile={profile}
+              workStartTime={workStartTime}
+              workEndTime={workEndTime}
+            />
+          )}
+
+          {activeTab === 'stats' && (
+            statsLoading ? (
+              <div className="flex items-center justify-center py-20 text-gray-400 gap-2">
+                <Loader2 className="h-5 w-5 animate-spin" />
+                <span className="text-sm">통계 데이터 로드 중...</span>
+              </div>
+            ) : (
+              <TrainerStats
+                assignments={assignments}
+                trainerName={trainerName}
+                programs={trainerPrograms}
+                registrations={statsData.registrations}
+                trainerId={trainerId}
+              />
+            )
+          )}
+        </div>
       </div>
     </div>
   )
