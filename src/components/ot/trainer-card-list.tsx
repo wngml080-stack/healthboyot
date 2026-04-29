@@ -18,7 +18,7 @@ import {
 } from '@/components/ui/dialog'
 import { CheckCircle, User, AlertTriangle, BarChart3, CalendarDays, ClipboardList, Pencil, Plus, Undo2, UserPlus, Target, HeartPulse, Dumbbell, Phone, Download, Ban } from 'lucide-react'
 import { Textarea } from '@/components/ui/textarea'
-import { upsertOtSession, updateOtAssignment, deleteOtSession } from '@/actions/ot'
+import { upsertOtSession, updateOtAssignment, deleteOtSession, repairSessionNumbers } from '@/actions/ot'
 import { getOtProgram, getAssignmentExpandData, batchGetOtPrograms, approveOtSession, unsubmitOtSession } from '@/actions/ot-program'
 import { quickRegisterMember } from '@/actions/members'
 import { createClient } from '@/lib/supabase/client'
@@ -739,7 +739,7 @@ export function TrainerCardList({ assignments, trainers = [], trainerId, trainer
         if (scheduledSessions.length > 0) {
           const nextStart = new Date(scheduledSessions[0].scheduled_at!); nextStart.setHours(0, 0, 0, 0)
           const daysUntil = Math.floor((nextStart.getTime() - todayStart.getTime()) / (1000 * 60 * 60 * 24))
-          ddayMap.set(a.id, { text: `수업예정 D${daysUntil <= 0 ? daysUntil : `-${daysUntil}`}`, color: 'text-blue-600' })
+          ddayMap.set(a.id, { text: `수업예정 ${daysUntil === 0 ? 'D-Day' : daysUntil > 0 ? `D-${daysUntil}` : `D+${Math.abs(daysUntil)}`}`, color: 'text-blue-600' })
         } else {
           const completedSessions = (a.sessions ?? []).filter((s) => s.completed_at).sort((x, y) => (y.scheduled_at ?? y.completed_at ?? '').localeCompare(x.scheduled_at ?? x.completed_at ?? ''))
           if (completedSessions.length > 0) {
@@ -1930,7 +1930,18 @@ export function TrainerCardList({ assignments, trainers = [], trainerId, trainer
                           {/* 관리자 전용: 차수별 승인 회수 + 스케줄 삭제 */}
                           {isAdmin && (a.sessions?.length ?? 0) > 0 && (
                             <div className="rounded-lg border border-red-200 bg-red-50/30 p-3 space-y-2" onClick={(e) => e.stopPropagation()}>
-                              <p className="text-xs font-bold text-red-600">관리자 전용</p>
+                              <div className="flex items-center justify-between">
+                                <p className="text-xs font-bold text-red-600">관리자 전용</p>
+                                <button
+                                  className="text-[10px] text-blue-600 hover:text-blue-800 font-bold bg-blue-50 px-2 py-0.5 rounded border border-blue-200"
+                                  onClick={async () => {
+                                    const result = await repairSessionNumbers(a.id)
+                                    alert(`데이터 정리: ${result.message}`)
+                                    setExpandedData((prev) => { const copy = { ...prev }; delete copy[a.id]; return copy })
+                                    router.refresh()
+                                  }}
+                                >데이터 정리</button>
+                              </div>
                               <div className="flex flex-wrap gap-2">
                                 {(a.sessions ?? []).sort((x, y) => x.session_number - y.session_number).map((s) => {
                                   const n = s.session_number

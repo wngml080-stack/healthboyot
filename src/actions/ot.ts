@@ -531,6 +531,64 @@ export async function deleteOtSession(assignmentId: string, sessionNumber: numbe
   return { success: true }
 }
 
+// 세션 번호 재정렬 + 프로그램 동기화 (데이터 꼬임 복구)
+export async function repairSessionNumbers(assignmentId: string) {
+  if (isDemoMode()) return { success: true, message: '데모 모드' }
+
+  const supabase = await createClient()
+
+  // 1) 현재 ot_sessions 조회 (번호순)
+  const { data: sessions } = await supabase
+    .from('ot_sessions')
+    .select('id, session_number, scheduled_at, completed_at')
+    .eq('ot_assignment_id', assignmentId)
+    .order('session_number')
+
+  if (!sessions || sessions.length === 0) return { success: true, message: '세션 없음' }
+
+  // 2) 번호에 빈 구간이 있는지 확인하고 재정렬
+  const fixes: string[] = []
+  for (let i = 0; i < sessions.length; i++) {
+    const expected = i + 1
+    if (sessions[i].session_number !== expected) {
+      fixes.push(`${sessions[i].session_number}차 → ${expected}차`)
+      await supabase.from('ot_sessions').update({ session_number: expected }).eq('id', sessions[i].id)
+    }
+  }
+
+  // 3) 프로그램 세션 배열도 동기화
+  const { data: program } = await supabase
+    .from('ot_programs')
+    .select('id, sessions')
+    .eq('assignment_id', assignmentId)
+    .single()
+
+  if (program?.sessions && Array.isArray(program.sessions)) {
+    const progSessions = program.sessions as Record<string, unknown>[]
+    // 프로그램 세션이 ot_sessions보다 많으면 → 빈 세션 제거
+    // completed가 아니고 date도 없는 빈 세션을 뒤에서부터 제거
+    let trimmed = [...progSessions]
+    while (trimmed.length > sessions.length) {
+      const last = trimmed[trimmed.length - 1]
+      const isEmpty = !last.completed && !last.date
+      if (isEmpty) {
+        trimmed.pop()
+      } else {
+        break
+      }
+    }
+    if (trimmed.length !== progSessions.length) {
+      fixes.push(`프로그램 세션 ${progSessions.length}개 → ${trimmed.length}개로 정리`)
+      await supabase.from('ot_programs').update({
+        sessions: trimmed,
+        updated_at: new Date().toISOString(),
+      }).eq('id', program.id)
+    }
+  }
+
+  return { success: true, message: fixes.length > 0 ? fixes.join(', ') : '이상 없음' }
+}
+
 export async function getTrainers() {
   if (isDemoMode()) {
     return [
