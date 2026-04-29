@@ -356,6 +356,7 @@ export async function moveOtSchedule(params: {
   newScheduledAtIso: string
   newDateStr: string
   newTimeStr: string
+  newDuration?: number
 }) {
   if (isDemoMode()) return { success: true }
 
@@ -389,9 +390,11 @@ export async function moveOtSchedule(params: {
     .eq('ot_session_id', params.ot_session_id)
 
   for (const row of tsRows ?? []) {
+    const tsUpdate: Record<string, unknown> = { scheduled_date: params.newDateStr, start_time: params.newTimeStr }
+    if (params.newDuration) tsUpdate.duration = params.newDuration
     await supabase
       .from('trainer_schedules')
-      .update({ scheduled_date: params.newDateStr, start_time: params.newTimeStr })
+      .update(tsUpdate)
       .eq('id', row.id)
   }
 
@@ -414,7 +417,9 @@ export async function moveOtSchedule(params: {
         const idx = otSession.session_number - 1
         if (idx >= 0 && idx < prog.sessions.length) {
           const updated = [...prog.sessions]
-          updated[idx] = { ...updated[idx], date: params.newDateStr, time: params.newTimeStr }
+          const patch: Record<string, unknown> = { date: params.newDateStr, time: params.newTimeStr }
+          if (params.newDuration) patch.class_duration = params.newDuration
+          updated[idx] = { ...updated[idx], ...patch }
           await supabase.from('ot_programs').update({ sessions: updated }).eq('id', prog.id)
         }
       }

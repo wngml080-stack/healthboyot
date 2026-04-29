@@ -267,6 +267,7 @@ function buildPtNote(opts: {
 
 export function WeeklyCalendar({ assignments, trainerId, profile, workStartTime, workEndTime }: Props) {
   const router = useRouter()
+  const isAdmin = profile && ['admin', '관리자', '개발자'].includes(profile.role)
   const [weekOffset, setWeekOffset] = useState(0)
   const [viewMode, setViewMode] = useState<'week' | 'month'>('week')
   const [monthOffset, setMonthOffset] = useState(0)
@@ -537,10 +538,10 @@ export function WeeklyCalendar({ assignments, trainerId, profile, workStartTime,
   // - OT: 매칭되는 ot_session이 완료되지 않았을 때 (ot_session_id 매칭 못 찾으면 fallback으로 허용)
   // - 그 외 (PT/PPT/회의/식사 등): 항상 허용
   const canDragSchedule = useCallback((s: ScheduleItem): boolean => {
-    // 승인된 OT 세션은 드래그 불가
-    if (isOtApproved(s)) return false
+    // 승인된 OT 세션은 드래그 불가 (관리자/개발자는 예외)
+    if (isOtApproved(s) && !isAdmin) return false
     return true
-  }, [isOtApproved])
+  }, [isOtApproved, isAdmin])
 
   // ── 근무시간 판별: 주말/공휴일은 항상 IN, 평일은 근무시간 내만 IN ──
   const hasWorkHours = !!(workStartTime && workEndTime)
@@ -853,8 +854,8 @@ export function WeeklyCalendar({ assignments, trainerId, profile, workStartTime,
     // 삭제 대상 스케줄 정보 보존
     const target = schedules.find((s) => s.id === id)
 
-    // 승인된 OT 세션은 삭제 불가
-    if (target && isOtApproved(target)) {
+    // 승인된 OT 세션은 삭제 불가 (관리자/개발자는 예외)
+    if (target && isOtApproved(target) && !isAdmin) {
       alert('승인이 완료된 OT 세션은 삭제할 수 없습니다.\n관리자에게 요청해주세요.')
       return
     }
@@ -896,8 +897,8 @@ export function WeeklyCalendar({ assignments, trainerId, profile, workStartTime,
       setEditPtMemo(parsed.memo)
       return
     }
-    // 승인된 OT 세션은 수정 불가
-    if (isOtApproved(schedule)) {
+    // 승인된 OT 세션은 수정 불가 (관리자/개발자는 예외)
+    if (isOtApproved(schedule) && !isAdmin) {
       alert('승인이 완료된 OT 세션은 수정할 수 없습니다.\n관리자에게 요청해주세요.')
       return
     }
@@ -1158,18 +1159,12 @@ export function WeeklyCalendar({ assignments, trainerId, profile, workStartTime,
         newScheduledAtIso: newScheduledAt,
         newDateStr: editDate,
         newTimeStr: editTime,
+        newDuration: editDuration !== editSchedule.duration ? editDuration : undefined,
       })
       if ('error' in result && result.error) {
         alert('수정 실패: ' + result.error)
         setEditSaving(false)
         return
-      }
-      // duration 변경 — trainer_schedules의 같은 ot_session_id 행 모두에 적용
-      if (editDuration !== editSchedule.duration) {
-        await supabaseRef.current
-          .from('trainer_schedules')
-          .update({ duration: editDuration })
-          .eq('ot_session_id', editSchedule.ot_session_id)
       }
     } else {
       // OT가 아닌 일정 — 단일 row update
@@ -1583,10 +1578,6 @@ export function WeeklyCalendar({ assignments, trainerId, profile, workStartTime,
                               {isSales && <span className="text-yellow-500">★ </span>}
                               {s.schedule_type}
                               {s.member_name ? ` ${s.member_name}` : ''}
-                              {s.schedule_type === 'OT' && s.ot_session_id && matched && (() => {
-                                const otSession = matched.sessions?.find((os) => os.id === s.ot_session_id)
-                                return otSession ? <span className="text-[10px] opacity-70 ml-0.5">({otSession.session_number}차)</span> : null
-                              })()}
                             </p>
                             {ptResult && (
                               <p className={`text-[10px] font-bold ${PT_RESULT_TEXT_COLORS[ptResult as PtClassResult] ?? 'text-gray-700'}`}>
@@ -1599,7 +1590,12 @@ export function WeeklyCalendar({ assignments, trainerId, profile, workStartTime,
                               </p>
                             )}
                             <p className="text-[10px] opacity-70">
-                              {s.start_time} · {s.duration}분
+                              {s.start_time}
+                              {s.schedule_type === 'OT' && s.ot_session_id && matched && (() => {
+                                const os = matched.sessions?.find((o) => o.id === s.ot_session_id)
+                                return os ? ` ${os.session_number}차` : ''
+                              })()}
+                              {` · ${s.duration}분`}
                               {amount ? ` · ${amount}만` : ''}
                             </p>
                           </div>
