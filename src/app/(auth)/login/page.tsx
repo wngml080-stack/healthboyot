@@ -1,6 +1,7 @@
 'use client'
 
 import { useState, useEffect } from 'react'
+import { useRouter } from 'next/navigation'
 import { useForm } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
 import { loginSchema, type LoginFormValues } from '@/lib/validators'
@@ -13,6 +14,7 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Separator } from '@/components/ui/separator'
 
 export default function LoginPage() {
+  const router = useRouter()
   const [mode, setMode] = useState<'login' | 'signup'>('login')
   const [error, setError] = useState<string | null>(null)
   const [success, setSuccess] = useState<string | null>(null)
@@ -63,6 +65,10 @@ export default function LoginPage() {
           setError(result.error)
         }
         setLoading(false)
+      } else {
+        // 쿠키가 설정된 후 라우터 갱신 → 미들웨어가 세션을 인식
+        router.refresh()
+        router.push('/ot')
       }
     } else {
       const result = await signUp({

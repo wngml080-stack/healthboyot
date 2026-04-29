@@ -21,7 +21,7 @@ export async function signIn(formData: { email: string; password: string }) {
       maxAge: 60 * 60 * 24,
     })
 
-    redirect('/ot')
+    return { success: true }
   }
 
   console.log('[signIn] start:', formData.email)
@@ -61,8 +61,8 @@ export async function signIn(formData: { email: string; password: string }) {
     console.error('[signIn] profile check error:', err)
   }
 
-  console.log('[signIn] redirecting to /ot')
-  redirect('/ot')
+  console.log('[signIn] success, returning redirect')
+  return { success: true }
 }
 
 export async function signUp(formData: { email: string; password: string; name: string }) {
