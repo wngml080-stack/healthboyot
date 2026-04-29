@@ -484,6 +484,15 @@ export async function deleteOtSession(assignmentId: string, sessionNumber: numbe
 
   const supabase = await createClient()
 
+  // ot_session 조회 (trainer_schedules 삭제를 위해 id 필요)
+  const { data: session } = await supabase
+    .from('ot_sessions')
+    .select('id')
+    .eq('ot_assignment_id', assignmentId)
+    .eq('session_number', sessionNumber)
+    .single()
+
+  // ot_sessions 삭제
   const { error } = await supabase
     .from('ot_sessions')
     .delete()
@@ -491,6 +500,12 @@ export async function deleteOtSession(assignmentId: string, sessionNumber: numbe
     .eq('session_number', sessionNumber)
 
   if (error) return { error: error.message }
+
+  // trainer_schedules도 함께 삭제
+  if (session?.id) {
+    await supabase.from('trainer_schedules').delete().eq('ot_session_id', session.id)
+  }
+
   return { success: true }
 }
 

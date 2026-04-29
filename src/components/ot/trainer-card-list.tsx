@@ -19,7 +19,7 @@ import {
 import { CheckCircle, User, AlertTriangle, BarChart3, CalendarDays, ClipboardList, Pencil, Plus, Undo2, UserPlus, Target, HeartPulse, Dumbbell, Phone, Download, Ban } from 'lucide-react'
 import { Textarea } from '@/components/ui/textarea'
 import { upsertOtSession, updateOtAssignment, deleteOtSession } from '@/actions/ot'
-import { getOtProgram, getAssignmentExpandData, batchGetOtPrograms, approveOtSession } from '@/actions/ot-program'
+import { getOtProgram, getAssignmentExpandData, batchGetOtPrograms, approveOtSession, unsubmitOtSession } from '@/actions/ot-program'
 import { quickRegisterMember } from '@/actions/members'
 import { createClient } from '@/lib/supabase/client'
 import dynamic from 'next/dynamic'
@@ -753,7 +753,8 @@ export function TrainerCardList({ assignments, trainers = [], trainerId, trainer
           }
         }
         // New 뱃지
-        isNewMap.set(a.id, !!(a.created_at && (todayStart.getTime() + 86400000 - new Date(a.created_at).getTime()) < 3 * 86400000))
+        const assignDate = a.assigned_at || a.created_at
+        isNewMap.set(a.id, !!(assignDate && (todayStart.getTime() + 86400000 - new Date(assignDate).getTime()) < 3 * 86400000))
       }
     }
     return { infoMap, logMap, ddayMap, isNewMap }
@@ -1925,6 +1926,42 @@ export function TrainerCardList({ assignments, trainers = [], trainerId, trainer
                               로그기록
                             </Button>
                           </div>
+
+                          {/* 관리자 전용: 차수별 승인 회수 + 스케줄 삭제 */}
+                          {isAdmin && (a.sessions?.length ?? 0) > 0 && (
+                            <div className="rounded-lg border border-red-200 bg-red-50/30 p-3 space-y-2" onClick={(e) => e.stopPropagation()}>
+                              <p className="text-xs font-bold text-red-600">관리자 전용</p>
+                              <div className="flex flex-wrap gap-2">
+                                {(a.sessions ?? []).sort((x, y) => x.session_number - y.session_number).map((s) => {
+                                  const n = s.session_number
+                                  const isDone = !!s.completed_at
+                                  const isScheduled = !!s.scheduled_at
+                                  return (
+                                    <div key={s.id} className="flex items-center gap-1 bg-white rounded border border-gray-200 px-2 py-1">
+                                      <span className="text-xs font-bold text-gray-700">{n}차</span>
+                                      {isDone && <span className="text-[10px] text-green-600">완료</span>}
+                                      {!isDone && isScheduled && <span className="text-[10px] text-blue-600">예정</span>}
+                                      <button
+                                        className="text-[10px] text-red-500 hover:text-red-700 font-bold ml-1"
+                                        onClick={async () => {
+                                          if (!confirm(`${a.member.name} ${n}차 OT를 삭제하시겠습니까?\n(스케줄 + 세션 모두 삭제됩니다)`)) return
+                                          await deleteOtSession(a.id, n)
+                                          // 승인도 회수 (프로그램에서)
+                                          const ex = expandedData[a.id]
+                                          const pid = ex && ex !== 'loading' ? ex.program?.id : null
+                                          if (pid) await unsubmitOtSession(pid, n - 1)
+                                          setExpandedData((prev) => { const copy = { ...prev }; delete copy[a.id]; return copy })
+                                          router.refresh()
+                                        }}
+                                      >
+                                        삭제
+                                      </button>
+                                    </div>
+                                  )
+                                })}
+                              </div>
+                            </div>
+                          )}
                         </div>
                       )}
                     </div>
