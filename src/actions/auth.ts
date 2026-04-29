@@ -21,7 +21,7 @@ export async function signIn(formData: { email: string; password: string }) {
       maxAge: 60 * 60 * 24,
     })
 
-    redirect('/ot')
+    return { success: true, redirect: '/ot' }
   }
 
   const supabase = await createClient()
@@ -37,29 +37,30 @@ export async function signIn(formData: { email: string; password: string }) {
 
   // 승인 여부 확인
   if (data.user) {
-    const { data: profile } = await supabase
-      .from('profiles')
-      .select('is_approved, role')
-      .eq('id', data.user.id)
-      .single()
+    try {
+      const { data: profile } = await supabase
+        .from('profiles')
+        .select('is_approved, role')
+        .eq('id', data.user.id)
+        .single()
 
-    // admin은 항상 승인
-    if (profile && !profile.is_approved && profile.role !== 'admin' && profile.role !== '관리자') {
-      await supabase.auth.signOut()
-      return { error: 'NOT_APPROVED' }
-    }
+      if (profile && !profile.is_approved && profile.role !== 'admin' && profile.role !== '관리자') {
+        await supabase.auth.signOut()
+        return { error: 'NOT_APPROVED' }
+      }
 
-    // role을 user_metadata에 저장 (미들웨어에서 DB 조회 없이 사용)
-    // 이미 동일한 role이 metadata에 있으면 updateUser 호출 생략 (~150ms 절감)
-    const currentRole = data.user.user_metadata?.role as string | undefined
-    if (profile?.role && currentRole !== profile.role) {
-      await supabase.auth.updateUser({
-        data: { role: profile.role },
-      })
+      const currentRole = data.user.user_metadata?.role as string | undefined
+      if (profile?.role && currentRole !== profile.role) {
+        await supabase.auth.updateUser({
+          data: { role: profile.role },
+        })
+      }
+    } catch (err) {
+      console.error('signIn profile check error:', err)
     }
   }
 
-  redirect('/ot')
+  return { success: true, redirect: '/ot' }
 }
 
 export async function signUp(formData: { email: string; password: string; name: string }) {
