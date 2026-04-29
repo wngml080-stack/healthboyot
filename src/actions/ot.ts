@@ -17,6 +17,8 @@ export interface UpdateOtAssignmentValues {
   is_excluded?: boolean
   excluded_reason?: string | null
   excluded_at?: string | null
+  is_watchlist?: boolean
+  watchlist_reason?: string | null
   sales_status?: SalesStatus | string | null
   sales_note?: string | null
   is_sales_target?: boolean
@@ -52,7 +54,7 @@ export async function getOtAssignments(params?: {
       contact_status, sales_status, expected_amount, expected_sessions,
       closing_probability, closing_fail_reason, sales_note,
       is_sales_target, is_pt_conversion, pt_assign_status, ppt_assign_status,
-      is_excluded, excluded_reason, excluded_at, assigned_at,
+      is_excluded, excluded_reason, excluded_at, is_watchlist, watchlist_reason, assigned_at,
       created_at, updated_at,
       member:members!inner(id, name, phone, ot_category, exercise_time, duration_months, detail_info, notes, registered_at, registration_source, is_existing_member, gender, start_date, is_completed),
       pt_trainer:profiles!ot_assignments_pt_trainer_id_fkey(id, name),
@@ -96,7 +98,7 @@ export async function getOtAssignment(id: string): Promise<OtAssignmentWithDetai
       contact_status, sales_status, expected_amount, expected_sessions,
       closing_probability, closing_fail_reason, sales_note,
       is_sales_target, is_pt_conversion, pt_assign_status, ppt_assign_status,
-      is_excluded, excluded_reason, excluded_at, assigned_at,
+      is_excluded, excluded_reason, excluded_at, is_watchlist, watchlist_reason, assigned_at,
       created_at, updated_at,
       member:members!inner(id, name, phone, gender, sports, ot_category, exercise_time, duration_months, injury_tags, detail_info, notes, registered_at, registration_source, is_existing_member, start_date, is_completed),
       pt_trainer:profiles!ot_assignments_pt_trainer_id_fkey(id, name),
@@ -542,7 +544,7 @@ export async function repairSessionNumbers(assignmentId: string) {
 
   const supabase = await createClient()
 
-  // 1) 현재 ot_sessions 조회 (번호순)
+  // 1) 현재 ot_sessions 조회
   const { data: sessions } = await supabase
     .from('ot_sessions')
     .select('id, session_number, scheduled_at, completed_at')
@@ -551,16 +553,35 @@ export async function repairSessionNumbers(assignmentId: string) {
 
   const sessionCount = sessions?.length ?? 0
 
-  // 2) 번호에 빈 구간이 있는지 확인하고 재정렬
+  // 2) 날짜(scheduled_at) 순으로 정렬한 뒤 session_number 재부여
+  //    날짜가 없는 세션은 뒤로 보냄
   const fixes: string[] = []
   if (sessions) {
-    for (let i = 0; i < sessions.length; i++) {
-      const expected = i + 1
-      if (sessions[i].session_number !== expected) {
-        fixes.push(`${sessions[i].session_number}차 → ${expected}차`)
-        await supabase.from('ot_sessions').update({ session_number: expected }).eq('id', sessions[i].id)
+    const sorted = [...sessions].sort((a, b) => {
+      if (!a.scheduled_at && !b.scheduled_at) return a.session_number - b.session_number
+      if (!a.scheduled_at) return 1
+      if (!b.scheduled_at) return -1
+      return new Date(a.scheduled_at).getTime() - new Date(b.scheduled_at).getTime()
+    })
+
+    // 충돌 방지: 먼저 임시 번호(100+i)로 변경 후 최종 번호 부여
+    const needsReorder = sorted.some((s, i) => s.session_number !== i + 1)
+    if (needsReorder) {
+      for (let i = 0; i < sorted.length; i++) {
+        await supabase.from('ot_sessions').update({ session_number: 100 + i }).eq('id', sorted[i].id)
+      }
+      for (let i = 0; i < sorted.length; i++) {
+        const expected = i + 1
+        if (sorted[i].session_number !== expected) {
+          fixes.push(`${sorted[i].session_number}차 → ${expected}차 (날짜순 정렬)`)
+        }
+        await supabase.from('ot_sessions').update({ session_number: expected }).eq('id', sorted[i].id)
       }
     }
+
+    // sessions 배열도 정렬 결과로 교체 (이후 프로그램 동기화에 사용)
+    sessions.length = 0
+    sorted.forEach((s, i) => { sessions.push({ ...s, session_number: i + 1 }) })
   }
 
   // 3) 프로그램 세션 배열 동기화
@@ -571,8 +592,35 @@ export async function repairSessionNumbers(assignmentId: string) {
     .single()
 
   if (program?.sessions && Array.isArray(program.sessions)) {
-    const progSessions = [...program.sessions] as Record<string, unknown>[]
+    let progSessions = [...program.sessions] as Record<string, unknown>[]
     let changed = false
+
+    // 날짜순 재정렬이 일어났으면 프로그램 세션 배열도 같은 순서로 재배치
+    if (sessions && fixes.some((f) => f.includes('날짜순 정렬'))) {
+      // sessions는 이미 날짜순으로 정렬된 상태 — 원래 session_number(정렬 전)를 기반으로 프로그램 배열 재배치
+      // sorted 배열의 원래 session_number는 fixes에서 추출
+      const reordered: Record<string, unknown>[] = []
+      for (let i = 0; i < sessions.length; i++) {
+        // 해당 세션의 ot_sessions scheduled_at를 프로그램 date/time으로 동기화
+        const sess = sessions[i]
+        // 기존 프로그램 세션 중 날짜가 일치하는 것을 매칭, 없으면 인덱스 기반
+        let matchIdx = -1
+        if (sess.scheduled_at) {
+          const dateStr = sess.scheduled_at.slice(0, 10)
+          matchIdx = progSessions.findIndex((p) => (p.date as string)?.startsWith(dateStr))
+        }
+        if (matchIdx >= 0) {
+          reordered.push(progSessions[matchIdx])
+        } else if (i < progSessions.length) {
+          reordered.push(progSessions[i])
+        }
+      }
+      if (reordered.length > 0) {
+        progSessions = reordered
+        fixes.push('프로그램 세션 배열도 날짜순 재배치')
+        changed = true
+      }
+    }
 
     // 초과분 제거
     const targetCount = Math.max(sessionCount, 1)
@@ -583,29 +631,60 @@ export async function repairSessionNumbers(assignmentId: string) {
     }
 
     // 4) trainer_schedules 날짜/시간을 프로그램에 강제 동기화
-    if (sessions) {
-      for (const s of sessions) {
-        const idx = s.session_number - 1
-        if (idx < 0 || idx >= progSessions.length) continue
+    // 회원 이름 조회
+    const { data: assignment } = await supabase
+      .from('ot_assignments')
+      .select('member:members!inner(name), pt_trainer_id, ppt_trainer_id')
+      .eq('id', assignmentId)
+      .single()
+    const memberName = (assignment?.member as unknown as { name: string })?.name
+    const trainerIds = [
+      (assignment as unknown as { pt_trainer_id: string | null })?.pt_trainer_id,
+      (assignment as unknown as { ppt_trainer_id: string | null })?.ppt_trainer_id,
+    ].filter(Boolean)
 
-        // trainer_schedules에서 이 세션의 실제 날짜/시간 조회
-        const { data: tsRow } = await supabase
-          .from('trainer_schedules')
-          .select('scheduled_date, start_time, duration')
-          .eq('ot_session_id', s.id)
-          .limit(1)
-          .single()
+    // 해당 회원의 OT 스케줄 전체 조회 (ot_session_id 또는 이름으로)
+    if (memberName && trainerIds.length > 0) {
+      const { data: allTs } = await supabase
+        .from('trainer_schedules')
+        .select('scheduled_date, start_time, duration, ot_session_id')
+        .eq('schedule_type', 'OT')
+        .eq('member_name', memberName)
+        .in('trainer_id', trainerIds)
+        .order('scheduled_date')
 
-        if (tsRow) {
-          const progDate = progSessions[idx].date as string | undefined
-          const progTime = progSessions[idx].time as string | undefined
-          const tsDate = tsRow.scheduled_date
-          const tsTime = tsRow.start_time?.slice(0, 5)
+      const tsList = allTs ?? []
 
-          if (progDate !== tsDate || progTime !== tsTime) {
-            fixes.push(`${s.session_number}차: ${progDate} ${progTime} → ${tsDate} ${tsTime}`)
-            progSessions[idx] = { ...progSessions[idx], date: tsDate, time: tsTime }
-            changed = true
+      if (sessions) {
+        for (const s of sessions) {
+          const idx = s.session_number - 1
+          if (idx < 0 || idx >= progSessions.length) continue
+
+          // ot_session_id로 매칭 시도, 없으면 날짜로 매칭
+          let tsRow = tsList.find((t) => t.ot_session_id === s.id)
+          if (!tsRow && s.scheduled_at) {
+            const sDate = s.scheduled_at.slice(0, 10)
+            tsRow = tsList.find((t) => t.scheduled_date === sDate)
+          }
+
+          if (tsRow) {
+            const progDate = progSessions[idx].date as string | undefined
+            const progTime = progSessions[idx].time as string | undefined
+            const tsDate = tsRow.scheduled_date
+            const tsTime = tsRow.start_time?.slice(0, 5)
+
+            if (progDate !== tsDate || progTime !== tsTime) {
+              fixes.push(`${s.session_number}차: ${progDate ?? '-'} ${progTime ?? '-'} → ${tsDate} ${tsTime}`)
+              progSessions[idx] = { ...progSessions[idx], date: tsDate, time: tsTime }
+              changed = true
+            }
+
+            // ot_sessions.scheduled_at도 trainer_schedules에 맞춤
+            const correctAt = new Date(`${tsDate}T${tsTime}:00+09:00`).toISOString()
+            if (s.scheduled_at !== correctAt) {
+              await supabase.from('ot_sessions').update({ scheduled_at: correctAt }).eq('id', s.id)
+              fixes.push(`${s.session_number}차 ot_session → ${tsDate} ${tsTime}`)
+            }
           }
         }
       }

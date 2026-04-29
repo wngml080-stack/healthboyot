@@ -969,6 +969,9 @@ export function TrainerCardList({ assignments, trainers = [], trainerId, trainer
                           {a.is_excluded && (
                             <span className="inline-flex items-center rounded px-1.5 py-0.5 text-[10px] font-bold bg-red-100 text-red-700 border border-red-300">제외</span>
                           )}
+                          {a.is_watchlist && (
+                            <span className="inline-flex items-center rounded px-1.5 py-0.5 text-[10px] font-bold bg-amber-100 text-amber-700 border border-amber-300">관리대상</span>
+                          )}
                           {a.member.registration_source === '수기' && (
                             <span className="inline-flex items-center rounded px-1 py-0.5 text-[10px] font-bold bg-amber-100 text-amber-700 border border-amber-300">수기</span>
                           )}
