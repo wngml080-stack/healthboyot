@@ -95,13 +95,22 @@ async function TrainerDetailView({ trainerId, tab }: { trainerId: string; tab: s
     .filter((s) => !['admin'].includes(s.role))
     .map((s) => ({ id: s.id, name: s.name }))
 
-  // 관리자용 드롭다운 옵션: 트레이너 + 미배정 + 제외회원
+  // 관리자용 탭 옵션: 트레이너 (지정 순서) + 미배정
+  const TRAINER_ORDER = ['오종민', '정가윤', '박규민', '김석현', '유창욱', '구은솔']
+  const trainerList = staffList
+    .filter((s) => ['trainer', '강사', '팀장'].includes(s.role) && s.is_approved)
+    .map((s) => ({ id: s.id, name: s.name }))
+    .sort((a, b) => {
+      const ai = TRAINER_ORDER.indexOf(a.name)
+      const bi = TRAINER_ORDER.indexOf(b.name)
+      if (ai !== -1 && bi !== -1) return ai - bi
+      if (ai !== -1) return -1
+      if (bi !== -1) return 1
+      return a.name.localeCompare(b.name)
+    })
   const trainerOptions = [
-    ...staffList
-      .filter((s) => ['trainer', '강사', '팀장'].includes(s.role) && s.is_approved)
-      .map((s) => ({ id: s.id, name: s.name })),
+    ...trainerList,
     { id: 'unassigned', name: '미배정' },
-    { id: 'excluded', name: '제외회원' },
   ]
 
   const trainerName = trainerId === 'unassigned'
