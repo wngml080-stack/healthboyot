@@ -484,26 +484,48 @@ export async function deleteOtSession(assignmentId: string, sessionNumber: numbe
 
   const supabase = await createClient()
 
-  // ot_session 조회 (trainer_schedules 삭제를 위해 id 필요)
-  const { data: session } = await supabase
+  // 1) 해당 세션 + 이후 세션 모두 조회
+  const { data: allSessions } = await supabase
     .from('ot_sessions')
-    .select('id')
+    .select('id, session_number')
     .eq('ot_assignment_id', assignmentId)
-    .eq('session_number', sessionNumber)
-    .single()
+    .order('session_number')
 
-  // ot_sessions 삭제
+  const target = allSessions?.find((s) => s.session_number === sessionNumber)
+  if (!target) return { error: '세션을 찾을 수 없습니다' }
+
+  // 2) 해당 세션의 trainer_schedules 삭제
+  await supabase.from('trainer_schedules').delete().eq('ot_session_id', target.id)
+
+  // 3) 해당 세션 삭제
   const { error } = await supabase
     .from('ot_sessions')
     .delete()
-    .eq('ot_assignment_id', assignmentId)
-    .eq('session_number', sessionNumber)
-
+    .eq('id', target.id)
   if (error) return { error: error.message }
 
-  // trainer_schedules도 함께 삭제
-  if (session?.id) {
-    await supabase.from('trainer_schedules').delete().eq('ot_session_id', session.id)
+  // 4) 이후 세션 번호를 앞으로 당기기 (N+1→N, N+2→N+1, ...)
+  const laterSessions = (allSessions ?? []).filter((s) => s.session_number > sessionNumber).sort((a, b) => a.session_number - b.session_number)
+  for (const s of laterSessions) {
+    await supabase.from('ot_sessions').update({ session_number: s.session_number - 1 }).eq('id', s.id)
+  }
+
+  // 5) 프로그램 세션 배열도 재정렬 (해당 인덱스 제거)
+  const { data: program } = await supabase
+    .from('ot_programs')
+    .select('id, sessions')
+    .eq('assignment_id', assignmentId)
+    .single()
+
+  if (program?.sessions && Array.isArray(program.sessions)) {
+    const sessions = [...program.sessions]
+    if (sessions.length >= sessionNumber) {
+      sessions.splice(sessionNumber - 1, 1) // 해당 인덱스 제거
+      await supabase.from('ot_programs').update({
+        sessions,
+        updated_at: new Date().toISOString(),
+      }).eq('id', program.id)
+    }
   }
 
   return { success: true }
