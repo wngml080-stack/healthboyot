@@ -565,19 +565,9 @@ export async function repairSessionNumbers(assignmentId: string) {
 
   if (program?.sessions && Array.isArray(program.sessions)) {
     const progSessions = program.sessions as Record<string, unknown>[]
-    // 프로그램 세션이 ot_sessions보다 많으면 → 빈 세션 제거
-    // completed가 아니고 date도 없는 빈 세션을 뒤에서부터 제거
-    let trimmed = [...progSessions]
-    while (trimmed.length > sessions.length) {
-      const last = trimmed[trimmed.length - 1]
-      const isEmpty = !last.completed && !last.date
-      if (isEmpty) {
-        trimmed.pop()
-      } else {
-        break
-      }
-    }
-    if (trimmed.length !== progSessions.length) {
+    // 프로그램 세션을 ot_sessions 수에 맞춤 (초과분 강제 제거)
+    if (progSessions.length > sessions.length) {
+      const trimmed = progSessions.slice(0, sessions.length)
       fixes.push(`프로그램 세션 ${progSessions.length}개 → ${trimmed.length}개로 정리`)
       await supabase.from('ot_programs').update({
         sessions: trimmed,
