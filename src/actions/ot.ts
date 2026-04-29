@@ -563,7 +563,7 @@ export async function repairSessionNumbers(assignmentId: string) {
     }
   }
 
-  // 3) 프로그램 세션 배열도 동기화 (ot_sessions가 0개여도 처리)
+  // 3) 프로그램 세션 배열 동기화
   const { data: program } = await supabase
     .from('ot_programs')
     .select('id, sessions')
@@ -571,14 +571,49 @@ export async function repairSessionNumbers(assignmentId: string) {
     .single()
 
   if (program?.sessions && Array.isArray(program.sessions)) {
-    const progSessions = program.sessions as Record<string, unknown>[]
-    // 프로그램 세션을 ot_sessions 수에 맞춤 (초과분 강제 제거, 0개면 빈 배열)
-    const targetCount = Math.max(sessionCount, 1) // 최소 1개는 유지
+    const progSessions = [...program.sessions] as Record<string, unknown>[]
+    let changed = false
+
+    // 초과분 제거
+    const targetCount = Math.max(sessionCount, 1)
     if (progSessions.length > targetCount) {
-      const trimmed = progSessions.slice(0, targetCount)
-      fixes.push(`프로그램 세션 ${progSessions.length}개 → ${trimmed.length}개로 정리`)
+      progSessions.length = targetCount
+      fixes.push(`프로그램 세션 → ${targetCount}개로 정리`)
+      changed = true
+    }
+
+    // 4) trainer_schedules 날짜/시간을 프로그램에 강제 동기화
+    if (sessions) {
+      for (const s of sessions) {
+        const idx = s.session_number - 1
+        if (idx < 0 || idx >= progSessions.length) continue
+
+        // trainer_schedules에서 이 세션의 실제 날짜/시간 조회
+        const { data: tsRow } = await supabase
+          .from('trainer_schedules')
+          .select('scheduled_date, start_time, duration')
+          .eq('ot_session_id', s.id)
+          .limit(1)
+          .single()
+
+        if (tsRow) {
+          const progDate = progSessions[idx].date as string | undefined
+          const progTime = progSessions[idx].time as string | undefined
+          const tsDate = tsRow.scheduled_date
+          const tsTime = tsRow.start_time?.slice(0, 5)
+
+          if (progDate !== tsDate || progTime !== tsTime) {
+            fixes.push(`${s.session_number}차: ${progDate} ${progTime} → ${tsDate} ${tsTime}`)
+            progSessions[idx] = { ...progSessions[idx], date: tsDate, time: tsTime }
+            changed = true
+          }
+        }
+      }
+    }
+
+    if (changed) {
       await supabase.from('ot_programs').update({
-        sessions: trimmed,
+        sessions: progSessions,
         updated_at: new Date().toISOString(),
       }).eq('id', program.id)
     }
