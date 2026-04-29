@@ -1,7 +1,7 @@
 'use client'
 
 import Link from 'next/link'
-import { usePathname } from 'next/navigation'
+import { usePathname, useRouter } from 'next/navigation'
 import { LayoutDashboard, ClipboardList, CalendarDays, Users, BarChart3, FileText, CheckSquare, LogOut } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { NAV_ITEMS } from '@/lib/constants'
@@ -27,6 +27,7 @@ interface SidebarProps {
 
 export function Sidebar({ profile }: SidebarProps) {
   const pathname = usePathname()
+  const router = useRouter()
 
   const filteredItems = NAV_ITEMS.filter((item) =>
     item.roles.includes(profile.role)
@@ -51,6 +52,8 @@ export function Sidebar({ profile }: SidebarProps) {
             <Link
               key={item.href}
               href={item.href}
+              prefetch={true}
+              onMouseEnter={() => router.prefetch(item.href)}
               className={cn(
                 'flex items-center gap-3 rounded-md px-3 py-2 text-sm font-medium transition-colors',
                 isActive

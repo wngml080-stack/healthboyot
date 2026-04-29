@@ -1,10 +1,10 @@
 'use client'
 
 import Link from 'next/link'
-import { usePathname } from 'next/navigation'
+import { usePathname, useRouter } from 'next/navigation'
 import { cn } from '@/lib/utils'
 import { LogOut, Menu, X, User, Upload } from 'lucide-react'
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useCallback } from 'react'
 import { signOut } from '@/actions/auth'
 import { Button } from '@/components/ui/button'
 import { NAV_ITEMS, MENU_ACCESS } from '@/lib/constants'
@@ -23,6 +23,7 @@ interface Props {
 
 export function TopNav({ profile }: Props) {
   const pathname = usePathname()
+  const router = useRouter()
   const [mobileOpen, setMobileOpen] = useState(false)
   const [showNoAccess, setShowNoAccess] = useState(false)
   const [showPricing, setShowPricing] = useState(false)
@@ -98,7 +99,9 @@ export function TopNav({ profile }: Props) {
                 <Link
                   key={item.href}
                   href={item.href}
+                  prefetch={true}
                   onClick={(e) => handleMenuClick(item.href, e)}
+                  onMouseEnter={() => router.prefetch(item.href)}
                   className={cn(
                     'text-sm font-medium transition-colors',
                     isActive
@@ -151,6 +154,7 @@ export function TopNav({ profile }: Props) {
                 <Link
                   key={item.href}
                   href={item.href}
+                  prefetch={true}
                   onClick={(e) => {
                     handleMenuClick(item.href, e)
                     setMobileOpen(false)
