@@ -1083,16 +1083,16 @@ function RegistrationSection({ registrations: initial, trainerId, trainerName }:
   return (
     <Card>
       <CardHeader className="pb-2">
-        <div className="flex items-center justify-between">
-          <CardTitle className="text-base text-gray-900 flex items-center gap-2">
-            <ClipboardCheck className="h-4 w-4 text-emerald-500" />
-            회원권 등록 OT 인정건수
+        <div className="flex flex-wrap items-center justify-between gap-2">
+          <CardTitle className="text-sm sm:text-base text-gray-900 flex items-center gap-2">
+            <ClipboardCheck className="h-4 w-4 text-emerald-500 shrink-0" />
+            <span>인정건수</span>
           </CardTitle>
-          <div className="flex items-center gap-2">
-            <Badge className="bg-emerald-100 text-emerald-700 text-xs">승인 {totalCredit}건</Badge>
-            {pending.length > 0 && <Badge className="bg-yellow-100 text-yellow-700 text-xs">대기 {pending.length}건</Badge>}
-            <Button size="sm" className="h-7 bg-emerald-500 hover:bg-emerald-600 text-white text-xs" onClick={() => setShowForm(!showForm)}>
-              <Plus className="h-3 w-3 mr-1" />등록
+          <div className="flex items-center gap-1.5">
+            <Badge className="bg-emerald-100 text-emerald-700 text-[10px] sm:text-xs">승인 {totalCredit}건</Badge>
+            {pending.length > 0 && <Badge className="bg-yellow-100 text-yellow-700 text-[10px] sm:text-xs">대기 {pending.length}건</Badge>}
+            <Button size="sm" className="h-6 sm:h-7 bg-emerald-500 hover:bg-emerald-600 text-white text-[10px] sm:text-xs px-2" onClick={() => setShowForm(!showForm)}>
+              <Plus className="h-3 w-3 mr-0.5" />등록
             </Button>
           </div>
         </div>

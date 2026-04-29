@@ -131,16 +131,16 @@ export function StaffView({ staffList }: Props) {
 
       {/* 직원 목록 */}
       <Card className="-mx-4 sm:mx-0">
-        <CardContent className="p-0 overflow-x-auto">
-          <Table className="min-w-[500px]">
+        <CardContent className="p-0 overflow-x-auto -webkit-overflow-scrolling-touch">
+          <Table className="min-w-[600px]">
             <TableHeader>
               <TableRow>
-                <TableHead className="text-center">이름</TableHead>
+                <TableHead className="text-center w-16">이름</TableHead>
                 <TableHead className="text-center">이메일</TableHead>
-                <TableHead className="text-center">역할</TableHead>
-                <TableHead className="text-center">근무시간</TableHead>
-                <TableHead className="text-center">승인여부</TableHead>
-                <TableHead className="text-center">관리</TableHead>
+                <TableHead className="text-center w-16">역할</TableHead>
+                <TableHead className="text-center w-24">근무시간</TableHead>
+                <TableHead className="text-center w-14">승인</TableHead>
+                <TableHead className="text-center w-16">관리</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>

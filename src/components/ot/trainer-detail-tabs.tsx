@@ -92,27 +92,29 @@ export function TrainerDetailTabs({
   return (
     <div className="space-y-3">
       {/* 헤더: 트레이너 관리 제목 + 트레이너 탭 바 + 알림벨 */}
-      <div className="flex items-center gap-3">
-        <h1 className="text-lg font-bold text-white border-l-4 border-yellow-400 pl-2 shrink-0">트레이너 관리</h1>
+      <div className="flex items-center gap-2">
+        <h1 className="hidden sm:block text-lg font-bold text-white border-l-4 border-yellow-400 pl-2 shrink-0">트레이너 관리</h1>
         {trainerOptions && trainerOptions.length > 0 && (
-          <div className="flex gap-1 overflow-x-auto scrollbar-hide">
-            {(isAdmin ? trainerOptions : trainerOptions.filter((t) => t.id === trainerId)).map((t) => (
-              <button
-                key={t.id}
-                onClick={() => switchTrainer(t.id)}
-                className={cn(
-                  'px-3 py-1.5 rounded-full text-xs font-medium whitespace-nowrap transition-all shrink-0',
-                  t.id === trainerId
-                    ? 'bg-yellow-400 text-black shadow-sm'
-                    : 'bg-gray-800 text-gray-400 hover:bg-gray-700 hover:text-white'
-                )}
-              >
-                {t.name}
-              </button>
-            ))}
+          <div className="flex-1 min-w-0 overflow-x-auto scrollbar-hide">
+            <div className="flex gap-1 w-max">
+              {(isAdmin ? trainerOptions : trainerOptions.filter((t) => t.id === trainerId)).map((t) => (
+                <button
+                  key={t.id}
+                  onClick={() => switchTrainer(t.id)}
+                  className={cn(
+                    'px-2.5 py-1 rounded-full text-xs font-medium whitespace-nowrap transition-all',
+                    t.id === trainerId
+                      ? 'bg-yellow-400 text-black shadow-sm'
+                      : 'bg-gray-800 text-gray-400 hover:bg-gray-700 hover:text-white'
+                  )}
+                >
+                  {t.name}
+                </button>
+              ))}
+            </div>
           </div>
         )}
-        <div className="ml-auto shrink-0">
+        <div className="shrink-0">
           <NotificationBell assignments={assignments} programs={trainerPrograms} />
         </div>
       </div>

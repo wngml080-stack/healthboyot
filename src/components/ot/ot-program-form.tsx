@@ -560,7 +560,29 @@ export const OtProgramForm = forwardRef<OtProgramFormRef, Props>(function OtProg
     const result = await upsertOtProgram(a.id, a.member_id, payload)
     if (result.error) { setSaving(false); setError(result.error); return }
 
-    // 스케줄 동기화는 스케줄 관리(캘린더)에서만 수행 — 프로그램에서는 저장만
+    // 프로그램 세션의 날짜/시간 → ot_sessions + trainer_schedules 자동 동기화
+    const sessionsToSync = (overrideSessions ?? sessions)
+    const syncPromises: Promise<unknown>[] = []
+    for (let i = 0; i < sessionsToSync.length; i++) {
+      const s = sessionsToSync[i]
+      if (!s.date || !s.time) continue
+      if (s.completed) continue
+      const timeMatch = s.time.match(/^(\d{1,2}):(\d{2})$/)
+      if (!timeMatch) continue
+      const hh = String(Number(timeMatch[1])).padStart(2, '0')
+      const mm = timeMatch[2]
+      const normalizedTime = `${hh}:${mm}`
+      const sessionNumber = i + 1
+      const scheduledAt = new Date(`${s.date}T${normalizedTime}:00+09:00`).toISOString()
+      if (isNaN(new Date(scheduledAt).getTime())) continue
+      syncPromises.push(upsertOtSession({
+        ot_assignment_id: a.id,
+        session_number: sessionNumber,
+        scheduled_at: scheduledAt,
+        duration: s.class_duration ?? 50,
+      }))
+    }
+    if (syncPromises.length > 0) await Promise.all(syncPromises)
 
     setSaving(false)
     lastSavedRef.current = JSON.stringify(payload)

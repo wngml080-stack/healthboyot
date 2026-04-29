@@ -903,32 +903,32 @@ export function TrainerCardList({ assignments, trainers = [], trainerId, trainer
         </div>
 
         {/* 필터 + 회원추가 */}
-        <div className="flex flex-wrap gap-2 items-center">
-          {false && (null
-          )}
-          {FILTERS.map((f) => {
-            const count = filterCounts[f] ?? 0
-            const isActive = filter === f && categoryFilter === '전체'
-            const colorMap: Record<string, { active: string; inactive: string }> = {
-              '수업상태변경': { active: 'bg-amber-300 text-amber-900 border-amber-400', inactive: 'bg-amber-50 text-amber-700 border border-amber-200 hover:bg-amber-100' },
-              '승인필요': { active: 'bg-green-400 text-green-900 border-green-500', inactive: 'bg-green-50 text-green-700 border border-green-200 hover:bg-green-100' },
-              '거부/제외': { active: 'bg-red-600 text-white border-red-700', inactive: 'bg-red-100 text-red-700 border border-red-300 hover:bg-red-200' },
-            }
-            const custom = colorMap[f]
-            return (
-              <button
-                key={f}
-                onClick={() => { setFilter(f); setCategoryFilter('전체') }}
-                className={`px-3 py-1.5 rounded-full text-xs font-medium transition-colors ${
-                  isActive
-                    ? (custom?.active ?? 'bg-yellow-400 text-black')
-                    : (custom?.inactive ?? 'bg-white text-gray-600 border border-gray-300 hover:bg-gray-50')
-                }`}
-              >
-                {f} {count > 0 && <span className="ml-1 text-[10px]">{count}</span>}
-              </button>
-            )
-          })}
+        <div className="overflow-x-auto -mx-4 px-4 sm:mx-0 sm:px-0">
+          <div className="flex gap-1.5 w-max sm:flex-wrap sm:w-auto">
+            {FILTERS.map((f) => {
+              const count = filterCounts[f] ?? 0
+              const isActive = filter === f && categoryFilter === '전체'
+              const colorMap: Record<string, { active: string; inactive: string }> = {
+                '수업상태변경': { active: 'bg-amber-300 text-amber-900 border-amber-400', inactive: 'bg-amber-50 text-amber-700 border border-amber-200 hover:bg-amber-100' },
+                '승인필요': { active: 'bg-green-400 text-green-900 border-green-500', inactive: 'bg-green-50 text-green-700 border border-green-200 hover:bg-green-100' },
+                '거부/제외': { active: 'bg-red-600 text-white border-red-700', inactive: 'bg-red-100 text-red-700 border border-red-300 hover:bg-red-200' },
+              }
+              const custom = colorMap[f]
+              return (
+                <button
+                  key={f}
+                  onClick={() => { setFilter(f); setCategoryFilter('전체') }}
+                  className={`px-2 py-1 sm:px-3 sm:py-1.5 rounded-full text-[10px] sm:text-xs font-medium transition-colors whitespace-nowrap ${
+                    isActive
+                      ? (custom?.active ?? 'bg-yellow-400 text-black')
+                      : (custom?.inactive ?? 'bg-white text-gray-600 border border-gray-300 hover:bg-gray-50')
+                  }`}
+                >
+                  {f}{count > 0 && <span className="ml-0.5 text-[9px] sm:text-[10px]">{count}</span>}
+                </button>
+              )
+            })}
+          </div>
         </div>
 
         {/* 전체 회원 */}
