@@ -1,8 +1,6 @@
 import { TopNavWrapper } from '@/components/layout/top-nav-wrapper'
 import { RealtimeWrapper } from '@/components/ot/realtime-wrapper'
 
-// Edge Runtime: cold start 200ms → ~5ms, 서울 엣지에서 실행
-export const runtime = 'edge'
 
 export default function DashboardLayout({
   children,
