@@ -23,13 +23,18 @@ export default function GlobalError({
               다시 시도
             </button>
             <button
-              onClick={() => {
-                // SW 캐시 초기화 후 새로고침
-                if ('caches' in window) {
-                  caches.keys().then((names) => {
-                    names.forEach((name) => caches.delete(name))
-                  })
+              onClick={async () => {
+                // 1. 서비스 워커 해제
+                if ('serviceWorker' in navigator) {
+                  const regs = await navigator.serviceWorker.getRegistrations()
+                  await Promise.all(regs.map((r) => r.unregister()))
                 }
+                // 2. 캐시 스토리지 전부 삭제
+                if ('caches' in window) {
+                  const names = await caches.keys()
+                  await Promise.all(names.map((n) => caches.delete(n)))
+                }
+                // 3. 강제 새로고침 (캐시 무시)
                 window.location.reload()
               }}
               style={{ padding: '0.625rem 1.5rem', backgroundColor: '#333', color: '#fff', border: 'none', borderRadius: '0.5rem', fontWeight: 600, cursor: 'pointer' }}

@@ -132,15 +132,15 @@ export function StaffView({ staffList }: Props) {
       {/* 직원 목록 */}
       <Card className="-mx-4 sm:mx-0">
         <CardContent className="p-0 overflow-x-auto -webkit-overflow-scrolling-touch">
-          <Table className="min-w-[600px]">
+          <Table className="min-w-[640px] table-fixed">
             <TableHeader>
               <TableRow>
-                <TableHead className="text-center w-16">이름</TableHead>
+                <TableHead className="text-center w-[72px]">이름</TableHead>
                 <TableHead className="text-center">이메일</TableHead>
-                <TableHead className="text-center w-16">역할</TableHead>
-                <TableHead className="text-center w-24">근무시간</TableHead>
-                <TableHead className="text-center w-14">승인</TableHead>
-                <TableHead className="text-center w-16">관리</TableHead>
+                <TableHead className="text-center w-[72px]">역할</TableHead>
+                <TableHead className="text-center w-[120px]">근무시간</TableHead>
+                <TableHead className="text-center w-[72px]">승인</TableHead>
+                <TableHead className="text-center w-[80px]">관리</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
@@ -153,14 +153,14 @@ export function StaffView({ staffList }: Props) {
               ) : (
                 staffList.map((staff) => (
                   <TableRow key={staff.id}>
-                    <TableCell className="font-medium text-center">{staff.name}</TableCell>
-                    <TableCell className="text-center text-sm text-muted-foreground">{staff.email ?? '-'}</TableCell>
+                    <TableCell className="font-medium text-center truncate">{staff.name}</TableCell>
+                    <TableCell className="text-center text-sm text-muted-foreground truncate">{staff.email ?? '-'}</TableCell>
                     <TableCell className="text-center">
                       <Badge variant="outline" className={ROLE_COLORS[staff.role]}>
                         {ROLE_LABEL[staff.role]}
                       </Badge>
                     </TableCell>
-                    <TableCell className="text-center text-sm text-muted-foreground">
+                    <TableCell className="text-center text-sm text-muted-foreground whitespace-nowrap">
                       {staff.work_start_time && staff.work_end_time
                         ? `${staff.work_start_time} ~ ${staff.work_end_time}`
                         : '-'}
