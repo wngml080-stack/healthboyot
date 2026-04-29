@@ -17,14 +17,19 @@ export function TopNavWrapper() {
 
   useEffect(() => {
     if (profile) return
-    getCurrentProfile().then((p) => {
-      if (!p) {
+    getCurrentProfile()
+      .then((p) => {
+        if (!p) {
+          router.replace('/login')
+          return
+        }
+        profileCache = { profile: p, ts: Date.now() }
+        setProfile(p)
+      })
+      .catch(() => {
+        // 서버 액션 에러 시 로그인으로
         router.replace('/login')
-        return
-      }
-      profileCache = { profile: p, ts: Date.now() }
-      setProfile(p)
-    })
+      })
   }, [router, profile])
 
   if (!profile) {

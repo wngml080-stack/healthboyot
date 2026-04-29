@@ -27,7 +27,7 @@ export function ConsultationsLoader() {
         cache = result
         setData(result)
       }
-    )
+    ).catch((err) => console.error('[ConsultationsLoader] 로딩 실패:', err))
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 

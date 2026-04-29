@@ -34,7 +34,7 @@ export function StatsLoader() {
         dashboard,
         isAdmin: !!profile && ['admin', '관리자'].includes(profile.role),
       })
-    })
+    }).catch((err) => console.error('[StatsLoader] 로딩 실패:', err))
   }, [])
 
   if (!data) {

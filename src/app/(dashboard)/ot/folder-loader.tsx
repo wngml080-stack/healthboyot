@@ -24,15 +24,17 @@ export function FolderLoader() {
     if (data && Date.now() - (folderCache?.timestamp ?? 0) < 30000) return
 
     // 서버 액션 1회로 폴더+스태프+프로필 모두 로딩 (이전: 3회)
-    getTrainerFoldersAll().then((result) => {
-      const cached = {
-        ...result,
-        allStaff: result.allStaff as Pick<Profile, 'id' | 'name' | 'role' | 'is_approved'>[],
-        timestamp: Date.now(),
-      }
-      folderCache = cached
-      setData(cached)
-    })
+    getTrainerFoldersAll()
+      .then((result) => {
+        const cached = {
+          ...result,
+          allStaff: result.allStaff as Pick<Profile, 'id' | 'name' | 'role' | 'is_approved'>[],
+          timestamp: Date.now(),
+        }
+        folderCache = cached
+        setData(cached)
+      })
+      .catch((err) => console.error('[FolderLoader] 로딩 실패:', err))
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
