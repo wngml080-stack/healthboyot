@@ -544,19 +544,21 @@ export async function repairSessionNumbers(assignmentId: string) {
     .eq('ot_assignment_id', assignmentId)
     .order('session_number')
 
-  if (!sessions || sessions.length === 0) return { success: true, message: '세션 없음' }
+  const sessionCount = sessions?.length ?? 0
 
   // 2) 번호에 빈 구간이 있는지 확인하고 재정렬
   const fixes: string[] = []
-  for (let i = 0; i < sessions.length; i++) {
-    const expected = i + 1
-    if (sessions[i].session_number !== expected) {
-      fixes.push(`${sessions[i].session_number}차 → ${expected}차`)
-      await supabase.from('ot_sessions').update({ session_number: expected }).eq('id', sessions[i].id)
+  if (sessions) {
+    for (let i = 0; i < sessions.length; i++) {
+      const expected = i + 1
+      if (sessions[i].session_number !== expected) {
+        fixes.push(`${sessions[i].session_number}차 → ${expected}차`)
+        await supabase.from('ot_sessions').update({ session_number: expected }).eq('id', sessions[i].id)
+      }
     }
   }
 
-  // 3) 프로그램 세션 배열도 동기화
+  // 3) 프로그램 세션 배열도 동기화 (ot_sessions가 0개여도 처리)
   const { data: program } = await supabase
     .from('ot_programs')
     .select('id, sessions')
@@ -565,9 +567,10 @@ export async function repairSessionNumbers(assignmentId: string) {
 
   if (program?.sessions && Array.isArray(program.sessions)) {
     const progSessions = program.sessions as Record<string, unknown>[]
-    // 프로그램 세션을 ot_sessions 수에 맞춤 (초과분 강제 제거)
-    if (progSessions.length > sessions.length) {
-      const trimmed = progSessions.slice(0, sessions.length)
+    // 프로그램 세션을 ot_sessions 수에 맞춤 (초과분 강제 제거, 0개면 빈 배열)
+    const targetCount = Math.max(sessionCount, 1) // 최소 1개는 유지
+    if (progSessions.length > targetCount) {
+      const trimmed = progSessions.slice(0, targetCount)
       fixes.push(`프로그램 세션 ${progSessions.length}개 → ${trimmed.length}개로 정리`)
       await supabase.from('ot_programs').update({
         sessions: trimmed,
