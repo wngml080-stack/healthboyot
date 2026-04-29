@@ -24,42 +24,44 @@ export async function signIn(formData: { email: string; password: string }) {
     redirect('/ot')
   }
 
+  console.log('[signIn] start:', formData.email)
   const supabase = await createClient()
+  console.log('[signIn] supabase client created')
 
   const { error, data } = await supabase.auth.signInWithPassword({
     email: formData.email,
     password: formData.password,
   })
+  console.log('[signIn] auth result:', error ? `ERROR: ${error.message}` : `OK: ${data.user?.email}`)
 
   if (error) {
     return { error: error.message }
   }
 
-  // 승인 여부 확인
-  if (data.user) {
-    try {
-      const { data: profile } = await supabase
-        .from('profiles')
-        .select('is_approved, role')
-        .eq('id', data.user.id)
-        .single()
+  // 승인 여부 확인 — 에러나도 로그인은 진행
+  try {
+    const { data: profile } = await supabase
+      .from('profiles')
+      .select('is_approved, role')
+      .eq('id', data.user!.id)
+      .single()
+    console.log('[signIn] profile:', profile?.role, 'approved:', profile?.is_approved)
 
-      if (profile && !profile.is_approved && profile.role !== 'admin' && profile.role !== '관리자') {
-        await supabase.auth.signOut()
-        return { error: 'NOT_APPROVED' }
-      }
-
-      const currentRole = data.user.user_metadata?.role as string | undefined
-      if (profile?.role && currentRole !== profile.role) {
-        await supabase.auth.updateUser({
-          data: { role: profile.role },
-        })
-      }
-    } catch (err) {
-      console.error('signIn profile check error:', err)
+    if (profile && !profile.is_approved && profile.role !== 'admin' && profile.role !== '관리자') {
+      await supabase.auth.signOut()
+      return { error: 'NOT_APPROVED' }
     }
+
+    const currentRole = data.user!.user_metadata?.role as string | undefined
+    if (profile?.role && currentRole !== profile.role) {
+      await supabase.auth.updateUser({ data: { role: profile.role } })
+      console.log('[signIn] role updated:', profile.role)
+    }
+  } catch (err) {
+    console.error('[signIn] profile check error:', err)
   }
 
+  console.log('[signIn] redirecting to /ot')
   redirect('/ot')
 }
 
