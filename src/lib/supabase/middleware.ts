@@ -54,6 +54,9 @@ function getAccessToken(request: NextRequest): string | null {
 
 export async function updateSession(request: NextRequest) {
   const pathname = request.nextUrl.pathname
+  const allCookies = request.cookies.getAll()
+  const authCookies = allCookies.filter(c => c.name.includes('auth-token'))
+  console.log('[middleware]', pathname, '| cookies:', allCookies.length, '| auth cookies:', authCookies.map(c => `${c.name}(${c.value.length})`))
   const accessToken = getAccessToken(request)
 
   // JWT가 없으면 비인증
