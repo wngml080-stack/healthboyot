@@ -481,6 +481,13 @@ export async function rejectOtSession(programId: string, sessionIdx: number, rea
   })
 }
 
+// 세션을 타트레이너 진행으로 마킹 (통계에서 제외)
+export async function updateSessionTransferred(programId: string, sessionIdx: number, transferred: boolean) {
+  return updateSessionApproval(programId, sessionIdx, {
+    is_transferred: transferred,
+  })
+}
+
 export async function getPendingOtPrograms(): Promise<(OtProgram & { member_name?: string })[]> {
   const supabase = await createClient()
 

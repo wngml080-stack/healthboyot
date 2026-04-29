@@ -197,6 +197,7 @@ export interface OtProgramSession {
   is_sales_target?: boolean | null
   is_pt_conversion?: boolean | null
   pt_sales_amount?: number | null
+  is_transferred?: boolean | null
   class_duration?: number | null
 }
 

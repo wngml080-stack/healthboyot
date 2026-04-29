@@ -19,7 +19,7 @@ import {
 import { CheckCircle, User, AlertTriangle, BarChart3, CalendarDays, ClipboardList, Pencil, Plus, Undo2, UserPlus, Target, HeartPulse, Dumbbell, Phone, Download, Ban } from 'lucide-react'
 import { Textarea } from '@/components/ui/textarea'
 import { upsertOtSession, updateOtAssignment, deleteOtSession, repairSessionNumbers } from '@/actions/ot'
-import { getOtProgram, getAssignmentExpandData, batchGetOtPrograms, approveOtSession, unsubmitOtSession } from '@/actions/ot-program'
+import { getOtProgram, getAssignmentExpandData, batchGetOtPrograms, approveOtSession, unsubmitOtSession, updateSessionTransferred } from '@/actions/ot-program'
 import { quickRegisterMember } from '@/actions/members'
 import { createClient } from '@/lib/supabase/client'
 import dynamic from 'next/dynamic'
@@ -1950,11 +1950,15 @@ export function TrainerCardList({ assignments, trainers = [], trainerId, trainer
                                   const approvals = approvalMap[a.id] ?? []
                                   const sessionApproval = approvals.find((ap) => ap.session === n)
                                   const isApproved = sessionApproval?.status === '승인'
+                                  const ex = expandedData[a.id]
+                                  const progSession = ex && ex !== 'loading' ? ex.program?.sessions?.[n - 1] : null
+                                  const isTransferred = !!progSession?.is_transferred
                                   return (
-                                    <div key={s.id} className={`flex items-center gap-1 rounded border px-2 py-1 ${isApproved ? 'bg-green-50 border-green-300' : 'bg-white border-gray-200'}`}>
+                                    <div key={s.id} className={`flex items-center gap-1 rounded border px-2 py-1 ${isTransferred ? 'bg-purple-50 border-purple-300' : isApproved ? 'bg-green-50 border-green-300' : 'bg-white border-gray-200'}`}>
                                       <span className="text-xs font-bold text-gray-700">{n}차</span>
-                                      {isApproved && <span className="text-[10px] text-green-600">승인</span>}
-                                      {isDone && !isApproved && <span className="text-[10px] text-blue-600">완료</span>}
+                                      {isTransferred && <span className="text-[10px] text-purple-600">타트레이너</span>}
+                                      {isApproved && !isTransferred && <span className="text-[10px] text-green-600">승인</span>}
+                                      {isDone && !isApproved && !isTransferred && <span className="text-[10px] text-blue-600">완료</span>}
                                       {!isDone && isScheduled && <span className="text-[10px] text-yellow-600">예정</span>}
                                       {isApproved ? (
                                         <button
@@ -1979,6 +1983,23 @@ export function TrainerCardList({ assignments, trainers = [], trainerId, trainer
                                           }}
                                         >삭제</button>
                                       )}
+                                      {/* 타트레이너 진행 토글 */}
+                                      <button
+                                        className={`text-[10px] font-bold ml-1 ${isTransferred ? 'text-purple-600 hover:text-purple-800' : 'text-gray-400 hover:text-purple-600'}`}
+                                        onClick={async () => {
+                                          const exData = expandedData[a.id]
+                                          const pid = exData && exData !== 'loading' ? exData.program?.id : null
+                                          if (!pid) {
+                                            const prog = await getOtProgram(a.id)
+                                            if (!prog?.id) { alert('프로그램을 찾을 수 없습니다'); return }
+                                            await updateSessionTransferred(prog.id, n - 1, !isTransferred)
+                                          } else {
+                                            await updateSessionTransferred(pid, n - 1, !isTransferred)
+                                          }
+                                          setExpandedData((prev) => { const copy = { ...prev }; delete copy[a.id]; return copy })
+                                          router.refresh()
+                                        }}
+                                      >{isTransferred ? '타해제' : '타트레이너'}</button>
                                     </div>
                                   )
                                 })}

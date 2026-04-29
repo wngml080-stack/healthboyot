@@ -249,7 +249,11 @@ export function TrainerStats({ assignments, trainerName, programs, registrations
             approved: progSession?.approval_status === '승인',
             time: ts.start_time.slice(0, 5),
           }
-          if (completed) totalCompleted++; else totalScheduled++
+          // 타트레이너 진행 세션은 통계에서 제외
+          const isTransferred = progSession?.is_transferred
+          if (!isTransferred) {
+            if (completed) totalCompleted++; else totalScheduled++
+          }
         }
 
         // 2) ot_sessions에 있지만 trainer_schedules에 없는 완료 세션도 추가 (과거 데이터 호환)
@@ -259,8 +263,9 @@ export function TrainerStats({ assignments, trainerName, programs, registrations
           const d = new Date(dateStr)
           if (d < dateRange.start || d > dateRange.end) continue
           const key = format(d, 'yyyy-MM-dd')
-          if (cells[key]) continue // 이미 trainer_schedules에서 추가됨
+          if (cells[key]) continue
           const progSession = prog?.sessions?.[s.session_number - 1]
+          const isTransferred = progSession?.is_transferred
           cells[key] = {
             sessionNumber: s.session_number,
             completed: true,
@@ -268,7 +273,7 @@ export function TrainerStats({ assignments, trainerName, programs, registrations
             approved: progSession?.approval_status === '승인',
             time: s.scheduled_at ? format(new Date(s.scheduled_at), 'HH:mm') : undefined,
           }
-          totalCompleted++
+          if (!isTransferred) totalCompleted++
         }
 
         return {
