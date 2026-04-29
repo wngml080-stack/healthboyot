@@ -1583,6 +1583,10 @@ export function WeeklyCalendar({ assignments, trainerId, profile, workStartTime,
                               {isSales && <span className="text-yellow-500">★ </span>}
                               {s.schedule_type}
                               {s.member_name ? ` ${s.member_name}` : ''}
+                              {s.schedule_type === 'OT' && s.ot_session_id && matched && (() => {
+                                const otSession = matched.sessions?.find((os) => os.id === s.ot_session_id)
+                                return otSession ? <span className="text-[10px] opacity-70 ml-0.5">({otSession.session_number}차)</span> : null
+                              })()}
                             </p>
                             {ptResult && (
                               <p className={`text-[10px] font-bold ${PT_RESULT_TEXT_COLORS[ptResult as PtClassResult] ?? 'text-gray-700'}`}>
@@ -2320,7 +2324,14 @@ export function WeeklyCalendar({ assignments, trainerId, profile, workStartTime,
                 </div>
 
                 {/* 스케줄 시간/수업시간 수정 */}
-                {editSchedule && (
+                {editSchedule && (() => {
+                  const bookedSlots = new Map<string, string>()
+                  for (const sc of schedules) {
+                    if (sc.scheduled_date !== editSchedule.scheduled_date) continue
+                    if (sc.id === editSchedule.id) continue
+                    bookedSlots.set(sc.start_time.slice(0, 5), `${sc.schedule_type} ${sc.member_name}`)
+                  }
+                  return (
                   <div className="space-y-3 rounded-lg border border-gray-200 bg-gray-50 p-3">
                     <p className="text-sm font-bold text-gray-900">스케줄 수정</p>
                     <div className="space-y-2">
@@ -2330,62 +2341,50 @@ export function WeeklyCalendar({ assignments, trainerId, profile, workStartTime,
                           const h = 6 + Math.floor(i / 2)
                           const m = (i % 2) * 30
                           return `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}`
-                        }).map((slot) => (
+                        }).map((slot) => {
+                          const booked = bookedSlots.get(slot)
+                          return (
                           <button
                             key={slot}
                             type="button"
+                            disabled={!!booked}
+                            title={booked ?? ''}
                             className={`rounded border px-1 py-1 text-xs font-medium transition-colors ${
                               editTime === slot
                                 ? 'bg-yellow-400 text-black border-yellow-400 font-bold'
-                                : 'bg-white text-gray-700 border-gray-300 hover:bg-gray-100'
+                                : booked
+                                  ? 'bg-red-50 text-red-300 border-red-200 cursor-not-allowed'
+                                  : 'bg-white text-gray-700 border-gray-300 hover:bg-gray-100'
                             }`}
-                            onClick={() => setEditTime(slot)}
+                            onClick={() => !booked && setEditTime(slot)}
                           >
                             {slot}
                           </button>
-                        ))}
+                          )
+                        })}
                       </div>
-                      {/* 10분 단위 직접 입력 */}
                       <div className="flex items-center gap-2 mt-2">
                         <span className="text-xs text-gray-500 shrink-0">직접 입력</span>
-                        <Input
-                          type="time"
-                          step={600}
-                          value={editTime}
-                          onChange={(e) => setEditTime(e.target.value)}
-                          className="h-8 text-xs bg-white border-gray-300 w-32"
-                        />
+                        <Input type="time" step={600} value={editTime} onChange={(e) => setEditTime(e.target.value)} className="h-8 text-xs bg-white border-gray-300 w-32" />
                       </div>
                     </div>
                     <div className="space-y-2">
                       <p className="text-xs font-medium text-gray-600">수업시간</p>
                       <div className="flex gap-2">
                         {[30, 50].map((d) => (
-                          <button
-                            key={d}
-                            type="button"
-                            className={`flex-1 rounded-md border px-3 py-2 text-sm font-bold transition-colors ${
-                              editDuration === d
-                                ? 'bg-yellow-400 text-black border-yellow-400'
-                                : 'bg-white text-gray-700 border-gray-300 hover:bg-gray-100'
-                            }`}
+                          <button key={d} type="button"
+                            className={`flex-1 rounded-md border px-3 py-2 text-sm font-bold transition-colors ${editDuration === d ? 'bg-yellow-400 text-black border-yellow-400' : 'bg-white text-gray-700 border-gray-300 hover:bg-gray-100'}`}
                             onClick={() => setEditDuration(d)}
-                          >
-                            {d}분
-                          </button>
+                          >{d}분</button>
                         ))}
                       </div>
                     </div>
-                    <Button
-                      size="sm"
-                      className="w-full bg-gray-900 hover:bg-gray-800 text-white font-bold"
-                      onClick={handleEditScheduleSave}
-                      disabled={editSaving}
-                    >
+                    <Button size="sm" className="w-full bg-gray-900 hover:bg-gray-800 text-white font-bold" onClick={handleEditScheduleSave} disabled={editSaving}>
                       {editSaving ? '저장 중...' : '스케줄 수정 저장'}
                     </Button>
                   </div>
-                )}
+                  )
+                })()}
 
                 <Button className="w-full bg-yellow-400 hover:bg-yellow-500 text-black font-bold" onClick={handleDetailSave} disabled={detailSaving}>
                   {detailSaving ? '저장 중...' : '저장'}

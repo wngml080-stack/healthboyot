@@ -20,23 +20,30 @@ export default async function OtPage({ searchParams }: OtPageProps) {
 
   // trainerId가 없으면 → 역할별 자동 진입
   if (!trainerId) {
-    const profile = await getCurrentProfile()
-    if (!profile) redirect('/login')
+    try {
+      const [profile, staffList] = await Promise.all([
+        getCurrentProfile(),
+        getStaffList(),
+      ])
 
-    const isAdmin = ['admin', '관리자'].includes(profile.role)
+      if (!profile) redirect('/login')
 
-    if (!isAdmin) {
-      // 트레이너/FC → 바로 자기 스케줄로 이동
-      redirect(`/ot?trainer=${profile.id}&tab=schedule`)
+      const isAdmin = ['admin', '관리자'].includes(profile.role)
+      const orderedTrainers = staffList
+        .filter((s) => ['trainer', '강사', '팀장'].includes(s.role) && s.is_approved)
+
+      if (!isAdmin) {
+        // 트레이너/FC → 바로 자기 스케줄로 이동
+        redirect(`/ot?trainer=${profile.id}&tab=schedule`)
+      } else {
+        // 관리자 → 첫 번째 트레이너로 자동 진입
+        trainerId = orderedTrainers[0]?.id ?? 'unassigned'
+        redirect(`/ot?trainer=${trainerId}&tab=schedule`)
+      }
+    } catch (e) {
+      // redirect()는 내부적으로 에러를 throw하므로 re-throw
+      throw e
     }
-
-    // 관리자 → 첫 번째 트레이너로 자동 진입
-    const staffList = await getStaffList()
-    const firstTrainer = staffList.find((s) =>
-      ['trainer', '강사', '팀장'].includes(s.role) && s.is_approved
-    )
-    trainerId = firstTrainer?.id ?? 'unassigned'
-    redirect(`/ot?trainer=${trainerId}&tab=schedule`)
   }
 
   // 트레이너 상세 — 쉘 먼저 표시, 콘텐츠는 스트리밍
