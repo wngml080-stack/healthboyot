@@ -31,28 +31,28 @@ export async function updateSession(request: NextRequest) {
     }
   )
 
-  // 세션 갱신 (토큰 리프레시 포함)
+  // 세션 확인 (쿠키만 읽음 — 네트워크 호출 없음, Disk IO 절약)
   const {
-    data: { user },
-  } = await supabase.auth.getUser()
+    data: { session },
+  } = await supabase.auth.getSession()
 
   // 비인증 사용자 → 로그인으로
-  if (!user && !pathname.startsWith('/login')) {
+  if (!session && !pathname.startsWith('/login')) {
     const url = request.nextUrl.clone()
     url.pathname = '/login'
     return NextResponse.redirect(url)
   }
 
   // 인증된 사용자가 로그인 접근 시 → /ot으로
-  if (user && pathname.startsWith('/login')) {
+  if (session && pathname.startsWith('/login')) {
     const url = request.nextUrl.clone()
     url.pathname = '/ot'
     return NextResponse.redirect(url)
   }
 
   // 역할 기반 접근 제어
-  if (user) {
-    const role = user.user_metadata?.role as string | undefined
+  if (session) {
+    const role = session.user.user_metadata?.role as string | undefined
 
     if (role === 'fc' && pathname.startsWith('/ot')) {
       const url = request.nextUrl.clone()
