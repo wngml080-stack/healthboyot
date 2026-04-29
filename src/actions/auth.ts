@@ -21,7 +21,7 @@ export async function signIn(formData: { email: string; password: string }) {
       maxAge: 60 * 60 * 24,
     })
 
-    return { success: true, redirect: '/ot' }
+    redirect('/ot')
   }
 
   const supabase = await createClient()
@@ -60,7 +60,7 @@ export async function signIn(formData: { email: string; password: string }) {
     }
   }
 
-  return { success: true, redirect: '/ot' }
+  redirect('/ot')
 }
 
 export async function signUp(formData: { email: string; password: string; name: string }) {

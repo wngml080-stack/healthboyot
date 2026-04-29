@@ -63,8 +63,6 @@ export default function LoginPage() {
           setError(result.error)
         }
         setLoading(false)
-      } else if (result?.redirect) {
-        window.location.href = result.redirect
       }
     } else {
       const result = await signUp({
