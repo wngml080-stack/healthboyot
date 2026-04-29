@@ -29,14 +29,23 @@ export default async function OtPage({ searchParams }: OtPageProps) {
       if (!profile) redirect('/login')
 
       const isAdmin = ['admin', '관리자'].includes(profile.role)
+      const TRAINER_ORDER = ['오종민', '정가윤', '박규민', '김석현', '유창욱', '구은솔']
       const orderedTrainers = staffList
         .filter((s) => ['trainer', '강사', '팀장'].includes(s.role) && s.is_approved)
+        .sort((a, b) => {
+          const ai = TRAINER_ORDER.indexOf(a.name)
+          const bi = TRAINER_ORDER.indexOf(b.name)
+          if (ai !== -1 && bi !== -1) return ai - bi
+          if (ai !== -1) return -1
+          if (bi !== -1) return 1
+          return a.name.localeCompare(b.name)
+        })
 
       if (!isAdmin) {
         // 트레이너/FC → 바로 자기 스케줄로 이동
         redirect(`/ot?trainer=${profile.id}&tab=schedule`)
       } else {
-        // 관리자 → 첫 번째 트레이너로 자동 진입
+        // 관리자 → 오종민 (첫 번째 트레이너)으로 자동 진입
         trainerId = orderedTrainers[0]?.id ?? 'unassigned'
         redirect(`/ot?trainer=${trainerId}&tab=schedule`)
       }
