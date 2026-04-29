@@ -113,7 +113,7 @@ export function TrainerCardList({ assignments, trainers = [], trainerId, trainer
 
   // 피드백 데이터 + 승인필요 set + 승인상태 맵
   const [feedbackMap, setFeedbackMap] = useState<Record<string, { session: number; feedback: string }[]>>({})
-  const [feedbackPopup, setFeedbackPopup] = useState<{ title: string; feedback: string } | null>(null)
+  const [feedbackPopup, setFeedbackPopup] = useState<{ name: string; feedbacks: { session: number; feedback: string }[] } | null>(null)
   const [needApprovalSet, setNeedApprovalSet] = useState<Set<string>>(new Set())
   const [approvalMap, setApprovalMap] = useState<Record<string, { session: number; status: string; approved_at?: string | null; admin_feedback?: string | null }[]>>({})
 
@@ -1014,15 +1014,14 @@ export function TrainerCardList({ assignments, trainers = [], trainerId, trainer
                           })()}
                         </div>
                         <div className="text-right text-xs text-gray-500 flex items-center justify-end gap-1.5">
-                          {feedbackMap[a.id] && feedbackMap[a.id].map((fb) => (
+                          {feedbackMap[a.id] && feedbackMap[a.id].length > 0 && (
                             <button
-                              key={fb.session}
-                              className="inline-flex items-center rounded px-1.5 py-0.5 text-[10px] font-bold bg-blue-500 text-white hover:bg-blue-600 transition-colors"
-                              onClick={(e) => { e.stopPropagation(); setFeedbackPopup({ title: `${fb.session}차 OT 피드백`, feedback: fb.feedback }) }}
+                              className="inline-flex items-center rounded-md px-2 py-0.5 text-[10px] font-bold text-white transition-all duration-150 bg-gradient-to-b from-amber-400 to-amber-600 shadow-[0_2px_0_0_#b45309,0_3px_6px_rgba(180,83,9,0.3)] hover:shadow-[0_1px_0_0_#b45309,0_2px_4px_rgba(180,83,9,0.3)] hover:translate-y-[1px] active:shadow-none active:translate-y-[2px]"
+                              onClick={(e) => { e.stopPropagation(); setFeedbackPopup({ name: a.member.name ?? '회원', feedbacks: feedbackMap[a.id] }) }}
                             >
-                              {fb.session}차 피드백
+                              피드백 ({feedbackMap[a.id].length})
                             </button>
-                          ))}
+                          )}
                           {a.is_sales_target && (
                             <Badge className="text-[10px] px-1.5 bg-purple-600 text-white border-purple-600 font-bold">★ 매출대상</Badge>
                           )}
@@ -1035,7 +1034,7 @@ export function TrainerCardList({ assignments, trainers = [], trainerId, trainer
                           {progressCache.isNewMap.get(a.id) && (
                             <span className="inline-flex items-center rounded px-1.5 py-0.5 text-[10px] font-bold bg-red-500 text-white">New</span>
                           )}
-                          <span>배정날짜 : {a.created_at ? format(new Date(a.created_at), 'yyyy-MM-dd') : '-'}</span>
+                          <span>배정날짜 : {(a.assigned_at || a.created_at) ? format(new Date(a.assigned_at || a.created_at), 'yyyy-MM-dd') : '-'}</span>
                         </div>
                       </div>
                       {/* OT 진행 로그 타임라인 */}
@@ -2414,13 +2413,22 @@ export function TrainerCardList({ assignments, trainers = [], trainerId, trainer
 
       {/* 피드백 팝업 */}
       {!!feedbackPopup && <Dialog open onOpenChange={() => setFeedbackPopup(null)}>
-        <DialogContent className="max-w-sm">
+        <DialogContent className="max-w-md">
           <DialogHeader>
-            <DialogTitle className="text-base">{feedbackPopup.title}</DialogTitle>
-            <DialogDescription>관리자 피드백</DialogDescription>
+            <DialogTitle className="text-base">{feedbackPopup.name} - OT 피드백</DialogTitle>
+            <DialogDescription>관리자 피드백 ({feedbackPopup.feedbacks.length}건)</DialogDescription>
           </DialogHeader>
-          <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
-            <p className="text-sm text-gray-800 whitespace-pre-wrap">{feedbackPopup.feedback}</p>
+          <div className="space-y-3">
+            {feedbackPopup.feedbacks.map((fb) => (
+              <div key={fb.session} className="rounded-lg border border-amber-200 overflow-hidden">
+                <div className="bg-gradient-to-r from-amber-500 to-amber-600 px-3 py-1.5">
+                  <span className="text-sm font-bold text-white">{fb.session}차 피드백</span>
+                </div>
+                <div className="bg-amber-50 p-3">
+                  <p className="text-sm text-gray-800 whitespace-pre-wrap">{fb.feedback}</p>
+                </div>
+              </div>
+            ))}
           </div>
         </DialogContent>
       </Dialog>}

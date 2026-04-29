@@ -27,6 +27,7 @@ export interface UpdateOtAssignmentValues {
   actual_sales?: number
   closing_probability?: number
   closing_fail_reason?: string | null
+  assigned_at?: string | null
 }
 
 export async function getOtAssignments(params?: {
@@ -51,7 +52,7 @@ export async function getOtAssignments(params?: {
       contact_status, sales_status, expected_amount, expected_sessions,
       closing_probability, closing_fail_reason, sales_note,
       is_sales_target, is_pt_conversion, pt_assign_status, ppt_assign_status,
-      is_excluded, excluded_reason, excluded_at,
+      is_excluded, excluded_reason, excluded_at, assigned_at,
       created_at, updated_at,
       member:members!inner(id, name, phone, ot_category, exercise_time, duration_months, detail_info, notes, registered_at, registration_source, is_existing_member, gender, start_date, is_completed),
       pt_trainer:profiles!ot_assignments_pt_trainer_id_fkey(id, name),
@@ -95,7 +96,7 @@ export async function getOtAssignment(id: string): Promise<OtAssignmentWithDetai
       contact_status, sales_status, expected_amount, expected_sessions,
       closing_probability, closing_fail_reason, sales_note,
       is_sales_target, is_pt_conversion, pt_assign_status, ppt_assign_status,
-      is_excluded, excluded_reason, excluded_at,
+      is_excluded, excluded_reason, excluded_at, assigned_at,
       created_at, updated_at,
       member:members!inner(id, name, phone, gender, sports, ot_category, exercise_time, duration_months, injury_tags, detail_info, notes, registered_at, registration_source, is_existing_member, start_date, is_completed),
       pt_trainer:profiles!ot_assignments_pt_trainer_id_fkey(id, name),
@@ -124,9 +125,15 @@ export async function updateOtAssignment(id: string, values: UpdateOtAssignmentV
     .eq('id', id)
     .single()
 
+  // 담당자 변경 시 assigned_at 자동 기록
+  const updateValues = { ...values }
+  if (values.pt_trainer_id !== undefined || values.ppt_trainer_id !== undefined) {
+    if (!updateValues.assigned_at) updateValues.assigned_at = new Date().toISOString()
+  }
+
   const { error } = await supabase
     .from('ot_assignments')
-    .update(values)
+    .update(updateValues)
     .eq('id', id)
 
   if (error) {

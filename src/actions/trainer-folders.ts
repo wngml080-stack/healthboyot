@@ -39,43 +39,108 @@ export const getTrainerFolders = cache(async (): Promise<TrainerFolder[]> => {
   }
 
   const supabase = await createClient()
+  const todayStr = toKstDateStr(nowKst())
 
-  // 승인 + 폴더 활성화된 직원만 조회 (순서대로)
-  const { data: trainers } = await supabase
-    .from('profiles')
-    .select('id, name, role, folder_password, folder_order')
-    .neq('role', 'admin')
-    .eq('is_approved', true)
-    .eq('has_folder', true)
-    .order('folder_order', { ascending: true })
-    .order('name')
+  // RPC 1회 호출로 모든 데이터 가져오기 (DB 내부에서 JOIN 처리)
+  const { data: rpcData, error: rpcError } = await supabase.rpc('get_trainer_folders_data', { today_date: todayStr })
+
+  if (rpcError || !rpcData) {
+    console.error('[getTrainerFolders] RPC 실패, fallback:', rpcError?.message)
+    // RPC 실패 시 기존 방식으로 폴백
+    return getTrainerFoldersFallback(supabase, todayStr)
+  }
+
+  const { trainers, assignments, todaySchedules } = rpcData as {
+    trainers: { id: string; name: string; role: string; folder_password: string | null; folder_order: number }[] | null
+    assignments: { pt_trainer_id: string | null; ppt_trainer_id: string | null; is_sales_target: boolean; is_pt_conversion: boolean; created_at: string; member_id: string; member_name: string }[] | null
+    todaySchedules: { trainer_id: string; member_name: string }[] | null
+    allStaff: unknown
+  }
 
   if (!trainers || trainers.length === 0) return []
 
-  const trainerIds = trainers.map((t) => t.id)
+  return buildFolders(trainers, assignments ?? [], todaySchedules ?? [])
+})
 
-  // KST 기준 오늘
+/** 폴더 + 스태프 + 프로필을 1회 RPC로 반환 (folder-loader용) */
+export async function getTrainerFoldersAll() {
+  if (isDemoMode()) {
+    const folders = getDemoFolders()
+    return { folders, allStaff: [] as { id: string; name: string; role: string; is_approved: boolean }[], role: 'admin', userId: 'demo-admin-001' }
+  }
+
+  const supabase = await createClient()
   const todayStr = toKstDateStr(nowKst())
 
-  // 배정 + 오늘 스케줄 + 제외회원 수 병렬 조회 (3쿼리 → 2쿼리로 축소 가능하지만 병렬이라 차이 미미)
+  // 1회 RPC로 폴더 + 스태프 + 사용자 정보 모두 반환
+  const [{ data: rpcData, error: rpcError }, { data: { session } }] = await Promise.all([
+    supabase.rpc('get_trainer_folders_data', { today_date: todayStr }),
+    supabase.auth.getSession(),
+  ])
+
+  if (rpcError || !rpcData) {
+    console.error('[getTrainerFoldersAll] RPC 실패:', rpcError?.message)
+    // 폴백
+    const folders = await getTrainerFoldersFallback(supabase, todayStr)
+    const { data: staffData } = await supabase.from('profiles').select('id, name, role, is_approved').order('role').order('name')
+    const userId = session?.user?.id
+    const userProfile = (staffData ?? []).find((s) => s.id === userId)
+    return { folders, allStaff: (staffData ?? []) as { id: string; name: string; role: string; is_approved: boolean }[], role: userProfile?.role ?? 'fc', userId }
+  }
+
+  const { trainers, assignments, todaySchedules, allStaff } = rpcData as {
+    trainers: { id: string; name: string; role: string; folder_password: string | null; folder_order: number }[] | null
+    assignments: { pt_trainer_id: string | null; ppt_trainer_id: string | null; is_sales_target: boolean; is_pt_conversion: boolean; created_at: string; member_id: string; member_name: string }[] | null
+    todaySchedules: { trainer_id: string; member_name: string }[] | null
+    allStaff: { id: string; name: string; role: string; is_approved: boolean }[] | null
+  }
+
+  const folders = (!trainers || trainers.length === 0) ? [] : buildFolders(trainers, assignments ?? [], todaySchedules ?? [])
+  const staff = (allStaff ?? []) as { id: string; name: string; role: string; is_approved: boolean }[]
+  const userId = session?.user?.id
+  const userProfile = staff.find((s) => s.id === userId)
+
+  return { folders, allStaff: staff, role: userProfile?.role ?? 'fc', userId }
+}
+
+/** RPC 실패 시 기존 방식으로 폴백 */
+async function getTrainerFoldersFallback(supabase: Awaited<ReturnType<typeof createClient>>, todayStr: string): Promise<TrainerFolder[]> {
+  const { data: trainers } = await supabase
+    .from('profiles')
+    .select('id, name, role, folder_password, folder_order')
+    .neq('role', 'admin').eq('is_approved', true).eq('has_folder', true)
+    .order('folder_order', { ascending: true }).order('name')
+
+  if (!trainers || trainers.length === 0) return []
+  const trainerIds = trainers.map((t) => t.id)
+
   const [{ data: assignments }, { data: todaySchedules }] = await Promise.all([
-    supabase
-      .from('ot_assignments')
+    supabase.from('ot_assignments')
       .select('status, pt_trainer_id, ppt_trainer_id, is_sales_target, is_pt_conversion, created_at, member:members!inner(id, name)')
       .or(`pt_trainer_id.in.(${trainerIds.join(',')}),ppt_trainer_id.in.(${trainerIds.join(',')})`)
       .limit(2000),
-    supabase
-      .from('trainer_schedules')
+    supabase.from('trainer_schedules')
       .select('trainer_id, member_name')
-      .eq('scheduled_date', todayStr)
-      .eq('schedule_type', 'OT')
+      .eq('scheduled_date', todayStr).eq('schedule_type', 'OT')
       .in('trainer_id', trainerIds),
   ])
 
-  // 트레이너별 assignment 미리 인덱싱 (O(N) → O(1) 조회)
-  const allAssignments = assignments ?? []
-  const assignmentsByTrainer = new Map<string, (typeof allAssignments)>()
-  for (const a of allAssignments) {
+  const mapped = (assignments ?? []).map((a) => {
+    const m = a.member as unknown as { id: string; name: string } | null
+    return { ...a, member_id: m?.id ?? '', member_name: m?.name ?? '' }
+  })
+
+  return buildFolders(trainers, mapped, todaySchedules ?? [])
+}
+
+/** 공통: 폴더 데이터 가공 */
+function buildFolders(
+  trainers: { id: string; name: string; role: string; folder_password: string | null; folder_order: number }[],
+  assignments: { pt_trainer_id: string | null; ppt_trainer_id: string | null; is_sales_target: boolean; is_pt_conversion: boolean; created_at: string; member_id: string; member_name: string }[],
+  todaySchedules: { trainer_id: string; member_name: string }[],
+): TrainerFolder[] {
+  const assignmentsByTrainer = new Map<string, typeof assignments>()
+  for (const a of assignments) {
     if (a.pt_trainer_id) {
       if (!assignmentsByTrainer.has(a.pt_trainer_id)) assignmentsByTrainer.set(a.pt_trainer_id, [])
       assignmentsByTrainer.get(a.pt_trainer_id)!.push(a)
@@ -86,57 +151,32 @@ export const getTrainerFolders = cache(async (): Promise<TrainerFolder[]> => {
     }
   }
 
-  // 오늘 스케줄 트레이너별 인덱싱
-  const allSchedules = todaySchedules ?? []
-  const schedulesByTrainer = new Map<string, (typeof allSchedules)>()
-  for (const s of allSchedules) {
+  const schedulesByTrainer = new Map<string, typeof todaySchedules>()
+  for (const s of todaySchedules) {
     if (!schedulesByTrainer.has(s.trainer_id)) schedulesByTrainer.set(s.trainer_id, [])
     schedulesByTrainer.get(s.trainer_id)!.push(s)
   }
 
-  const folders: TrainerFolder[] = trainers.map((t) => {
+  return trainers.map((t) => {
     const myAssignments = assignmentsByTrainer.get(t.id) ?? []
-
-    // 오늘 이 트레이너의 OT 수업
     const myTodayOts = schedulesByTrainer.get(t.id) ?? []
-    // 오늘 OT 수업이 잡힌 회원 이름 set
     const todayMemberNames = new Set(myTodayOts.map((s) => s.member_name))
-    // 오늘 OT 수업 회원 중 매출대상자 카운트 (회원 단위 unique)
     const todaySalesTargetMemberIds = new Set<string>()
     for (const a of myAssignments) {
-      const member = a.member as unknown as { id: string; name: string } | null
-      if (!member) continue
-      if (todayMemberNames.has(member.name) && a.is_sales_target) {
-        todaySalesTargetMemberIds.add(member.id)
-      }
+      if (todayMemberNames.has(a.member_name) && a.is_sales_target) todaySalesTargetMemberIds.add(a.member_id)
     }
-
-    // 가장 최근 배정일
-    const latestDate = myAssignments.reduce<string | null>((latest, a) => {
-      if (!a.created_at) return latest
-      return !latest || a.created_at > latest ? a.created_at : latest
-    }, null)
+    const latestDate = myAssignments.reduce<string | null>((l, a) => (!a.created_at ? l : !l || a.created_at > l ? a.created_at : l), null)
 
     return {
-      id: t.id,
-      name: t.name,
-      role: t.role,
+      id: t.id, name: t.name, role: t.role,
       color: ROLE_COLORS[t.role] ?? 'bg-gray-400',
       has_password: !!t.folder_password,
       folder_order: t.folder_order ?? 0,
       latestAssignmentDate: latestDate,
-      stats: {
-        inProgress: myTodayOts.length, // 금일 OT 수업 개수
-        pending: todaySalesTargetMemberIds.size, // 금일 매출대상자
-        completed: myAssignments.filter((a) => a.is_pt_conversion).length, // PT전환
-        total: myAssignments.length, // 전체 회원 (수기 포함)
-      },
+      stats: { inProgress: myTodayOts.length, pending: todaySalesTargetMemberIds.size, completed: myAssignments.filter((a) => a.is_pt_conversion).length, total: myAssignments.length },
     }
   })
-
-
-  return folders
-})
+}
 
 function getDemoFolders(): TrainerFolder[] {
   const assignments = DEMO_OT_ASSIGNMENTS

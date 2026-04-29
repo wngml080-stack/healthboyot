@@ -2,15 +2,13 @@
 
 import { useState, useEffect } from 'react'
 import { Loader2 } from 'lucide-react'
-import { getTrainerFolders } from '@/actions/trainer-folders'
-import { getStaffList } from '@/actions/staff'
-import { getCurrentProfile } from '@/actions/auth'
+import { getTrainerFoldersAll } from '@/actions/trainer-folders'
 import { TrainerFolderGrid } from '@/components/ot/trainer-folder-grid'
 import type { TrainerFolder } from '@/actions/trainer-folders'
 import type { Profile } from '@/types'
 import Link from 'next/link'
 
-// 메모리 캐시 — 같은 세션 내 재방문 시 즉시 표시
+// 메모리 캐시 — 재방문 시 즉시 표시
 let folderCache: {
   folders: TrainerFolder[]
   allStaff: Pick<Profile, 'id' | 'name' | 'role' | 'is_approved'>[]
@@ -23,23 +21,18 @@ export function FolderLoader() {
   const [data, setData] = useState(folderCache && Date.now() - folderCache.timestamp < 60000 ? folderCache : null)
 
   useEffect(() => {
-    // 캐시가 1분 이내면 백그라운드 갱신만
-    const isFresh = data && Date.now() - (folderCache?.timestamp ?? 0) < 30000
-    if (isFresh) return
+    if (data && Date.now() - (folderCache?.timestamp ?? 0) < 30000) return
 
-    Promise.all([getTrainerFolders(), getStaffList(), getCurrentProfile()]).then(
-      ([folders, staff, profile]) => {
-        const result = {
-          folders,
-          allStaff: staff as Pick<Profile, 'id' | 'name' | 'role' | 'is_approved'>[],
-          role: profile?.role ?? 'fc',
-          userId: profile?.id,
-          timestamp: Date.now(),
-        }
-        folderCache = result
-        setData(result)
+    // 서버 액션 1회로 폴더+스태프+프로필 모두 로딩 (이전: 3회)
+    getTrainerFoldersAll().then((result) => {
+      const cached = {
+        ...result,
+        allStaff: result.allStaff as Pick<Profile, 'id' | 'name' | 'role' | 'is_approved'>[],
+        timestamp: Date.now(),
       }
-    )
+      folderCache = cached
+      setData(cached)
+    })
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 

@@ -83,6 +83,7 @@ export interface OtAssignment {
   is_excluded: boolean
   excluded_reason: string | null
   excluded_at: string | null
+  assigned_at: string | null
   created_at: string
   updated_at: string
 }
