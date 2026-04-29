@@ -310,28 +310,45 @@ export async function upsertOtSession(values: {
     await Promise.all(statusPromises)
   }
 
-  // 프로그램 JSON의 sessions 날짜/시간도 동기화
+  // 프로그램 JSON의 sessions 날짜/시간/duration 동기화
   if (values.scheduled_at) {
     try {
       const dateStr = toKstDateStr(values.scheduled_at)
       const timeStr = toKstTimeStr(values.scheduled_at)
+      const emptySession = { date: '', time: '', class_duration: durationMin, exercises: [], tip: '', plan: '', next_ot_date: '', cardio: { types: [], duration_min: '' }, inbody: false, images: [], completed: false, approval_status: '작성중', result_category: null, result_note: '' }
+
       const { data: prog } = await supabase
         .from('ot_programs')
         .select('id, sessions')
         .eq('ot_assignment_id', values.ot_assignment_id)
-        .single()
+        .maybeSingle()
 
       if (prog && Array.isArray(prog.sessions)) {
         const idx = values.session_number - 1
-        if (idx >= 0 && idx < prog.sessions.length) {
-          const updated = [...prog.sessions]
-          updated[idx] = { ...updated[idx], date: dateStr, time: timeStr }
-          await supabase.from('ot_programs').update({ sessions: updated }).eq('id', prog.id)
-        } else if (idx === prog.sessions.length) {
-          // 새 세션 추가
-          const newSession = { date: dateStr, time: timeStr, exercises: [], tip: '', next_ot_date: '', cardio: { types: [], duration_min: '' }, inbody: false, images: [], completed: false }
-          await supabase.from('ot_programs').update({ sessions: [...prog.sessions, newSession] }).eq('id', prog.id)
+        const updated = [...prog.sessions]
+        // 세션 배열이 부족하면 빈 세션으로 채우기
+        while (updated.length <= idx) {
+          updated.push({ ...emptySession })
         }
+        updated[idx] = { ...updated[idx], date: dateStr, time: timeStr, class_duration: durationMin }
+        await supabase.from('ot_programs').update({ sessions: updated }).eq('id', prog.id)
+      } else if (!prog) {
+        // 프로그램이 없으면 자동 생성
+        const member = assignData?.member as unknown as { name: string } | undefined
+        const ptName = (assignData?.pt_trainer as unknown as { name: string } | null)?.name ?? ''
+        const idx = values.session_number - 1
+        const sessions = Array.from({ length: idx + 1 }, (_, i) =>
+          i === idx
+            ? { ...emptySession, date: dateStr, time: timeStr, class_duration: durationMin }
+            : { ...emptySession }
+        )
+        await supabase.from('ot_programs').insert({
+          ot_assignment_id: values.ot_assignment_id,
+          member_id: (assignData as { member_id?: string })?.member_id ?? null,
+          trainer_name: ptName,
+          sessions,
+          approval_status: '작성중',
+        })
       }
     } catch (err) { console.error('[upsertOtSession] program sync:', err) }
   }

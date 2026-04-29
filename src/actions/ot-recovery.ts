@@ -248,10 +248,20 @@ async function applyRecoveryForAssignment(
   if (sessErr) throw new Error(`ot_sessions insert 실패: ${sessErr.message}`)
 
   // 3. trainer_schedules 일괄 insert (병렬)
+  // 기존 프로그램의 class_duration을 참고해서 duration 결정
+  const { data: existingProg } = await supabase
+    .from('ot_programs')
+    .select('id, sessions')
+    .eq('ot_assignment_id', assignmentId)
+    .maybeSingle()
+
   if (trainerIds.length > 0 && insertedSessions) {
-    const scheduleRows = insertedSessions.flatMap((sess) => {
+    const scheduleRows = insertedSessions.flatMap((sess, i) => {
       const dateStr = toKstDateStr(sess.scheduled_at)
       const timeStr = toKstTimeStr(sess.scheduled_at)
+      // 프로그램에서 해당 세션의 class_duration 참조, 없으면 30분 기본
+      const progSession = existingProg?.sessions?.[i] as Record<string, unknown> | undefined
+      const dur = (progSession?.class_duration as number) ?? 30
       return trainerIds.map((tid) => ({
         trainer_id: tid,
         schedule_type: 'OT' as const,
@@ -260,13 +270,50 @@ async function applyRecoveryForAssignment(
         ot_session_id: sess.id,
         scheduled_date: dateStr,
         start_time: timeStr,
-        duration: 50,
+        duration: dur,
       }))
     })
     await supabase.from('trainer_schedules').insert(scheduleRows)
   }
 
-  // 4. assignment 상태가 신청대기/배정완료면 진행중으로 전환
+  // 4. 프로그램 세션 날짜/시간 동기화
+  if (insertedSessions && insertedSessions.length > 0) {
+    try {
+      const emptySession = { date: '', time: '', class_duration: 30, exercises: [], tip: '', plan: '', next_ot_date: '', cardio: { types: [], duration_min: '' }, inbody: false, images: [], completed: false, approval_status: '작성중', result_category: null, result_note: '' }
+
+      if (existingProg && Array.isArray(existingProg.sessions)) {
+        const updated = [...existingProg.sessions]
+        for (const sess of insertedSessions) {
+          const idx = sessionRows.findIndex((r) => r.scheduled_at === sess.scheduled_at)
+          if (idx < 0) continue
+          const dateStr = toKstDateStr(sess.scheduled_at)
+          const timeStr = toKstTimeStr(sess.scheduled_at)
+          while (updated.length <= idx) updated.push({ ...emptySession })
+          updated[idx] = { ...updated[idx], date: dateStr, time: timeStr }
+        }
+        await supabase.from('ot_programs').update({ sessions: updated }).eq('id', existingProg.id)
+      } else if (!existingProg) {
+        // 프로그램 없으면 생성
+        const ptName = ptTrainerId
+          ? (await supabase.from('profiles').select('name').eq('id', ptTrainerId).single()).data?.name ?? ''
+          : ''
+        const sessions = insertedSessions.map((sess) => ({
+          ...emptySession,
+          date: toKstDateStr(sess.scheduled_at),
+          time: toKstTimeStr(sess.scheduled_at),
+        }))
+        await supabase.from('ot_programs').insert({
+          ot_assignment_id: assignmentId,
+          member_id: member.id,
+          trainer_name: ptName,
+          sessions,
+          approval_status: '작성중',
+        })
+      }
+    } catch (err) { console.error('[recovery] program sync 실패:', err) }
+  }
+
+  // 5. assignment 상태가 신청대기/배정완료면 진행중으로 전환
   await supabase
     .from('ot_assignments')
     .update({ status: '진행중' })

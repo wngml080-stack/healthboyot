@@ -14,7 +14,7 @@ import {
 import { ChevronLeft, ChevronRight, X, Search, Copy } from 'lucide-react'
 import { toKstShortStr } from '@/lib/kst'
 import { createClient } from '@/lib/supabase/client'
-import { updateOtAssignment, upsertOtSession, moveOtSchedule } from '@/actions/ot'
+import { updateOtAssignment, upsertOtSession, moveOtSchedule, deleteOtSession } from '@/actions/ot'
 // import { OtStatusBadge } from './ot-status-badge'
 import type { OtAssignmentWithDetails, SalesStatus, Profile, OtProgram } from '@/types'
 import dynamic from 'next/dynamic'
@@ -863,12 +863,21 @@ export function WeeklyCalendar({ assignments, trainerId, profile, workStartTime,
     if (!confirm('이 스케줄을 삭제하시겠습니까?')) return
     setSchedules((prev) => prev.filter((s) => s.id !== id))
 
-    // OT 스케줄이면 연결된 ot_sessions + 다른 트레이너의 trainer_schedules도 삭제
+    // OT 스케줄이면 deleteOtSession server action으로 처리 (프로그램 세션도 함께 정리)
     if (target?.schedule_type === 'OT' && target.ot_session_id) {
-      // 같은 ot_session_id의 모든 trainer_schedules 삭제
-      await supabaseRef.current.from('trainer_schedules').delete().eq('ot_session_id', target.ot_session_id)
-      // ot_sessions도 삭제
-      await supabaseRef.current.from('ot_sessions').delete().eq('id', target.ot_session_id)
+      const { data: session } = await supabaseRef.current
+        .from('ot_sessions')
+        .select('ot_assignment_id, session_number')
+        .eq('id', target.ot_session_id)
+        .single()
+      if (session) {
+        const result = await deleteOtSession(session.ot_assignment_id, session.session_number)
+        if (result?.error) console.error('OT 삭제 실패:', result.error)
+      } else {
+        // fallback: session 조회 실패 시 직접 삭제
+        await supabaseRef.current.from('trainer_schedules').delete().eq('ot_session_id', target.ot_session_id)
+        await supabaseRef.current.from('ot_sessions').delete().eq('id', target.ot_session_id)
+      }
     } else {
       const { error } = await supabaseRef.current.from('trainer_schedules').delete().eq('id', id)
       if (error) {
