@@ -1032,7 +1032,7 @@ export function TrainerCardList({ assignments, trainers = [], trainerId, trainer
                             <Badge variant="outline" className="text-[10px] px-1.5 font-bold bg-blue-600 text-white border-blue-600">PT전환</Badge>
                           )}
                           {progressCache.isNewMap.get(a.id) && (
-                            <span className="inline-flex items-center rounded px-1.5 py-0.5 text-[10px] font-bold bg-red-500 text-white">New</span>
+                            <span className="inline-flex items-center rounded-md px-2 py-0.5 text-[10px] font-bold text-white bg-gradient-to-b from-red-400 to-red-600 shadow-[0_2px_0_0_#991b1b,0_3px_6px_rgba(153,27,27,0.3)]">New</span>
                           )}
                           <span className="inline-flex items-center gap-1">
                             배정날짜 :
