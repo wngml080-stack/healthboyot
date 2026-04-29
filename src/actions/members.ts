@@ -3,6 +3,7 @@
 import { isDemoMode } from '@/lib/demo'
 import { DEMO_MEMBERS } from '@/lib/demo-data'
 import { createClient } from '@/lib/supabase/server'
+import { revalidatePath } from 'next/cache'
 import type { Member, OtAssignmentWithDetails } from '@/types'
 import type { MemberWithOt } from '@/components/members/member-list'
 import type { MemberFormValues } from '@/lib/validators'
@@ -239,6 +240,9 @@ export async function deleteMember(id: string) {
     .eq('id', id)
 
   if (error) return { error: error.message }
+  revalidatePath('/ot')
+  revalidatePath('/members')
+  revalidatePath('/dashboard')
   return { success: true }
 }
 

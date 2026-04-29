@@ -514,7 +514,7 @@ export async function deleteOtSession(assignmentId: string, sessionNumber: numbe
   const { data: program } = await supabase
     .from('ot_programs')
     .select('id, sessions')
-    .eq('assignment_id', assignmentId)
+    .eq('ot_assignment_id', assignmentId)
     .single()
 
   if (program?.sessions && Array.isArray(program.sessions)) {
@@ -562,7 +562,7 @@ export async function repairSessionNumbers(assignmentId: string) {
   const { data: program } = await supabase
     .from('ot_programs')
     .select('id, sessions')
-    .eq('assignment_id', assignmentId)
+    .eq('ot_assignment_id', assignmentId)
     .single()
 
   if (program?.sessions && Array.isArray(program.sessions)) {
