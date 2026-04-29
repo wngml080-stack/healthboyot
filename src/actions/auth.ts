@@ -24,15 +24,31 @@ export async function signIn(formData: { email: string; password: string }) {
     return { success: true }
   }
 
+  const t0 = Date.now()
   console.log('[signIn] start:', formData.email)
-  const supabase = await createClient()
-  console.log('[signIn] supabase client created')
 
-  const { error, data } = await supabase.auth.signInWithPassword({
-    email: formData.email,
-    password: formData.password,
-  })
-  console.log('[signIn] auth result:', error ? `ERROR: ${error.message}` : `OK: ${data.user?.email}`)
+  let supabase
+  try {
+    supabase = await createClient()
+    console.log('[signIn] client created:', Date.now() - t0, 'ms')
+  } catch (e) {
+    console.error('[signIn] client creation failed:', e)
+    return { error: '서버 연결 실패. 잠시 후 다시 시도해주세요.' }
+  }
+
+  let authResult
+  try {
+    authResult = await supabase.auth.signInWithPassword({
+      email: formData.email,
+      password: formData.password,
+    })
+    console.log('[signIn] auth done:', Date.now() - t0, 'ms', authResult.error ? `ERROR: ${authResult.error.message}` : 'OK')
+  } catch (e) {
+    console.error('[signIn] auth call failed:', Date.now() - t0, 'ms', e)
+    return { error: '인증 서버 연결 실패. 잠시 후 다시 시도해주세요.' }
+  }
+
+  const { error, data } = authResult
 
   if (error) {
     return { error: error.message }
@@ -40,12 +56,12 @@ export async function signIn(formData: { email: string; password: string }) {
 
   // 승인 여부 확인 — 에러나도 로그인은 진행
   try {
-    const { data: profile } = await supabase
+    const { data: profile, error: profileError } = await supabase
       .from('profiles')
       .select('is_approved, role')
       .eq('id', data.user!.id)
       .single()
-    console.log('[signIn] profile:', profile?.role, 'approved:', profile?.is_approved)
+    console.log('[signIn] profile query:', Date.now() - t0, 'ms', profileError ? `ERROR: ${profileError.message}` : `role=${profile?.role}`)
 
     if (profile && !profile.is_approved && profile.role !== 'admin' && profile.role !== '관리자') {
       await supabase.auth.signOut()
@@ -55,13 +71,13 @@ export async function signIn(formData: { email: string; password: string }) {
     const currentRole = data.user!.user_metadata?.role as string | undefined
     if (profile?.role && currentRole !== profile.role) {
       await supabase.auth.updateUser({ data: { role: profile.role } })
-      console.log('[signIn] role updated:', profile.role)
+      console.log('[signIn] role updated:', Date.now() - t0, 'ms')
     }
   } catch (err) {
-    console.error('[signIn] profile check error:', err)
+    console.error('[signIn] profile check error:', Date.now() - t0, 'ms', err)
   }
 
-  console.log('[signIn] success, returning redirect')
+  console.log('[signIn] success, total:', Date.now() - t0, 'ms')
   return { success: true }
 }
 

@@ -57,18 +57,24 @@ export default function LoginPage() {
           localStorage.removeItem('remembered_email')
         }
       }
-      const result = await signIn(data)
-      if (result?.error) {
-        if (result.error === 'NOT_APPROVED') {
-          setError('관리자 승인 대기 중입니다. 승인 후 로그인할 수 있습니다.')
+      try {
+        const result = await signIn(data)
+        if (result?.error) {
+          if (result.error === 'NOT_APPROVED') {
+            setError('관리자 승인 대기 중입니다. 승인 후 로그인할 수 있습니다.')
+          } else {
+            setError(result.error)
+          }
+          setLoading(false)
         } else {
-          setError(result.error)
+          // 쿠키가 설정된 후 라우터 갱신 → 미들웨어가 세션을 인식
+          router.refresh()
+          router.push('/ot')
         }
+      } catch (e) {
+        console.error('[login] signIn failed:', e)
+        setError('서버 연결에 실패했습니다. 잠시 후 다시 시도해주세요.')
         setLoading(false)
-      } else {
-        // 쿠키가 설정된 후 라우터 갱신 → 미들웨어가 세션을 인식
-        router.refresh()
-        router.push('/ot')
       }
     } else {
       const result = await signUp({
