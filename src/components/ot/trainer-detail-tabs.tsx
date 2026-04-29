@@ -4,6 +4,7 @@ import { useState, useCallback, useTransition } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
 import { cn } from '@/lib/utils'
 import { Users, CalendarDays, BarChart3, Loader2 } from 'lucide-react'
+import { NotificationBell } from './notification-bell'
 import { TrainerCardList } from './trainer-card-list'
 import { WeeklyCalendar } from './weekly-calendar'
 import { TrainerStats } from './trainer-stats'
@@ -90,25 +91,31 @@ export function TrainerDetailTabs({
 
   return (
     <div className="space-y-3">
-      {/* 트레이너 선택 탭 바 — 관리자: 전체 트레이너, 트레이너: 자기만 */}
-      {trainerOptions && trainerOptions.length > 0 && (
-        <div className="flex gap-1 overflow-x-auto pb-1 scrollbar-hide">
-          {(isAdmin ? trainerOptions : trainerOptions.filter((t) => t.id === trainerId)).map((t) => (
-            <button
-              key={t.id}
-              onClick={() => switchTrainer(t.id)}
-              className={cn(
-                'px-3 py-1.5 rounded-full text-sm font-medium whitespace-nowrap transition-all shrink-0',
-                t.id === trainerId
-                  ? 'bg-yellow-400 text-black shadow-sm'
-                  : 'bg-gray-800 text-gray-400 hover:bg-gray-700 hover:text-white'
-              )}
-            >
-              {t.name}
-            </button>
-          ))}
+      {/* 헤더: 트레이너 관리 제목 + 트레이너 탭 바 + 알림벨 */}
+      <div className="flex items-center gap-3">
+        <h1 className="text-lg font-bold text-white border-l-4 border-yellow-400 pl-2 shrink-0">트레이너 관리</h1>
+        {trainerOptions && trainerOptions.length > 0 && (
+          <div className="flex gap-1 overflow-x-auto scrollbar-hide">
+            {(isAdmin ? trainerOptions : trainerOptions.filter((t) => t.id === trainerId)).map((t) => (
+              <button
+                key={t.id}
+                onClick={() => switchTrainer(t.id)}
+                className={cn(
+                  'px-3 py-1.5 rounded-full text-xs font-medium whitespace-nowrap transition-all shrink-0',
+                  t.id === trainerId
+                    ? 'bg-yellow-400 text-black shadow-sm'
+                    : 'bg-gray-800 text-gray-400 hover:bg-gray-700 hover:text-white'
+                )}
+              >
+                {t.name}
+              </button>
+            ))}
+          </div>
+        )}
+        <div className="ml-auto shrink-0">
+          <NotificationBell assignments={assignments} programs={trainerPrograms} />
         </div>
-      )}
+      </div>
 
       <div className="flex flex-col lg:flex-row gap-4 lg:gap-6">
         {/* 탭 네비게이션 */}

@@ -6,8 +6,6 @@ import { getAllOtPrograms } from '@/actions/ot-program'
 import { getOtRegistrationsByTrainer } from '@/actions/ot-registration'
 import { getTrainerScheduleSlots } from '@/actions/schedule'
 import { TrainerDetailTabs } from '@/components/ot/trainer-detail-tabs'
-import { PageTitle } from '@/components/shared/page-title'
-import { NotificationBell } from '@/components/ot/notification-bell'
 import { Loader2 } from 'lucide-react'
 import { redirect } from 'next/navigation'
 
@@ -116,13 +114,6 @@ async function TrainerDetailView({ trainerId, tab }: { trainerId: string; tab: s
 
   return (
     <div className="space-y-4">
-      <div className="flex items-center gap-3">
-        <PageTitle>트레이너 관리</PageTitle>
-        <div className="ml-auto">
-          <NotificationBell assignments={trainerAssignments} programs={trainerPrograms} />
-        </div>
-      </div>
-
       <TrainerDetailTabs
         trainerId={trainerId}
         trainerName={trainerName}
