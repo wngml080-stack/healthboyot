@@ -1034,7 +1034,19 @@ export function TrainerCardList({ assignments, trainers = [], trainerId, trainer
                           {progressCache.isNewMap.get(a.id) && (
                             <span className="inline-flex items-center rounded px-1.5 py-0.5 text-[10px] font-bold bg-red-500 text-white">New</span>
                           )}
-                          <span>배정날짜 : {(a.assigned_at || a.created_at) ? format(new Date(a.assigned_at || a.created_at), 'yyyy-MM-dd') : '-'}</span>
+                          <span className="inline-flex items-center gap-1">
+                            배정날짜 :
+                            <input
+                              type="date"
+                              defaultValue={(a.assigned_at || a.created_at) ? format(new Date(a.assigned_at || a.created_at), 'yyyy-MM-dd') : ''}
+                              className="bg-transparent border-b border-dashed border-gray-300 text-xs w-28 px-0 py-0 focus:border-blue-500 focus:outline-none cursor-pointer"
+                              onClick={(e) => e.stopPropagation()}
+                              onChange={(e) => {
+                                if (!e.target.value) return
+                                updateOtAssignment(a.id, { assigned_at: new Date(e.target.value + 'T00:00:00+09:00').toISOString() })
+                              }}
+                            />
+                          </span>
                         </div>
                       </div>
                       {/* OT 진행 로그 타임라인 */}
