@@ -1936,26 +1936,41 @@ export function TrainerCardList({ assignments, trainers = [], trainerId, trainer
                                   const n = s.session_number
                                   const isDone = !!s.completed_at
                                   const isScheduled = !!s.scheduled_at
+                                  const approvals = approvalMap[a.id] ?? []
+                                  const sessionApproval = approvals.find((ap) => ap.session === n)
+                                  const isApproved = sessionApproval?.status === '승인'
                                   return (
-                                    <div key={s.id} className="flex items-center gap-1 bg-white rounded border border-gray-200 px-2 py-1">
+                                    <div key={s.id} className={`flex items-center gap-1 rounded border px-2 py-1 ${isApproved ? 'bg-green-50 border-green-300' : 'bg-white border-gray-200'}`}>
                                       <span className="text-xs font-bold text-gray-700">{n}차</span>
-                                      {isDone && <span className="text-[10px] text-green-600">완료</span>}
-                                      {!isDone && isScheduled && <span className="text-[10px] text-blue-600">예정</span>}
-                                      <button
-                                        className="text-[10px] text-red-500 hover:text-red-700 font-bold ml-1"
-                                        onClick={async () => {
-                                          if (!confirm(`${a.member.name} ${n}차 OT를 삭제하시겠습니까?\n(스케줄 + 세션 모두 삭제됩니다)`)) return
-                                          await deleteOtSession(a.id, n)
-                                          // 승인도 회수 (프로그램에서)
-                                          const ex = expandedData[a.id]
-                                          const pid = ex && ex !== 'loading' ? ex.program?.id : null
-                                          if (pid) await unsubmitOtSession(pid, n - 1)
-                                          setExpandedData((prev) => { const copy = { ...prev }; delete copy[a.id]; return copy })
-                                          router.refresh()
-                                        }}
-                                      >
-                                        삭제
-                                      </button>
+                                      {isApproved && <span className="text-[10px] text-green-600">승인</span>}
+                                      {isDone && !isApproved && <span className="text-[10px] text-blue-600">완료</span>}
+                                      {!isDone && isScheduled && <span className="text-[10px] text-yellow-600">예정</span>}
+                                      {isApproved ? (
+                                        <button
+                                          className="text-[10px] text-orange-500 hover:text-orange-700 font-bold ml-1"
+                                          onClick={async () => {
+                                            if (!confirm(`${a.member.name} ${n}차 승인을 회수하시겠습니까?`)) return
+                                            const ex = expandedData[a.id]
+                                            const pid = ex && ex !== 'loading' ? ex.program?.id : null
+                                            if (pid) await unsubmitOtSession(pid, n - 1)
+                                            setExpandedData((prev) => { const copy = { ...prev }; delete copy[a.id]; return copy })
+                                            router.refresh()
+                                          }}
+                                        >승인회수</button>
+                                      ) : (
+                                        <button
+                                          className="text-[10px] text-red-500 hover:text-red-700 font-bold ml-1"
+                                          onClick={async () => {
+                                            if (!confirm(`${a.member.name} ${n}차 OT를 삭제하시겠습니까?\n(스케줄 + 세션 모두 삭제됩니다)`)) return
+                                            await deleteOtSession(a.id, n)
+                                            const ex = expandedData[a.id]
+                                            const pid = ex && ex !== 'loading' ? ex.program?.id : null
+                                            if (pid) await unsubmitOtSession(pid, n - 1)
+                                            setExpandedData((prev) => { const copy = { ...prev }; delete copy[a.id]; return copy })
+                                            router.refresh()
+                                          }}
+                                        >삭제</button>
+                                      )}
                                     </div>
                                   )
                                 })}

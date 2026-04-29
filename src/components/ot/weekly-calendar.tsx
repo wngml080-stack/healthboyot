@@ -22,7 +22,7 @@ const OtProgramForm = dynamic(() => import('@/components/ot/ot-program-form').th
   ssr: false,
   loading: () => <div className="py-10 text-center text-sm text-gray-500">프로그램 로드 중...</div>,
 }) as unknown as typeof import('@/components/ot/ot-program-form').OtProgramForm
-import { getOtProgram } from '@/actions/ot-program'
+import { getOtProgram, batchGetOtPrograms } from '@/actions/ot-program'
 import { ClipboardList } from 'lucide-react'
 
 interface ScheduleItem {
@@ -276,6 +276,35 @@ export function WeeklyCalendar({ assignments, trainerId, profile, workStartTime,
   const [loading, setLoading] = useState(false)
   const supabaseRef = useRef(createClient())
 
+  // ── OT 세션별 승인 상태 맵: { ot_session_id → approved } ──
+  const [approvedSessionIds, setApprovedSessionIds] = useState<Set<string>>(new Set())
+  useEffect(() => {
+    const ids = assignments.map((a) => a.id)
+    if (ids.length === 0) return
+    batchGetOtPrograms(ids).then((programMap) => {
+      const approved = new Set<string>()
+      for (const [aid, prog] of Object.entries(programMap)) {
+        const a = assignments.find((x) => x.id === aid)
+        if (!prog.sessions || !a?.sessions) continue
+        prog.sessions.forEach((s, i) => {
+          if (s.approval_status === '승인') {
+            const otSession = a.sessions?.find((os) => os.session_number === i + 1)
+            if (otSession?.id) approved.add(otSession.id)
+          }
+        })
+      }
+      setApprovedSessionIds(approved)
+    })
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [assignments])
+
+  // OT 스케줄이 승인된 세션인지 확인
+  const isOtApproved = useCallback((schedule: ScheduleItem) => {
+    if (schedule.schedule_type !== 'OT') return false
+    if (!schedule.ot_session_id) return false
+    return approvedSessionIds.has(schedule.ot_session_id)
+  }, [approvedSessionIds])
+
   // ── 모바일 감지 (640px 미만) ──
   const [isMobile, setIsMobile] = useState(false)
   useEffect(() => {
@@ -507,10 +536,11 @@ export function WeeklyCalendar({ assignments, trainerId, profile, workStartTime,
   // 드래그 가능 여부:
   // - OT: 매칭되는 ot_session이 완료되지 않았을 때 (ot_session_id 매칭 못 찾으면 fallback으로 허용)
   // - 그 외 (PT/PPT/회의/식사 등): 항상 허용
-  const canDragSchedule = useCallback((_s: ScheduleItem): boolean => {
-    // 모든 스케줄 드래그 허용 (완료 세션 포함 — 수정 기간)
+  const canDragSchedule = useCallback((s: ScheduleItem): boolean => {
+    // 승인된 OT 세션은 드래그 불가
+    if (isOtApproved(s)) return false
     return true
-  }, [])
+  }, [isOtApproved])
 
   // ── 근무시간 판별: 주말/공휴일은 항상 IN, 평일은 근무시간 내만 IN ──
   const hasWorkHours = !!(workStartTime && workEndTime)
@@ -820,10 +850,16 @@ export function WeeklyCalendar({ assignments, trainerId, profile, workStartTime,
   }
 
   const handleDelete = async (id: string) => {
-    if (!confirm('이 스케줄을 삭제하시겠습니까?')) return
-
     // 삭제 대상 스케줄 정보 보존
     const target = schedules.find((s) => s.id === id)
+
+    // 승인된 OT 세션은 삭제 불가
+    if (target && isOtApproved(target)) {
+      alert('승인이 완료된 OT 세션은 삭제할 수 없습니다.\n관리자에게 요청해주세요.')
+      return
+    }
+
+    if (!confirm('이 스케줄을 삭제하시겠습니까?')) return
     setSchedules((prev) => prev.filter((s) => s.id !== id))
 
     // OT 스케줄이면 연결된 ot_sessions + 다른 트레이너의 trainer_schedules도 삭제
@@ -858,6 +894,11 @@ export function WeeklyCalendar({ assignments, trainerId, profile, workStartTime,
       setEditPtExpectedAmount(parsed.expectedAmount)
       setEditPtClassResult(parsed.classResult)
       setEditPtMemo(parsed.memo)
+      return
+    }
+    // 승인된 OT 세션은 수정 불가
+    if (isOtApproved(schedule)) {
+      alert('승인이 완료된 OT 세션은 수정할 수 없습니다.\n관리자에게 요청해주세요.')
       return
     }
     // OT 스케줄 클릭 → 간단한 스케줄 수정 팝업
@@ -1538,6 +1579,7 @@ export function WeeklyCalendar({ assignments, trainerId, profile, workStartTime,
                         <div className="flex items-start justify-between">
                           <div className="min-w-0">
                             <p className="text-xs font-bold truncate">
+                              {isOtApproved(s) && <span className="text-gray-500">🔒 </span>}
                               {isSales && <span className="text-yellow-500">★ </span>}
                               {s.schedule_type}
                               {s.member_name ? ` ${s.member_name}` : ''}
