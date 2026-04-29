@@ -14,13 +14,11 @@ export async function createClient() {
         },
         setAll(cookiesToSet) {
           try {
-            console.log('[supabase] setAll cookies:', cookiesToSet.map(c => `${c.name} (${c.value.length} chars)`))
             cookiesToSet.forEach(({ name, value, options }) =>
               cookieStore.set(name, value, options)
             )
-            console.log('[supabase] cookies set OK')
-          } catch (e) {
-            console.log('[supabase] cookie set failed:', e instanceof Error ? e.message : e)
+          } catch {
+            // Server Component에서 호출 시 무시
           }
         },
       },

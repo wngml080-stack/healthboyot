@@ -5,8 +5,8 @@ import { useRouter } from 'next/navigation'
 import { useForm } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
 import { loginSchema, type LoginFormValues } from '@/lib/validators'
-import { signIn } from '@/actions/auth'
 import { signUp } from '@/actions/auth'
+import { createClient } from '@/lib/supabase/client'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
@@ -57,20 +57,44 @@ export default function LoginPage() {
           localStorage.removeItem('remembered_email')
         }
       }
+
       try {
-        const result = await signIn(data)
-        if (result?.error) {
-          if (result.error === 'NOT_APPROVED') {
-            setError('관리자 승인 대기 중입니다. 승인 후 로그인할 수 있습니다.')
-          } else {
-            setError(result.error)
-          }
+        // 클라이언트 사이드에서 직접 로그인 (쿠키가 브라우저에 직접 설정됨)
+        const supabase = createClient()
+        const { error: authError, data: authData } = await supabase.auth.signInWithPassword({
+          email: data.email,
+          password: data.password,
+        })
+
+        if (authError) {
+          setError(authError.message)
           setLoading(false)
-        } else {
-          // 쿠키가 설정된 후 라우터 갱신 → 미들웨어가 세션을 인식
-          router.refresh()
-          router.push('/ot')
+          return
         }
+
+        // 승인 여부 확인
+        const { data: profile } = await supabase
+          .from('profiles')
+          .select('is_approved, role')
+          .eq('id', authData.user.id)
+          .single()
+
+        if (profile && !profile.is_approved && profile.role !== 'admin' && profile.role !== '관리자') {
+          await supabase.auth.signOut()
+          setError('관리자 승인 대기 중입니다. 승인 후 로그인할 수 있습니다.')
+          setLoading(false)
+          return
+        }
+
+        // role 동기화
+        const currentRole = authData.user.user_metadata?.role as string | undefined
+        if (profile?.role && currentRole !== profile.role) {
+          await supabase.auth.updateUser({ data: { role: profile.role } })
+        }
+
+        // 쿠키가 브라우저에 직접 설정되었으므로 바로 이동
+        router.refresh()
+        router.push('/ot')
       } catch (e) {
         console.error('[login] signIn failed:', e)
         setError('서버 연결에 실패했습니다. 잠시 후 다시 시도해주세요.')
