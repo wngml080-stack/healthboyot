@@ -74,6 +74,12 @@ export function MemberAddDialog({ open, trainers, onClose, onSaved }: Props) {
       exercise_goal: exerciseGoal || undefined,
       notes: notes || null,
     })
+    if ('duplicate' in result && result.duplicate) {
+      // 전화번호 중복 — 안내만 띄우고 등록 차단
+      alert(result.message)
+      setLoading(false)
+      return
+    }
     if (result.error) {
       alert('등록 실패: ' + result.error)
     } else {

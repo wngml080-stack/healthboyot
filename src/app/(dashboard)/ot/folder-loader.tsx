@@ -7,6 +7,7 @@ import { TrainerFolderGrid } from '@/components/ot/trainer-folder-grid'
 import type { TrainerFolder } from '@/actions/trainer-folders'
 import type { Profile } from '@/types'
 import Link from 'next/link'
+import { createClient } from '@/lib/supabase/client'
 
 // 메모리 캐시 — 재방문 시 즉시 표시
 let folderCache: {
@@ -75,10 +76,20 @@ export function FolderLoader() {
     }
     document.addEventListener('visibilitychange', handleVisibility)
 
+    // 첫 로그인/세션 복원 시 데이터 비어있으면 재조회 — TOKEN_REFRESHED는 제외
+    const supabase = createClient()
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((event, session) => {
+      if ((event === 'INITIAL_SESSION' || event === 'SIGNED_IN') && session && !folderCache) {
+        retryCountRef.current = 0
+        void fetchData()
+      }
+    })
+
     return () => {
       cancelledRef.current = true
       if (retryTimerRef.current) clearTimeout(retryTimerRef.current)
       document.removeEventListener('visibilitychange', handleVisibility)
+      subscription.unsubscribe()
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [fetchData])

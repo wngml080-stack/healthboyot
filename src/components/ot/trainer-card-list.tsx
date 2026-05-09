@@ -2704,6 +2704,12 @@ export function TrainerCardList({ assignments, trainers = [], trainerId, trainer
                   notes: addNotes || null,
                   registration_source: addIsFloating ? '플로팅' : '수기',
                 })
+                if ('duplicate' in result && result.duplicate) {
+                  // 전화번호 중복 — 안내만 띄우고 등록 차단 (다른 트레이너가 진행 중일 수 있음)
+                  alert(result.message)
+                  setAddLoading(false)
+                  return
+                }
                 if (result.error) {
                   alert('등록 실패: ' + result.error)
                 } else {

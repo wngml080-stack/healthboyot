@@ -11,7 +11,7 @@ import { Textarea } from '@/components/ui/textarea'
 import {
   Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription,
 } from '@/components/ui/dialog'
-import { ChevronLeft, ChevronRight, X, Search, Copy } from 'lucide-react'
+import { ChevronLeft, ChevronRight, X, Search, Copy, AlertCircle, RefreshCw } from 'lucide-react'
 import { toKstShortStr } from '@/lib/kst'
 import { createClient } from '@/lib/supabase/client'
 import { updateOtAssignment, upsertOtSession, moveOtSchedule, deleteOtSession } from '@/actions/ot'
@@ -91,22 +91,22 @@ const SLOT_HEIGHT = 40 // px per 30min (데스크톱)
 const SLOT_HEIGHT_MOBILE = 24 // px per 30min (모바일 컴팩트)
 const TOTAL_SLOTS = HOURS.length * SLOTS_PER_HOUR
 
-// 스케줄 블록 색상 — 원색 대신 불투명도 톤다운
+// 스케줄 블록 색상 — 원색 대신 불투명도 톤다운, 같은 색 중복 안 되게 분배
 const TYPE_COLORS: Record<string, string> = {
   OT: 'bg-blue-100/70 border-blue-300 text-blue-900',
   PT: 'bg-slate-200/70 border-slate-400 text-slate-800',
   PPT: 'bg-purple-100/70 border-purple-300 text-purple-900',
   바챌: 'bg-green-100/70 border-green-300 text-green-900',
-  식사: 'bg-orange-100/70 border-orange-300 text-orange-900',
+  식사: 'bg-fuchsia-100/70 border-fuchsia-300 text-fuchsia-900',
   홍보: 'bg-pink-100/70 border-pink-300 text-pink-900',
-  간부회의: 'bg-yellow-200/70 border-yellow-400 text-yellow-900',
-  팀회의: 'bg-yellow-100/70 border-yellow-300 text-yellow-900',
+  간부회의: 'bg-stone-200/70 border-stone-400 text-stone-900',
+  팀회의: 'bg-lime-100/70 border-lime-300 text-lime-900',
   전체회의: 'bg-amber-100/70 border-amber-300 text-amber-900',
-  간담회: 'bg-indigo-100/70 border-indigo-300 text-indigo-900',
+  간담회: 'bg-sky-100/70 border-sky-300 text-sky-900',
   당직: 'bg-rose-100/70 border-rose-300 text-rose-900',
   대외활동: 'bg-teal-100/70 border-teal-300 text-teal-900',
   유급휴식: 'bg-cyan-100/70 border-cyan-300 text-cyan-900',
-  기타: 'bg-gray-100/70 border-gray-300 text-gray-800',
+  기타: 'bg-neutral-200/70 border-neutral-400 text-neutral-800',
 }
 
 // PT/PPT 블록 색상: IN/OUT/공동구매/주말 분기
@@ -300,7 +300,33 @@ export function WeeklyCalendar({ assignments, trainerId, profile, workStartTime,
   const [, startTransition] = useTransition()
   const [schedules, setSchedules] = useState<ScheduleItem[]>([])
   const [loading, setLoading] = useState(false)
+  const [scheduleLoadError, setScheduleLoadError] = useState<string | null>(null)
   const supabaseRef = useRef(createClient())
+  const scheduleRetryRef = useRef(0)
+  const scheduleRetryTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+  // schedulesRef는 1191줄에서 이미 선언/갱신됨 — 여기서는 loading만 ref화
+  const loadingRef = useRef(false)
+  useEffect(() => { loadingRef.current = loading }, [loading])
+
+  // 첫 로그인 직후 RLS가 빈 결과를 돌려주는 케이스 — 마운트당 한 번만, INITIAL_SESSION 이벤트 + 빈 데이터일 때 router.refresh
+  // SIGNED_IN/INITIAL_SESSION만 처리, TOKEN_REFRESHED는 무시 (1시간마다 자동 refresh되어 불필요한 re-render 발생)
+  const initialRefreshDoneRef = useRef(false)
+  useEffect(() => {
+    const supabase = supabaseRef.current
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((event, session) => {
+      // INITIAL_SESSION + 실제 세션 있음 + 데이터 비어있음 → 한 번만 RSC 재조회
+      if ((event === 'INITIAL_SESSION' || event === 'SIGNED_IN') && session && !initialRefreshDoneRef.current) {
+        if (assignments.length === 0 && trainerId !== 'unassigned' && trainerId !== 'excluded') {
+          initialRefreshDoneRef.current = true
+          router.refresh()
+        }
+      }
+    })
+    return () => subscription.unsubscribe()
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
+
+  // fetchSchedules ref는 더 이상 필요 없음 (auth 리스너에서 호출 안 함)
 
   // PT 회원 목록 (스케줄 생성 시 선택용 / 캘린더 블록 라이브 회차 표시용)
   // 월별 분리 저장 — 모든 월 데이터를 가져와서 (name, month) 키로 lookup
@@ -465,6 +491,7 @@ export function WeeklyCalendar({ assignments, trainerId, profile, workStartTime,
   // IN/OUT은 근무시간 기준 자동 판별 (수동 토글 제거됨)
   const [createIsSalesTarget, setCreateIsSalesTarget] = useState(false)
   const [createExpectedAmount, setCreateExpectedAmount] = useState(0)
+  const [createExpectedSessions, setCreateExpectedSessions] = useState(0)
   const [createClosingProb, setCreateClosingProb] = useState(0)
   const [createSaving, setCreateSaving] = useState(false)
   const createSavingRef = useRef(false)
@@ -491,14 +518,16 @@ export function WeeklyCalendar({ assignments, trainerId, profile, workStartTime,
 
   // 회원 상세 다이얼로그
   const [detailAssignment, setDetailAssignment] = useState<OtAssignmentWithDetails | null>(null)
-  const [programTarget, setProgramTarget] = useState<{ assignment: OtAssignmentWithDetails; program: OtProgram | null } | null>(null)
+  // sessionIdx: 스케줄에서 진입 시 해당 차수의 저장/완료 버튼이 보이도록 (없으면 단순 조회)
+  const [programTarget, setProgramTarget] = useState<{ assignment: OtAssignmentWithDetails; program: OtProgram | null; sessionIdx?: number | null } | null>(null)
+  const [programCompleteLoading, setProgramCompleteLoading] = useState(false)
   const [programLoading, setProgramLoading] = useState(false)
 
-  const openProgramDialog = async (a: OtAssignmentWithDetails) => {
+  const openProgramDialog = async (a: OtAssignmentWithDetails, sessionIdx?: number | null) => {
     setProgramLoading(true)
     try {
       const program = await getOtProgram(a.id)
-      setProgramTarget({ assignment: a, program })
+      setProgramTarget({ assignment: a, program, sessionIdx: sessionIdx ?? null })
       setDetailAssignment(null)
     } finally {
       setProgramLoading(false)
@@ -757,6 +786,7 @@ export function WeeklyCalendar({ assignments, trainerId, profile, workStartTime,
 
   const fetchSchedules = useCallback(async () => {
     setLoading(true)
+    setScheduleLoadError(null)
     try {
       let ws: string, we: string
       if (viewMode === 'month') {
@@ -776,25 +806,45 @@ export function WeeklyCalendar({ assignments, trainerId, profile, workStartTime,
         .gte('scheduled_date', ws)
         .lte('scheduled_date', we)
         .order('start_time')
-      if (error) {
-        console.error('스케줄 조회 실패:', error.message)
-      } else {
-        // PostgreSQL time 컬럼은 "HH:MM:SS" 형식으로 반환됨 → "HH:MM"으로 정규화해서
-        // 수정 다이얼로그의 슬롯 매칭/<input type="time"> 동작과 일관되게 함
-        const normalized = ((data ?? []) as ScheduleItem[]).map((d) => ({
-          ...d,
-          start_time: typeof d.start_time === 'string' ? d.start_time.slice(0, 5) : d.start_time,
-        }))
-        setSchedules(normalized)
-      }
+      if (error) throw new Error(error.message)
+      // PostgreSQL time 컬럼은 "HH:MM:SS" 형식으로 반환됨 → "HH:MM"으로 정규화해서
+      // 수정 다이얼로그의 슬롯 매칭/<input type="time"> 동작과 일관되게 함
+      const normalized = ((data ?? []) as ScheduleItem[]).map((d) => ({
+        ...d,
+        start_time: typeof d.start_time === 'string' ? d.start_time.slice(0, 5) : d.start_time,
+      }))
+      setSchedules(normalized)
+      scheduleRetryRef.current = 0
     } catch (err) {
       console.error('스케줄 조회 에러:', err)
+      // 인증/RLS 미준비로 인한 에러일 가능성 → 자동 재시도 (최대 3회, backoff)
+      if (scheduleRetryRef.current < 3) {
+        scheduleRetryRef.current += 1
+        const delay = 400 * scheduleRetryRef.current
+        scheduleRetryTimerRef.current = setTimeout(() => { void fetchSchedules() }, delay)
+        return
+      }
+      setScheduleLoadError(err instanceof Error ? err.message : '스케줄을 불러오지 못했습니다')
+    } finally {
+      setLoading(false)
     }
-    setLoading(false)
-  }, [trainerId, weekStartStr, viewMode, monthOffset])
+  }, [trainerId, weekStartStr, viewMode, monthOffset, weekStart])
 
   useEffect(() => {
+    scheduleRetryRef.current = 0
     fetchSchedules()
+    // 탭 복귀 시 스케줄이 비어있으면 재조회 (ref로 최신값 참조)
+    const handleVisibility = () => {
+      if (document.visibilityState === 'visible' && schedulesRef.current.length === 0 && !loadingRef.current) {
+        scheduleRetryRef.current = 0
+        void fetchSchedules()
+      }
+    }
+    document.addEventListener('visibilitychange', handleVisibility)
+    return () => {
+      if (scheduleRetryTimerRef.current) clearTimeout(scheduleRetryTimerRef.current)
+      document.removeEventListener('visibilitychange', handleVisibility)
+    }
   }, [fetchSchedules])
 
   const openCreate = (day: Date, hour: number, half: number) => {
@@ -814,6 +864,7 @@ export function WeeklyCalendar({ assignments, trainerId, profile, workStartTime,
     setCreateNote('')
     setCreateIsSalesTarget(false)
     setCreateExpectedAmount(0)
+    setCreateExpectedSessions(0)
     setCreateClosingProb(0)
     setCreateRepeatDows([])
     setCreateOtFilter('')
@@ -848,11 +899,25 @@ export function WeeklyCalendar({ assignments, trainerId, profile, workStartTime,
         stopCreateSaving()
         return
       }
-      // 다음 회차 = 1,2,3... 중 아직 등록 안 된 가장 작은 번호
-      // (이전 버그: 완료 세션만 카운트해서 미완료 1차/2차를 덮어쓰던 문제 수정)
-      const existingNums = new Set(assignment.sessions?.map((s) => s.session_number) ?? [])
+      // 사용자가 드롭다운에서 선택한 회차를 그대로 사용 (캐시 stale 시에도 정확)
+      // - 'new-{assignmentId}-{N}' 형식이면 마지막 '-' 뒤가 N
+      // - 기존 세션 ID면 해당 세션의 session_number 사용
+      // - 어느 쪽도 안 되면 fallback: 빈 가장 작은 번호
       let nextN = 1
-      while (existingNums.has(nextN)) nextN++
+      if (createOtSessionId.startsWith('new-')) {
+        const lastDash = createOtSessionId.lastIndexOf('-')
+        const parsed = Number(createOtSessionId.slice(lastDash + 1))
+        if (parsed > 0) nextN = parsed
+      } else {
+        const existing = assignment.sessions?.find((s) => s.id === createOtSessionId)
+        if (existing) nextN = existing.session_number
+      }
+      // 안전장치: 위 경로 모두 실패 시 빈 슬롯 채우기
+      if (!nextN || nextN < 1) {
+        const existingNums = new Set(assignment.sessions?.map((s) => s.session_number) ?? [])
+        nextN = 1
+        while (existingNums.has(nextN)) nextN++
+      }
 
       // OT 충돌 검사
       const otDurationSlots = Math.max(1, Math.ceil(createDuration / 30))
@@ -877,10 +942,11 @@ export function WeeklyCalendar({ assignments, trainerId, profile, workStartTime,
           stopCreateSaving()
           return
         }
-        if (createIsSalesTarget || createExpectedAmount > 0) {
+        if (createIsSalesTarget || createExpectedAmount > 0 || createExpectedSessions > 0) {
           await updateOtAssignment(assignment.id, {
             is_sales_target: createIsSalesTarget,
             expected_amount: createExpectedAmount,
+            expected_sessions: createExpectedSessions,
             closing_probability: createClosingProb,
           })
         }
@@ -1502,26 +1568,30 @@ export function WeeklyCalendar({ assignments, trainerId, profile, workStartTime,
           </div>
         </div>
 
-        {/* 범례 — 모바일에서 숨김 */}
+        {/* 범례 — 모바일에서 숨김. 순서: OT/PT 계열 → 근무 상태 → 업무/기타 → 매출표시 */}
         <div className="hidden sm:flex flex-wrap gap-3 text-xs">
+          {/* OT/PT 계열 */}
           <span className="flex items-center gap-1"><span className="w-3 h-3 rounded bg-blue-100/70 border border-blue-300" /> OT</span>
           <span className="flex items-center gap-1"><span className="w-3 h-3 rounded bg-slate-200/70 border border-slate-400" /> PT</span>
           <span className="flex items-center gap-1"><span className="w-3 h-3 rounded bg-purple-100/70 border border-purple-300" /> PPT</span>
           <span className="flex items-center gap-1"><span className="w-3 h-3 rounded bg-green-100/70 border border-green-300" /> 바챌</span>
           <span className="flex items-center gap-1"><span className="w-3 h-3 rounded bg-yellow-200/80 border border-yellow-400" /> 공동구매</span>
-          <span className="flex items-center gap-1"><span className="w-3 h-3 rounded bg-orange-100/70 border border-orange-300" /> 식사·OUT</span>
-          <span className="flex items-center gap-1"><span className="w-3 h-3 rounded bg-pink-100/70 border border-pink-300" /> 홍보</span>
-          <span className="flex items-center gap-1"><span className="w-3 h-3 rounded bg-yellow-100/70 border border-yellow-300" /> 회의</span>
-          <span className="flex items-center gap-1"><span className="w-3 h-3 rounded bg-amber-100/70 border border-amber-300" /> 전체회의</span>
-          <span className="flex items-center gap-1"><span className="w-3 h-3 rounded bg-indigo-100/70 border border-indigo-300" /> 간담회</span>
-          <span className="flex items-center gap-1"><span className="w-3 h-3 rounded bg-rose-100/70 border border-rose-300" /> 당직</span>
-          <span className="flex items-center gap-1"><span className="w-3 h-3 rounded bg-gray-100/70 border border-gray-300" /> 기타</span>
-          <span className="flex items-center gap-1"><span className="text-yellow-500">★</span> 매출대상</span>
+          {/* 근무 상태 (PT 계열 옆에 배치) */}
           {hasWorkHours && (<>
             <span className="flex items-center gap-1"><span className="w-3 h-3 rounded bg-slate-200/70 border border-slate-400" /> 근무(IN)</span>
-            <span className="flex items-center gap-1"><span className="w-3 h-3 rounded bg-zinc-300/70 border border-zinc-500" /> 주말·공휴일</span>
             <span className="flex items-center gap-1"><span className="w-3 h-3 rounded bg-orange-100/70 border border-orange-300" /> 근무외(OUT)</span>
+            <span className="flex items-center gap-1"><span className="w-3 h-3 rounded bg-zinc-300/70 border border-zinc-500" /> 주말·공휴일</span>
           </>)}
+          <span className="flex items-center gap-1"><span className="text-yellow-500">★</span> 매출대상</span>
+          {/* 업무 / 회의 / 기타 */}
+          <span className="flex items-center gap-1"><span className="w-3 h-3 rounded bg-fuchsia-100/70 border border-fuchsia-300" /> 식사</span>
+          <span className="flex items-center gap-1"><span className="w-3 h-3 rounded bg-pink-100/70 border border-pink-300" /> 홍보</span>
+          <span className="flex items-center gap-1"><span className="w-3 h-3 rounded bg-lime-100/70 border border-lime-300" /> 회의</span>
+          <span className="flex items-center gap-1"><span className="w-3 h-3 rounded bg-amber-100/70 border border-amber-300" /> 전체회의</span>
+          <span className="flex items-center gap-1"><span className="w-3 h-3 rounded bg-stone-200/70 border border-stone-400" /> 간부회의</span>
+          <span className="flex items-center gap-1"><span className="w-3 h-3 rounded bg-sky-100/70 border border-sky-300" /> 간담회</span>
+          <span className="flex items-center gap-1"><span className="w-3 h-3 rounded bg-rose-100/70 border border-rose-300" /> 당직</span>
+          <span className="flex items-center gap-1"><span className="w-3 h-3 rounded bg-neutral-200/70 border border-neutral-400" /> 기타</span>
         </div>
 
         {/* 복사 모드 배너 */}
@@ -1535,6 +1605,22 @@ export function WeeklyCalendar({ assignments, trainerId, profile, workStartTime,
               className="text-green-600 hover:text-green-800 text-xs font-bold border border-green-400 rounded px-2 py-1"
             >
               취소 (ESC)
+            </button>
+          </div>
+        )}
+
+        {/* 스케줄 로딩 실패 배너 */}
+        {scheduleLoadError && (
+          <div className="flex items-center justify-between gap-3 rounded-lg bg-red-50 border border-red-300 px-4 py-2">
+            <div className="flex items-center gap-2 text-red-700">
+              <AlertCircle className="h-4 w-4 shrink-0" />
+              <span className="text-xs sm:text-sm font-medium">{scheduleLoadError}</span>
+            </div>
+            <button
+              onClick={() => { scheduleRetryRef.current = 0; void fetchSchedules() }}
+              className="flex items-center gap-1 px-2.5 py-1 bg-yellow-400 hover:bg-yellow-500 text-black text-xs font-bold rounded shrink-0"
+            >
+              <RefreshCw className="h-3 w-3" /> 다시 시도
             </button>
           </div>
         )}
@@ -2519,11 +2605,20 @@ export function WeeklyCalendar({ assignments, trainerId, profile, workStartTime,
                 </button>
                 {createIsSalesTarget && (
                   <>
-                    <div className="space-y-2">
-                      <Label>예상 금액</Label>
-                      <div className="flex items-center gap-2">
-                        <Input type="number" value={createExpectedAmount || ''} onChange={(e) => setCreateExpectedAmount(Number(e.target.value))} placeholder="0" />
-                        <span className="text-sm text-gray-500 shrink-0">만원</span>
+                    <div className="grid grid-cols-2 gap-3">
+                      <div className="space-y-2">
+                        <Label>예상 회수</Label>
+                        <div className="flex items-center gap-1">
+                          <Input type="number" value={createExpectedSessions || ''} onChange={(e) => setCreateExpectedSessions(Number(e.target.value))} placeholder="0" />
+                          <span className="text-sm text-gray-500 shrink-0">회</span>
+                        </div>
+                      </div>
+                      <div className="space-y-2">
+                        <Label>예상 금액</Label>
+                        <div className="flex items-center gap-1">
+                          <Input type="number" value={createExpectedAmount || ''} onChange={(e) => setCreateExpectedAmount(Number(e.target.value))} placeholder="0" />
+                          <span className="text-sm text-gray-500 shrink-0">만원</span>
+                        </div>
                       </div>
                     </div>
                     <div className="space-y-2">
@@ -2896,12 +2991,15 @@ export function WeeklyCalendar({ assignments, trainerId, profile, workStartTime,
                   {editSchedule.schedule_type === 'OT' && (() => {
                     const matched = assignments.find((a) => a.member.name === editSchedule.member_name)
                     if (!matched) return null
+                    // 스케줄의 ot_session_id로 해당 차수의 session_number 찾기 → 그 차수 카드의 저장/완료 버튼 노출
+                    const matchedSession = matched.sessions?.find((s) => s.id === editSchedule.ot_session_id)
+                    const sessionIdx = matchedSession ? matchedSession.session_number - 1 : null
                     return (
                       <Button
                         className="flex-1 bg-emerald-600 hover:bg-emerald-700 text-white font-bold"
                         onClick={() => {
                           setOtClassSchedule(editSchedule)
-                          openProgramDialog(matched)
+                          openProgramDialog(matched, sessionIdx)
                           setEditSchedule(null)
                         }}
                       >
@@ -3184,6 +3282,28 @@ export function WeeklyCalendar({ assignments, trainerId, profile, workStartTime,
               assignment={programTarget.assignment}
               program={programTarget.program}
               profile={profile}
+              completingSessionIdx={programTarget.sessionIdx ?? null}
+              completeLoading={programCompleteLoading}
+              onCompleteSession={programTarget.sessionIdx == null ? undefined : async (idx) => {
+                setProgramCompleteLoading(true)
+                try {
+                  const sessionNumber = idx + 1
+                  const existing = programTarget.assignment.sessions?.find((s) => s.session_number === sessionNumber)
+                  await upsertOtSession({
+                    ot_assignment_id: programTarget.assignment.id,
+                    session_number: sessionNumber,
+                    scheduled_at: existing?.scheduled_at ?? new Date().toISOString(),
+                    completed_at: new Date().toISOString(),
+                  })
+                  setProgramTarget(null)
+                  fetchSchedules()
+                  startTransition(() => router.refresh())
+                } catch (err) {
+                  alert('완료 처리 실패: ' + (err instanceof Error ? err.message : String(err)))
+                } finally {
+                  setProgramCompleteLoading(false)
+                }
+              }}
               onSaved={async () => {
                 const fresh = await getOtProgram(programTarget.assignment.id)
                 setProgramTarget({ ...programTarget, program: fresh })

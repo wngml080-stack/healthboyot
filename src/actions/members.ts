@@ -119,9 +119,48 @@ export async function getMembers(filters?: {
   const { data, error } = await query
   if (error) throw new Error(error.message)
 
+  // 미연결 상담카드(member_id=null)도 이름/전화번호로 매칭해서 lookup
+  // → 카드가 회원 등록 후 자동 링크되지 않는 경우 대비
+  const memberRows = (data ?? []) as Record<string, unknown>[]
+  const namesForMatch: string[] = []
+  const phonesForMatch: string[] = []
+  for (const m of memberRows) {
+    const cards = m.consultation_card as Record<string, unknown>[] | null
+    if (cards && cards.length > 0) continue  // 이미 링크된 카드 있음
+    const name = m.name as string | null
+    const phone = m.phone as string | null
+    if (name) namesForMatch.push(name)
+    if (phone) phonesForMatch.push(phone)
+  }
+
+  let unlinkedByKey: Map<string, Record<string, unknown>> = new Map()
+  if (namesForMatch.length > 0 || phonesForMatch.length > 0) {
+    const orParts: string[] = []
+    if (namesForMatch.length > 0) orParts.push(`member_name.in.(${namesForMatch.map((n) => `"${n}"`).join(',')})`)
+    if (phonesForMatch.length > 0) orParts.push(`member_phone.in.(${phonesForMatch.map((p) => `"${p}"`).join(',')})`)
+    const { data: unlinkedCards } = await supabase
+      .from('consultation_cards')
+      .select('member_name, member_phone, exercise_time_preference, exercise_start_date, exercise_goals, exercise_goal_detail, body_correction_area, desired_body_type, exercise_experiences, exercise_duration, medical_conditions, medical_detail, surgery_history, surgery_detail, age, occupation, exercise_personality, created_at')
+      .is('member_id', null)
+      .or(orParts.join(','))
+      .order('created_at', { ascending: false })
+    // (name, phone) 중 어느 하나로라도 매칭 — phone 우선, 없으면 name
+    for (const c of (unlinkedCards ?? []) as Record<string, unknown>[]) {
+      const phone = c.member_phone as string | null
+      const name = c.member_name as string | null
+      if (phone) {
+        const key = `phone:${phone}`
+        if (!unlinkedByKey.has(key)) unlinkedByKey.set(key, c)
+      }
+      if (name) {
+        const key = `name:${name}`
+        if (!unlinkedByKey.has(key)) unlinkedByKey.set(key, c)
+      }
+    }
+  }
+
   // 각 회원에 대해 최신 OT 배정을 연결
-  const members: MemberWithOt[] = (data ?? []).map((m) => {
-    const raw = m as Record<string, unknown>
+  const members: MemberWithOt[] = memberRows.map((raw) => {
     const assignments = raw.assignment as OtAssignmentWithDetails[] | null
     // 가장 최근 배정을 선택
     const latest = assignments?.sort((a, b) =>
@@ -129,14 +168,21 @@ export async function getMembers(filters?: {
     )[0] ?? null
     const creator = raw.creator as { name: string; role: string } | null
     const creatorName = (creator && creator.role !== 'admin') ? creator.name : null
-    // 상담카드에서 운동시간/시작일 + 요약 가져오기
+    // 상담카드: 1) 링크된 카드 우선, 2) 없으면 phone/name 매칭된 미연결 카드
     const cards = raw.consultation_card as Record<string, unknown>[] | null
-    const latestCard = cards?.[0] ?? null
+    let latestCard: Record<string, unknown> | null = cards?.[0] ?? null
+    if (!latestCard) {
+      const phone = raw.phone as string | null
+      const name = raw.name as string | null
+      latestCard = (phone && unlinkedByKey.get(`phone:${phone}`))
+        || (name && unlinkedByKey.get(`name:${name}`))
+        || null
+    }
     // eslint-disable-next-line @typescript-eslint/no-unused-vars
     const { assignment: _rawAssignment, creator: _rawCreator, consultation_card: _rawCard, ...member } = raw as Record<string, unknown> & { assignment: unknown; creator: unknown; consultation_card: unknown }
-    // 상담카드 값이 있으면 우선 적용
-    if (latestCard?.exercise_time_preference) member.exercise_time = latestCard.exercise_time_preference as string
-    if (latestCard?.exercise_start_date) member.start_date = latestCard.exercise_start_date as string
+    // 운동시간/시작일은 상담카드만 신뢰 — 없으면 비워둠 (members 테이블 값 무시)
+    member.exercise_time = (latestCard?.exercise_time_preference as string | null) ?? null
+    member.start_date = (latestCard?.exercise_start_date as string | null) ?? null
     // 상담카드 요약 데이터
     const cardSummary = latestCard ? {
       exercise_goals: latestCard.exercise_goals as string[] | undefined,
@@ -293,6 +339,7 @@ export async function checkPhoneDuplicate(phone: string): Promise<Member | null>
 
 // ── 간편 회원 등록 + OT 배정 ──
 // phone은 옵셔널 (PT는 회원명만으로도 등록 가능)
+// force: true로 설정하면 전화번호 중복(다른 트레이너 배정)이어도 강제 진행
 export async function quickRegisterMember(values: {
   name: string
   phone?: string  // 옵셔널
@@ -310,6 +357,7 @@ export async function quickRegisterMember(values: {
   // PT 가입 정보 (옵셔널) — 총 등록 횟수, 현재까지 진행한 횟수
   expected_sessions?: number
   actual_sessions?: number
+  force?: boolean  // 전화번호 중복 무시하고 강제 진행
 }) {
   if (isDemoMode()) {
     return { data: { memberId: 'demo-new', assignmentId: 'demo-assign' } }
@@ -340,16 +388,34 @@ export async function quickRegisterMember(values: {
     : undefined
 
   if (existing) {
-    // 기존 회원 — 활성 배정이 있는지 확인
+    // 기존 회원 — 활성 배정이 있는지 확인 (트레이너 이름까지 같이 조회)
     const { data: activeAssignment } = await supabase
       .from('ot_assignments')
-      .select('id, pt_trainer_id, ppt_trainer_id')
+      .select(`
+        id, pt_trainer_id, ppt_trainer_id,
+        pt_trainer:profiles!ot_assignments_pt_trainer_id_fkey(name),
+        ppt_trainer:profiles!ot_assignments_ppt_trainer_id_fkey(name)
+      `)
       .eq('member_id', existing.id)
       .not('status', 'in', '("완료","거부")')
       .maybeSingle()
 
     if (activeAssignment) {
-      // 활성 배정이 있으면 트레이너만 업데이트
+      // force=false (기본): 다른 트레이너 배정 중이면 차단하고 안내
+      if (!values.force) {
+        const ptName = (activeAssignment.pt_trainer as unknown as { name: string } | null)?.name
+        const pptName = (activeAssignment.ppt_trainer as unknown as { name: string } | null)?.name
+        const trainerNames = [ptName && `PT ${ptName}`, pptName && `PPT ${pptName}`].filter(Boolean).join(', ')
+        return {
+          duplicate: true as const,
+          existingMember: existing,
+          assignedTrainerNames: trainerNames || '미배정 상태',
+          message: trainerNames
+            ? `${existing.name} (${existing.phone}) 회원은 이미 ${trainerNames} 트레이너에게 배정되어 있습니다.`
+            : `${existing.name} (${existing.phone}) 회원이 이미 등록되어 있습니다 (현재 미배정 상태).`,
+        }
+      }
+      // force=true: 트레이너 업데이트로 진행
       const updateData: Record<string, unknown> = {}
       if (isPpt) {
         updateData.ppt_trainer_id = trainerId

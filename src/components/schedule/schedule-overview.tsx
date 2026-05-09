@@ -19,16 +19,16 @@ const TYPE_COLORS: Record<string, { bg: string; border: string; text: string }> 
   PT: { bg: 'bg-slate-200/70', border: 'border-l-slate-400', text: 'text-slate-800' },
   PPT: { bg: 'bg-purple-100/70', border: 'border-l-purple-400', text: 'text-purple-800' },
   '바챌': { bg: 'bg-green-100/70', border: 'border-l-green-400', text: 'text-green-800' },
-  '식사': { bg: 'bg-orange-100/70', border: 'border-l-orange-400', text: 'text-orange-800' },
+  '식사': { bg: 'bg-fuchsia-100/70', border: 'border-l-fuchsia-400', text: 'text-fuchsia-800' },
   '홍보': { bg: 'bg-pink-100/70', border: 'border-l-pink-400', text: 'text-pink-800' },
-  '간부회의': { bg: 'bg-yellow-100/70', border: 'border-l-yellow-500', text: 'text-yellow-800' },
-  '팀회의': { bg: 'bg-yellow-50/70', border: 'border-l-yellow-400', text: 'text-yellow-800' },
+  '간부회의': { bg: 'bg-stone-200/70', border: 'border-l-stone-500', text: 'text-stone-800' },
+  '팀회의': { bg: 'bg-lime-100/70', border: 'border-l-lime-400', text: 'text-lime-800' },
   '전체회의': { bg: 'bg-amber-100/70', border: 'border-l-amber-400', text: 'text-amber-800' },
-  '간담회': { bg: 'bg-indigo-100/70', border: 'border-l-indigo-400', text: 'text-indigo-800' },
+  '간담회': { bg: 'bg-sky-100/70', border: 'border-l-sky-400', text: 'text-sky-800' },
   '당직': { bg: 'bg-rose-100/70', border: 'border-l-rose-400', text: 'text-rose-800' },
   '대외활동': { bg: 'bg-teal-100/70', border: 'border-l-teal-400', text: 'text-teal-800' },
   '유급휴식': { bg: 'bg-cyan-100/70', border: 'border-l-cyan-400', text: 'text-cyan-800' },
-  '기타': { bg: 'bg-gray-100/70', border: 'border-l-gray-400', text: 'text-gray-800' },
+  '기타': { bg: 'bg-neutral-200/70', border: 'border-l-neutral-400', text: 'text-neutral-800' },
 }
 
 const TYPE_BADGE_COLORS: Record<string, string> = {
@@ -36,16 +36,16 @@ const TYPE_BADGE_COLORS: Record<string, string> = {
   PT: 'bg-slate-200/70 border-slate-400 text-slate-800',
   PPT: 'bg-purple-100/70 border-purple-300 text-purple-900',
   '바챌': 'bg-green-100/70 border-green-300 text-green-900',
-  '식사': 'bg-orange-100/70 border-orange-300 text-orange-900',
+  '식사': 'bg-fuchsia-100/70 border-fuchsia-300 text-fuchsia-900',
   '홍보': 'bg-pink-100/70 border-pink-300 text-pink-900',
-  '간부회의': 'bg-yellow-200/70 border-yellow-400 text-yellow-900',
-  '팀회의': 'bg-yellow-100/70 border-yellow-300 text-yellow-900',
+  '간부회의': 'bg-stone-200/70 border-stone-400 text-stone-900',
+  '팀회의': 'bg-lime-100/70 border-lime-300 text-lime-900',
   '전체회의': 'bg-amber-100/70 border-amber-300 text-amber-900',
-  '간담회': 'bg-indigo-100/70 border-indigo-300 text-indigo-900',
+  '간담회': 'bg-sky-100/70 border-sky-300 text-sky-900',
   '당직': 'bg-rose-100/70 border-rose-300 text-rose-900',
   '대외활동': 'bg-teal-100/70 border-teal-300 text-teal-900',
   '유급휴식': 'bg-cyan-100/70 border-cyan-300 text-cyan-900',
-  '기타': 'bg-gray-100/70 border-gray-300 text-gray-800',
+  '기타': 'bg-neutral-200/70 border-neutral-400 text-neutral-800',
 }
 
 const ROLE_COLORS: Record<string, string> = {
@@ -125,46 +125,50 @@ export function ScheduleOverview() {
         .order('start_time', { ascending: true }),
     ])
 
-    // 인증 미준비/RLS 차단 감지 — 트레이너가 0명이면 에러 취급해서 재시도 유도
     if (trainersRes.error) throw new Error(trainersRes.error.message)
     if (schedulesRes.error) throw new Error(schedulesRes.error.message)
     const trainers = trainersRes.data ?? []
     const schedules = schedulesRes.data ?? []
-    if (trainers.length === 0) throw new Error('트레이너 데이터가 비었습니다 (인증 대기 가능성)')
 
-    // OT assignment 정보 병렬 조회
+    // OT assignment 정보 병렬 조회 — ot_sessions 조인으로 라운드트립 1회 단축
     const otSessionIds = schedules.filter((s) => s.ot_session_id).map((s) => s.ot_session_id as string)
     const memberIdsForFallback = Array.from(new Set(
       schedules.filter((s) => ['OT', 'PT', 'PPT'].includes(s.schedule_type) && !s.ot_session_id && s.member_id)
         .map((s) => s.member_id).filter(Boolean)
     )) as string[]
 
-    const [sessionsRes, memberAssignmentsRes] = await Promise.all([
-      otSessionIds.length > 0
-        ? supabase.from('ot_sessions').select('id, ot_assignment_id').in('id', otSessionIds)
-        : Promise.resolve({ data: [] as { id: string; ot_assignment_id: string }[] }),
-      memberIdsForFallback.length > 0
-        ? supabase.from('ot_assignments').select('id, member_id, is_sales_target, is_pt_conversion, sales_status').in('member_id', memberIdsForFallback).not('status', 'in', '("완료","거부")').order('created_at', { ascending: false })
-        : Promise.resolve({ data: [] as { id: string; member_id: string; is_sales_target: boolean; is_pt_conversion: boolean; sales_status: string }[] }),
-    ])
-
-    const sessionData = sessionsRes.data ?? []
-    const assignmentIds = Array.from(new Set(sessionData.map((s) => s.ot_assignment_id)))
-
-    let assignmentsData: { id: string; is_sales_target: boolean; is_pt_conversion: boolean; sales_status: string }[] = []
-    if (assignmentIds.length > 0) {
-      const { data } = await supabase.from('ot_assignments').select('id, is_sales_target, is_pt_conversion, sales_status').in('id', assignmentIds)
-      assignmentsData = data ?? []
+    type SessionWithAssignment = {
+      id: string
+      ot_assignment_id: string
+      ot_assignments: { id: string; is_sales_target: boolean; is_pt_conversion: boolean; sales_status: string } | null
     }
 
-    // 맵 구성
-    const assignmentMap = new Map<string, { is_sales_target: boolean; is_pt_conversion: boolean; sales_status: string }>()
-    for (const a of assignmentsData) assignmentMap.set(a.id, { is_sales_target: a.is_sales_target, is_pt_conversion: a.is_pt_conversion, sales_status: a.sales_status })
+    const [sessionsRes, memberAssignmentsRes] = await Promise.all([
+      otSessionIds.length > 0
+        ? supabase
+            .from('ot_sessions')
+            .select('id, ot_assignment_id, ot_assignments!inner(id, is_sales_target, is_pt_conversion, sales_status)')
+            .in('id', otSessionIds)
+        : Promise.resolve({ data: [] as SessionWithAssignment[], error: null }),
+      memberIdsForFallback.length > 0
+        ? supabase.from('ot_assignments').select('id, member_id, is_sales_target, is_pt_conversion, sales_status').in('member_id', memberIdsForFallback).not('status', 'in', '("완료","거부")').order('created_at', { ascending: false })
+        : Promise.resolve({ data: [] as { id: string; member_id: string; is_sales_target: boolean; is_pt_conversion: boolean; sales_status: string }[], error: null }),
+    ])
+
+    const sessionData = (sessionsRes.data ?? []) as unknown as SessionWithAssignment[]
 
     const sessionAssignmentMap = new Map<string, { assignment_id: string; is_sales_target: boolean; is_pt_conversion: boolean; sales_status: string }>()
     for (const sd of sessionData) {
-      const aInfo = assignmentMap.get(sd.ot_assignment_id)
-      if (aInfo) sessionAssignmentMap.set(sd.id, { assignment_id: sd.ot_assignment_id, ...aInfo })
+      // Supabase 조인 결과: ot_assignments는 객체 또는 배열로 올 수 있음
+      const a = Array.isArray(sd.ot_assignments) ? sd.ot_assignments[0] : sd.ot_assignments
+      if (a) {
+        sessionAssignmentMap.set(sd.id, {
+          assignment_id: sd.ot_assignment_id,
+          is_sales_target: a.is_sales_target,
+          is_pt_conversion: a.is_pt_conversion,
+          sales_status: a.sales_status,
+        })
+      }
     }
 
     const memberAssignmentMap = new Map<string, { assignment_id: string; is_sales_target: boolean; is_pt_conversion: boolean; sales_status: string }>()
@@ -245,9 +249,19 @@ export function ScheduleOverview() {
     }
     document.addEventListener('visibilitychange', handleVisibility)
 
+    // 첫 로그인/세션 복원 시 데이터 비어있으면 재조회 — TOKEN_REFRESHED는 제외
+    const supabase = supabaseRef.current
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((event, session) => {
+      if ((event === 'INITIAL_SESSION' || event === 'SIGNED_IN') && session && dataRef.current.length === 0) {
+        retryCountRef.current = 0
+        void tryLoad(date)
+      }
+    })
+
     return () => {
       if (retryTimerRef.current) clearTimeout(retryTimerRef.current)
       document.removeEventListener('visibilitychange', handleVisibility)
+      subscription.unsubscribe()
     }
   }, [date, tryLoad])
 

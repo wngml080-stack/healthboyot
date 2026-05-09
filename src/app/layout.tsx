@@ -3,6 +3,7 @@ import localFont from "next/font/local";
 import Script from "next/script";
 import "./globals.css";
 import { Providers } from "@/components/providers";
+import { DebugErrorBoundary } from "@/components/debug-error-boundary";
 
 const geistSans = localFont({
   src: "./fonts/GeistVF.woff",
@@ -46,9 +47,39 @@ export default function RootLayout({
 }: Readonly<{
   children: React.ReactNode;
 }>) {
+  // Vercel은 빌드 ID를 환경변수로 노출 — HTML에 박아 클라이언트에서 동기 비교
+  const buildId = process.env.VERCEL_GIT_COMMIT_SHA?.slice(0, 8)
+    || process.env.VERCEL_DEPLOYMENT_ID
+    || 'dev'
+
   return (
-    <html lang="ko">
+    <html lang="ko" data-build={buildId}>
       <head>
+        {/* React hydration 시작 전에 빌드 ID 비교 → stale 캐시면 즉시 새로고침 */}
+        {/* useEffect는 render 도중 #310이 터지면 못 도달하므로 head inline script로 처리 */}
+        <script
+          dangerouslySetInnerHTML={{
+            __html: `(function(){
+              try {
+                var serverBuild = '${buildId}';
+                var stored = localStorage.getItem('__build_id');
+                var url = new URL(location.href);
+                var alreadyVersioned = url.searchParams.has('_v');
+                if (stored && stored !== serverBuild && !alreadyVersioned) {
+                  var key = '__build_reload_' + serverBuild;
+                  if (!sessionStorage.getItem(key)) {
+                    sessionStorage.setItem(key, '1');
+                    localStorage.setItem('__build_id', serverBuild);
+                    url.searchParams.set('_v', serverBuild);
+                    location.replace(url.toString());
+                    return;
+                  }
+                }
+                localStorage.setItem('__build_id', serverBuild);
+              } catch(_){}
+            })();`,
+          }}
+        />
         <link rel="apple-touch-icon" href="/apple-touch-icon.png" />
         <meta name="apple-mobile-web-app-capable" content="yes" />
         <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
@@ -56,7 +87,9 @@ export default function RootLayout({
       <body
         className={`${geistSans.variable} ${geistMono.variable} antialiased`}
       >
-        <Providers>{children}</Providers>
+        <DebugErrorBoundary>
+          <Providers>{children}</Providers>
+        </DebugErrorBoundary>
         <Script id="chunk-reload" strategy="beforeInteractive">
           {`
             if (typeof window !== 'undefined') {

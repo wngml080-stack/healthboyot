@@ -13,17 +13,19 @@ import {
 import { Plus, Search, Edit2, Trash2, Users, Upload, Download, Loader2 } from 'lucide-react'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
 import {
-  createPtMember, updatePtMember, deletePtMembers, upsertPtMember, getPtMembers,
+  createPtMember, updatePtMember, deletePtMembers, upsertPtMember,
   backfillCurrentMonthPtSessions, carryOverPreviousMonthPayroll,
   type PtMember, type PtMemberInput,
 } from '@/actions/pt-members'
 import { invalidatePtMembersCache } from '@/app/(dashboard)/pt-members/loader'
+import { fetchPtMembersClient } from '@/lib/pt-members-client'
 
 interface Props {
   initialMembers: PtMember[]
   trainers: { id: string; name: string }[]
   fixedTrainerId?: string
   isAdmin?: boolean
+  initialMonth?: string  // 'YYYY-MM' — loader가 이미 fetch한 월. 없으면 todayMonth()
 }
 
 const STATUS_OPTIONS = ['진행중', '정지', '만료', '완료'] as const
@@ -86,14 +88,28 @@ function todayMonth(): string {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`
 }
 
-export function PtMemberList({ initialMembers, trainers, fixedTrainerId, isAdmin }: Props) {
+export function PtMemberList({ initialMembers, trainers, fixedTrainerId, isAdmin, initialMonth }: Props) {
   const router = useRouter()
   const [members, setMembers] = useState(initialMembers)
   const [search, setSearch] = useState('')
   const [filterStatus, setFilterStatus] = useState<string>('all')
-  // SSR/CSR 시간 불일치 방지 — 첫 렌더는 placeholder, mount 후 실제 월
-  const [selectedMonth, setSelectedMonth] = useState<string>('2026-01')
-  useEffect(() => { setSelectedMonth(todayMonth()) }, [])
+  // initialMonth가 있으면 그걸로 시작 (loader가 이미 그 월을 fetch한 상태)
+  const [selectedMonth, setSelectedMonth] = useState<string>(initialMonth ?? '2026-01')
+  // initialMonth가 없을 때만 mount 시 todayMonth()로 보정
+  useEffect(() => {
+    if (!initialMonth) setSelectedMonth(todayMonth())
+  }, [initialMonth])
+
+  // 월이 바뀌면 해당 월 데이터를 클라이언트에서 직접 fetch (서버 왕복 제거)
+  // initialMonth와 같으면 초기 데이터 그대로 — fetch 스킵
+  useEffect(() => {
+    if (selectedMonth === (initialMonth ?? null)) return
+    let cancelled = false
+    fetchPtMembersClient(fixedTrainerId, selectedMonth)
+      .then((rows) => { if (!cancelled) setMembers(rows) })
+      .catch((err) => { console.error('[PtMemberList] 월 데이터 로드 실패:', err) })
+    return () => { cancelled = true }
+  }, [selectedMonth, initialMonth, fixedTrainerId])
   const fileRef = useRef<HTMLInputElement>(null)
   const [uploading, setUploading] = useState(false)
   const [selected, setSelected] = useState<Set<string>>(new Set())
@@ -337,7 +353,7 @@ export function PtMemberList({ initialMembers, trainers, fixedTrainerId, isAdmin
       } else {
         alert(summary)
       }
-      setMembers(await getPtMembers(trainerId))
+      setMembers(await fetchPtMembersClient(trainerId, selectedMonth))
       invalidatePtMembersCache()
     } catch (err) {
       alert('엑셀 처리 실패: ' + (err instanceof Error ? err.message : '알 수 없는 오류'))
@@ -460,7 +476,7 @@ export function PtMemberList({ initialMembers, trainers, fixedTrainerId, isAdmin
                 `• ${result.target}에서 제거 ${result.removedFromTarget}명 (만료자가 잘못 들어가 있던 경우)`
               )
               invalidatePtMembersCache()
-              setMembers(await getPtMembers(trainerId))
+              setMembers(await fetchPtMembersClient(trainerId, selectedMonth))
               router.refresh()
             }
           }}
@@ -482,7 +498,7 @@ export function PtMemberList({ initialMembers, trainers, fixedTrainerId, isAdmin
                 alert(summary)
               }
               invalidatePtMembersCache()
-              setMembers(await getPtMembers(trainerId))
+              setMembers(await fetchPtMembersClient(trainerId, selectedMonth))
               router.refresh()
             }
           }}

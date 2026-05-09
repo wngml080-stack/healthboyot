@@ -2,52 +2,46 @@
 
 import { useState, useEffect, useCallback, useRef } from 'react'
 import { Loader2, AlertCircle, RefreshCw } from 'lucide-react'
-import { getPtMembers, getTrainersForPt } from '@/actions/pt-members'
 import { PtMemberList } from '@/components/pt-members/pt-member-list'
 import type { PtMember } from '@/actions/pt-members'
+import { fetchPtMembersClient, fetchTrainersForPtClient } from '@/lib/pt-members-client'
+import { createClient } from '@/lib/supabase/client'
 
-let cache: { members: PtMember[]; trainers: { id: string; name: string }[]; ts: number } | null = null
+type CacheShape = { members: PtMember[]; trainers: { id: string; name: string }[]; month: string; ts: number }
+let cache: CacheShape | null = null
 
 // 외부에서 캐시 무효화 (삭제/생성/수정 후 호출 → 다음 마운트 시 fresh fetch)
 export function invalidatePtMembersCache() {
   cache = null
 }
 
-const MAX_RETRIES = 3
+// KST 기준 현재 월 'YYYY-MM'
+function todayMonth(): string {
+  const d = new Date()
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`
+}
 
 export function PtMembersLoader() {
-  const [data, setData] = useState(cache)
+  const [data, setData] = useState<CacheShape | null>(cache)
   const [error, setError] = useState<string | null>(null)
   const cancelledRef = useRef(false)
-  const retryCountRef = useRef(0)
-  const retryTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
 
   const fetchData = useCallback(async () => {
     setError(null)
     try {
-      const [members, trainers] = await Promise.all([getPtMembers(), getTrainersForPt()])
+      const month = todayMonth()
+      const [members, trainers] = await Promise.all([
+        fetchPtMembersClient(undefined, month),
+        fetchTrainersForPtClient(),
+      ])
       if (cancelledRef.current) return
-      // trainers가 비면 인증 미준비 가능성 — 재시도
-      if (trainers.length === 0 && retryCountRef.current < MAX_RETRIES) {
-        retryCountRef.current += 1
-        const delay = 400 * retryCountRef.current
-        retryTimerRef.current = setTimeout(() => { void fetchData() }, delay)
-        return
-      }
-      const result = { members, trainers, ts: Date.now() }
+      const result = { members, trainers, month, ts: Date.now() }
       cache = result
-      retryCountRef.current = 0
       setData(result)
     } catch (err) {
       console.error('[PtMembersLoader] 로딩 실패:', err)
       if (cancelledRef.current) return
-      if (retryCountRef.current < MAX_RETRIES) {
-        retryCountRef.current += 1
-        const delay = 400 * retryCountRef.current
-        retryTimerRef.current = setTimeout(() => { void fetchData() }, delay)
-      } else {
-        setError(err instanceof Error ? err.message : '데이터를 불러오지 못했습니다')
-      }
+      setError(err instanceof Error ? err.message : '데이터를 불러오지 못했습니다')
     }
   }, [])
 
@@ -55,27 +49,20 @@ export function PtMembersLoader() {
     cancelledRef.current = false
     void fetchData()
 
-    // 탭 복귀 시 데이터가 비어있으면 재조회 (세션 복원 누락 대비)
-    const handleVisibility = () => {
-      if (document.visibilityState === 'visible' && !cache) {
-        retryCountRef.current = 0
+    // 첫 로그인/세션 복원 시 데이터 비어있으면 재조회 (RLS 빈 결과 케이스)
+    // TOKEN_REFRESHED는 1시간마다 자동 발생하므로 제외
+    const supabase = createClient()
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((event, session) => {
+      if ((event === 'INITIAL_SESSION' || event === 'SIGNED_IN') && session && !cache) {
         void fetchData()
       }
-    }
-    document.addEventListener('visibilitychange', handleVisibility)
+    })
 
     return () => {
       cancelledRef.current = true
-      if (retryTimerRef.current) clearTimeout(retryTimerRef.current)
-      document.removeEventListener('visibilitychange', handleVisibility)
+      subscription.unsubscribe()
     }
   }, [fetchData])
-
-  const handleManualRetry = () => {
-    retryCountRef.current = 0
-    setError(null)
-    void fetchData()
-  }
 
   if (error && !data) {
     return (
@@ -83,7 +70,7 @@ export function PtMembersLoader() {
         <AlertCircle className="h-6 w-6 text-red-400" />
         <span className="text-sm">{error}</span>
         <button
-          onClick={handleManualRetry}
+          onClick={() => void fetchData()}
           className="flex items-center gap-1 px-3 py-1.5 bg-yellow-400 hover:bg-yellow-500 text-black text-xs font-bold rounded-lg transition-colors"
         >
           <RefreshCw className="h-3 w-3" /> 다시 시도
@@ -101,5 +88,5 @@ export function PtMembersLoader() {
     )
   }
 
-  return <PtMemberList initialMembers={data.members} trainers={data.trainers} />
+  return <PtMemberList initialMembers={data.members} trainers={data.trainers} initialMonth={data.month} />
 }

@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useCallback, useTransition } from 'react'
+import { useState, useCallback, useTransition, useMemo } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
 import { cn } from '@/lib/utils'
 import { Users, CalendarDays, BarChart3, Loader2, Dumbbell } from 'lucide-react'
@@ -10,7 +10,7 @@ import { WeeklyCalendar } from './weekly-calendar'
 import { TrainerStats } from './trainer-stats'
 import { getAllOtPrograms } from '@/actions/ot-program'
 import { getOtRegistrationsByTrainer } from '@/actions/ot-registration'
-import { getPtMembers } from '@/actions/pt-members'
+import { fetchPtMembersClient } from '@/lib/pt-members-client'
 import { PtMemberList } from '@/components/pt-members/pt-member-list'
 import type { OtAssignmentWithDetails, OtProgram, Profile, OtRegistration } from '@/types'
 import type { PtMember } from '@/actions/pt-members'
@@ -61,7 +61,11 @@ export function TrainerDetailTabs({
   })
   const [statsLoading, setStatsLoading] = useState(false)
 
-  // PT회원 데이터 — 처음 pt-members 탭 열 때 로딩
+  // PT회원 데이터 — 처음 pt-members 탭 열 때 로딩 (현재 월만)
+  const ptInitialMonth = useMemo(() => {
+    const d = new Date()
+    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`
+  }, [])
   const [ptData, setPtData] = useState<{ members: PtMember[]; loaded: boolean }>({ members: [], loaded: false })
   const [ptLoading, setPtLoading] = useState(false)
 
@@ -90,12 +94,15 @@ export function TrainerDetailTabs({
 
     if (tabKey === 'pt-members' && !ptData.loaded) {
       setPtLoading(true)
-      getPtMembers(trainerId).then((members) => {
+      fetchPtMembersClient(trainerId, ptInitialMonth).then((members) => {
         setPtData({ members, loaded: true })
+        setPtLoading(false)
+      }).catch((err) => {
+        console.error('[TrainerDetailTabs] PT 회원 로드 실패:', err)
         setPtLoading(false)
       })
     }
-  }, [activeTab, searchParams, router, startTransition, statsData.loaded, trainerId, ptData.loaded])
+  }, [activeTab, searchParams, router, startTransition, statsData.loaded, trainerId, ptData.loaded, ptInitialMonth])
 
   // 관리자: 트레이너 변경 시 페이지 이동
   const switchTrainer = useCallback((newTrainerId: string) => {
@@ -194,6 +201,7 @@ export function TrainerDetailTabs({
                 trainers={[{ id: trainerId, name: trainerName }]}
                 fixedTrainerId={trainerId}
                 isAdmin={isAdmin}
+                initialMonth={ptInitialMonth}
               />
             )
           )}

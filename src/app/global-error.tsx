@@ -1,6 +1,25 @@
 'use client'
 
-import { useEffect } from 'react'
+import { useEffect, useState } from 'react'
+
+const RECOVERY_FLAG = '__ge_recovered_v2'
+
+async function purgeAndHardReload() {
+  try {
+    if ('serviceWorker' in navigator) {
+      const regs = await navigator.serviceWorker.getRegistrations()
+      await Promise.all(regs.map((r) => r.unregister()))
+    }
+    if ('caches' in window) {
+      const ks = await caches.keys()
+      await Promise.all(ks.map((k) => caches.delete(k)))
+    }
+  } catch {}
+  // 캐시 우회 — 새 URL로 인식시켜 fresh HTML 받기
+  const u = new URL(window.location.href)
+  u.searchParams.set('_cb', Date.now().toString())
+  window.location.replace(u.toString())
+}
 
 export default function GlobalError({
   error,
@@ -9,10 +28,34 @@ export default function GlobalError({
   error: Error & { digest?: string }
   reset: () => void
 }) {
+  const [exhausted, setExhausted] = useState(false)
+
   useEffect(() => {
     console.error('[GlobalError]', error)
-  }, [error])
+    // 세션당 1회만 자동 강제 새로고침 (옛 HTML/chunks 캐시 무효화)
+    try {
+      if (!sessionStorage.getItem(RECOVERY_FLAG)) {
+        sessionStorage.setItem(RECOVERY_FLAG, '1')
+        purgeAndHardReload()
+        return
+      }
+    } catch {}
+    setExhausted(true)
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
 
+  // 자동 복구 시도 중 — 검정 화면
+  if (!exhausted) {
+    return (
+      <html lang="ko">
+        <body style={{ backgroundColor: '#111', margin: 0 }}>
+          <div style={{ minHeight: '100vh' }} />
+        </body>
+      </html>
+    )
+  }
+
+  // 자동 복구 실패 — 사용자 수동 조작 안내
   return (
     <html lang="ko">
       <body style={{ backgroundColor: '#111', color: '#fff', fontFamily: 'system-ui, sans-serif', margin: 0 }}>
@@ -25,18 +68,16 @@ export default function GlobalError({
             {error.digest && (
               <p style={{ fontSize: '0.65rem', color: '#999', margin: '0.4rem 0 0 0' }}>digest: {error.digest}</p>
             )}
-            {error.stack && (
-              <pre style={{ fontSize: '0.6rem', color: '#aaa', whiteSpace: 'pre-wrap', wordBreak: 'break-word', maxHeight: '180px', overflow: 'auto', marginTop: '0.5rem', marginBottom: 0 }}>
-                {error.stack.split('\n').slice(0, 8).join('\n')}
-              </pre>
-            )}
           </div>
           <div style={{ display: 'flex', gap: '0.75rem' }}>
             <button
-              onClick={() => reset()}
+              onClick={() => {
+                try { sessionStorage.removeItem(RECOVERY_FLAG) } catch {}
+                purgeAndHardReload()
+              }}
               style={{ padding: '0.625rem 1.5rem', backgroundColor: '#facc15', color: '#000', border: 'none', borderRadius: '0.5rem', fontWeight: 600, cursor: 'pointer' }}
             >
-              다시 시도
+              강제 새로고침
             </button>
             <button
               onClick={() => { window.location.href = '/login' }}
