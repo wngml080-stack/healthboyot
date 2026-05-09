@@ -21,7 +21,7 @@ export function OtDetailView({ assignment }: Props) {
           className="flex items-center gap-1 text-sm text-muted-foreground hover:text-foreground transition-colors"
         >
           <ArrowLeft className="h-4 w-4" />
-          회원관리로 돌아가기
+          OT회원으로 돌아가기
         </button>
         <h2 className="text-lg font-bold text-gray-900">{assignment.member.name} · 로그기록</h2>
       </div>

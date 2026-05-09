@@ -34,8 +34,12 @@ import { createStaff, updateStaff, deleteStaff } from '@/actions/staff'
 import { ROLE_LABEL } from '@/lib/constants'
 import type { Profile, Role } from '@/types'
 
+interface StaffWithLeader extends Profile {
+  team_leader_id?: string | null
+}
+
 interface Props {
-  staffList: Profile[]
+  staffList: StaffWithLeader[]
 }
 
 const ROLE_COLORS: Record<Role, string> = {
@@ -65,6 +69,9 @@ export function StaffView({ staffList }: Props) {
   const [editRole, setEditRole] = useState<Role>('trainer')
   const [editWorkStart, setEditWorkStart] = useState('')
   const [editWorkEnd, setEditWorkEnd] = useState('')
+  const [editTeamLeaderId, setEditTeamLeaderId] = useState<string>('')
+
+  const teamLeaders = staffList.filter((s) => s.role === '팀장')
 
   const handleCreate = async () => {
     if (!email || !password || !name) {
@@ -95,6 +102,7 @@ export function StaffView({ staffList }: Props) {
       role: editRole,
       work_start_time: editWorkStart || null,
       work_end_time: editWorkEnd || null,
+      team_leader_id: editTeamLeaderId || null,
     })
     setEditTarget(null)
     setLoading(false)
@@ -111,12 +119,13 @@ export function StaffView({ staffList }: Props) {
     router.refresh()
   }
 
-  const openEdit = (staff: Profile) => {
+  const openEdit = (staff: StaffWithLeader) => {
     setEditTarget(staff)
     setEditName(staff.name)
     setEditRole(staff.role)
     setEditWorkStart(staff.work_start_time ?? '')
     setEditWorkEnd(staff.work_end_time ?? '')
+    setEditTeamLeaderId(staff.team_leader_id ?? '')
   }
 
   return (
@@ -132,21 +141,22 @@ export function StaffView({ staffList }: Props) {
       {/* 직원 목록 */}
       <Card className="-mx-4 sm:mx-0">
         <CardContent className="p-0 overflow-x-auto -webkit-overflow-scrolling-touch">
-          <Table className="min-w-[640px] table-fixed">
+          <Table className="min-w-[820px] table-fixed">
             <TableHeader>
               <TableRow>
-                <TableHead className="text-center w-[72px]">이름</TableHead>
+                <TableHead className="text-center w-[88px]">이름</TableHead>
                 <TableHead className="text-center">이메일</TableHead>
-                <TableHead className="text-center w-[72px]">역할</TableHead>
-                <TableHead className="text-center w-[120px]">근무시간</TableHead>
-                <TableHead className="text-center w-[72px]">승인</TableHead>
-                <TableHead className="text-center w-[80px]">관리</TableHead>
+                <TableHead className="text-center w-[96px]">역할</TableHead>
+                <TableHead className="text-center w-[140px]">근무시간</TableHead>
+                <TableHead className="text-center w-[120px]">팀</TableHead>
+                <TableHead className="text-center w-[108px]">승인</TableHead>
+                <TableHead className="text-center w-[88px]">관리</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
               {staffList.length === 0 ? (
                 <TableRow>
-                  <TableCell colSpan={6} className="h-24 text-center text-muted-foreground">
+                  <TableCell colSpan={7} className="h-24 text-center text-muted-foreground">
                     등록된 직원이 없습니다
                   </TableCell>
                 </TableRow>
@@ -156,7 +166,7 @@ export function StaffView({ staffList }: Props) {
                     <TableCell className="font-medium text-center truncate">{staff.name}</TableCell>
                     <TableCell className="text-center text-sm text-muted-foreground truncate">{staff.email ?? '-'}</TableCell>
                     <TableCell className="text-center">
-                      <Badge variant="outline" className={ROLE_COLORS[staff.role]}>
+                      <Badge variant="outline" className={`${ROLE_COLORS[staff.role]} whitespace-nowrap`}>
                         {ROLE_LABEL[staff.role]}
                       </Badge>
                     </TableCell>
@@ -165,9 +175,16 @@ export function StaffView({ staffList }: Props) {
                         ? `${staff.work_start_time} ~ ${staff.work_end_time}`
                         : '-'}
                     </TableCell>
-                    <TableCell className="text-center">
+                    <TableCell className="text-center text-sm text-muted-foreground whitespace-nowrap">
+                      {staff.role === '팀장'
+                        ? staffList.filter((s) => (s as StaffWithLeader).team_leader_id === staff.id).map((s) => s.name).join(', ') || '-'
+                        : (staff as StaffWithLeader).team_leader_id
+                          ? staffList.find((s) => s.id === (staff as StaffWithLeader).team_leader_id)?.name ?? '-'
+                          : '-'}
+                    </TableCell>
+                    <TableCell className="text-center whitespace-nowrap">
                       {staff.is_approved ? (
-                        <span className="inline-flex items-center gap-1 text-sm text-green-600">
+                        <span className="inline-flex items-center gap-1 text-sm text-green-600 whitespace-nowrap">
                           <CheckCircle className="h-4 w-4" />
                           승인됨
                         </span>
@@ -282,6 +299,22 @@ export function StaffView({ staffList }: Props) {
                 </SelectContent>
               </Select>
             </div>
+            {editRole !== '팀장' && editRole !== 'admin' && editRole !== '관리자' && teamLeaders.length > 0 && (
+              <div className="space-y-2">
+                <Label>소속 팀장</Label>
+                <select
+                  value={editTeamLeaderId}
+                  onChange={(e) => setEditTeamLeaderId(e.target.value)}
+                  className="w-full h-9 text-sm border border-gray-300 rounded-md px-3"
+                >
+                  <option value="">없음</option>
+                  {teamLeaders.map((tl) => (
+                    <option key={tl.id} value={tl.id}>{tl.name} 팀장</option>
+                  ))}
+                </select>
+                <p className="text-xs text-muted-foreground">지정된 팀장이 이 직원의 폴더를 열람할 수 있습니다</p>
+              </div>
+            )}
             <div className="space-y-2">
               <Label>근무시간</Label>
               <div className="flex items-center gap-2">

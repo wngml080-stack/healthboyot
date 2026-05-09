@@ -3,18 +3,22 @@
 import { useState, useCallback, useTransition } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
 import { cn } from '@/lib/utils'
-import { Users, CalendarDays, BarChart3, Loader2 } from 'lucide-react'
+import { Users, CalendarDays, BarChart3, Loader2, Dumbbell } from 'lucide-react'
 import { NotificationBell } from './notification-bell'
 import { TrainerCardList } from './trainer-card-list'
 import { WeeklyCalendar } from './weekly-calendar'
 import { TrainerStats } from './trainer-stats'
 import { getAllOtPrograms } from '@/actions/ot-program'
 import { getOtRegistrationsByTrainer } from '@/actions/ot-registration'
+import { getPtMembers } from '@/actions/pt-members'
+import { PtMemberList } from '@/components/pt-members/pt-member-list'
 import type { OtAssignmentWithDetails, OtProgram, Profile, OtRegistration } from '@/types'
+import type { PtMember } from '@/actions/pt-members'
 
 const TABS = [
   { key: 'schedule', label: '스케줄', icon: CalendarDays },
-  { key: 'members', label: '회원관리', icon: Users },
+  { key: 'members', label: 'OT회원', icon: Users },
+  { key: 'pt-members', label: 'PT회원', icon: Dumbbell },
   { key: 'stats', label: '통계표', icon: BarChart3 },
 ] as const
 
@@ -57,6 +61,10 @@ export function TrainerDetailTabs({
   })
   const [statsLoading, setStatsLoading] = useState(false)
 
+  // PT회원 데이터 — 처음 pt-members 탭 열 때 로딩
+  const [ptData, setPtData] = useState<{ members: PtMember[]; loaded: boolean }>({ members: [], loaded: false })
+  const [ptLoading, setPtLoading] = useState(false)
+
   const switchTab = useCallback((tabKey: string) => {
     if (tabKey === activeTab) return
     setActiveTab(tabKey)
@@ -79,7 +87,15 @@ export function TrainerDetailTabs({
         setStatsLoading(false)
       })
     }
-  }, [activeTab, searchParams, router, startTransition, statsData.loaded, trainerId])
+
+    if (tabKey === 'pt-members' && !ptData.loaded) {
+      setPtLoading(true)
+      getPtMembers(trainerId).then((members) => {
+        setPtData({ members, loaded: true })
+        setPtLoading(false)
+      })
+    }
+  }, [activeTab, searchParams, router, startTransition, statsData.loaded, trainerId, ptData.loaded])
 
   // 관리자: 트레이너 변경 시 페이지 이동
   const switchTrainer = useCallback((newTrainerId: string) => {
@@ -164,6 +180,22 @@ export function TrainerDetailTabs({
               workStartTime={workStartTime}
               workEndTime={workEndTime}
             />
+          )}
+
+          {activeTab === 'pt-members' && (
+            ptLoading ? (
+              <div className="flex items-center justify-center py-20 text-gray-400 gap-2">
+                <Loader2 className="h-5 w-5 animate-spin" />
+                <span className="text-sm">PT 회원 로드 중...</span>
+              </div>
+            ) : (
+              <PtMemberList
+                initialMembers={ptData.members}
+                trainers={[{ id: trainerId, name: trainerName }]}
+                fixedTrainerId={trainerId}
+                isAdmin={isAdmin}
+              />
+            )
           )}
 
           {activeTab === 'stats' && (

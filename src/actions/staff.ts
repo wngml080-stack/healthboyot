@@ -19,7 +19,7 @@ export const getStaffList = cache(async (): Promise<Profile[]> => {
 
   const { data, error } = await supabase
     .from('profiles')
-    .select('id, name, email, role, avatar_url, is_approved, has_folder, folder_order, folder_password, work_start_time, work_end_time, created_at, updated_at')
+    .select('id, name, email, role, avatar_url, is_approved, has_folder, folder_order, folder_password, work_start_time, work_end_time, team_leader_id, created_at, updated_at')
     .order('role')
     .order('name')
 
@@ -72,6 +72,7 @@ export async function updateStaff(id: string, values: {
   is_approved?: boolean
   work_start_time?: string | null
   work_end_time?: string | null
+  team_leader_id?: string | null
 }) {
   if (isDemoMode()) return { success: true }
 

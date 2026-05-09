@@ -4,10 +4,15 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { useState, useEffect } from 'react'
 
 export function Providers({ children }: { children: React.ReactNode }) {
-  // 서비스 워커 등록 (PWA)
+  // 서비스 워커 해제 — 기존 SW가 캐시 문제를 일으키므로 완전 제거
   useEffect(() => {
     if ('serviceWorker' in navigator) {
-      navigator.serviceWorker.register('/sw.js').catch(() => {})
+      navigator.serviceWorker.getRegistrations().then((regs) => {
+        regs.forEach((r) => r.unregister())
+      })
+    }
+    if ('caches' in window) {
+      caches.keys().then((keys) => keys.forEach((k) => caches.delete(k)))
     }
   }, [])
 

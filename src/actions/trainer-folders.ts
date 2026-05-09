@@ -82,7 +82,7 @@ export async function getTrainerFoldersAll() {
     console.error('[getTrainerFoldersAll] RPC 실패:', rpcError?.message)
     // 폴백
     const folders = await getTrainerFoldersFallback(supabase, todayStr)
-    const { data: staffData } = await supabase.from('profiles').select('id, name, role, is_approved').order('role').order('name')
+    const { data: staffData } = await supabase.from('profiles').select('id, name, role, is_approved, team_leader_id').order('role').order('name')
     const userId = session?.user?.id
     const userProfile = (staffData ?? []).find((s) => s.id === userId)
     return { folders, allStaff: (staffData ?? []) as { id: string; name: string; role: string; is_approved: boolean }[], role: userProfile?.role ?? 'fc', userId }
@@ -245,6 +245,19 @@ export async function verifyFolderPassword(trainerId: string, password: string):
       .eq('id', currentUser.user.id)
       .single()
     if (profile?.role === 'admin' || profile?.role === '관리자') return true
+
+    // 팀장은 자기 팀원의 폴더에 접근 가능
+    if (profile?.role === '팀장') {
+      const { data: targetProfile } = await supabase
+        .from('profiles')
+        .select('team_leader_id')
+        .eq('id', trainerId)
+        .single()
+      if (targetProfile?.team_leader_id === currentUser.user.id) return true
+    }
+
+    // 본인 폴더는 항상 접근 가능
+    if (currentUser.user.id === trainerId) return true
   }
 
   if (!folderData?.folder_password) return true

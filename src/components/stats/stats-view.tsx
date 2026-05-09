@@ -239,7 +239,7 @@ export function StatsView({ stats: initialStats, target }: Props) {
         </CardHeader>
         <CardContent className="px-4 pb-4">
           <div className="rounded-lg border border-gray-200 bg-white overflow-x-auto">
-            <Table>
+            <Table className="min-w-[480px]">
               <TableHeader>
                 <TableRow className="bg-gray-50">
                   <TableHead className="text-center text-xs text-gray-700 font-bold">구분</TableHead>

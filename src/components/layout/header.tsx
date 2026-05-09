@@ -5,7 +5,7 @@ import { MobileSidebar } from './mobile-sidebar'
 import type { Profile } from '@/types'
 
 const PAGE_TITLES: Record<string, string> = {
-  '/dashboard': '회원관리',
+  '/dashboard': 'OT회원',
   '/ot': '트레이너 관리',
   '/members': '회원 관리',
   '/staff': '직원 관리',

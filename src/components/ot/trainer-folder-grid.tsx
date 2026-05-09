@@ -80,7 +80,11 @@ export function TrainerFolderGrid({ folders, allStaff, currentUserRole, currentU
 
     // 관리자는 비밀번호 없이 바로 접근
     // 본인 폴더(folder.id === currentUserId)도 비밀번호 없이 바로 접근
-    if (isAdmin || (currentUserId && folder.id === currentUserId)) {
+    // 팀장은 자기 팀원 폴더에 비밀번호 없이 접근 가능
+    const isTeamMemberFolder = currentUserRole === '팀장' && allStaff.some(
+      (s) => s.id === folder.id && (s as Record<string, unknown>).team_leader_id === currentUserId
+    )
+    if (isAdmin || (currentUserId && folder.id === currentUserId) || isTeamMemberFolder) {
       router.push(`/ot?trainer=${folder.id}`)
       return
     }

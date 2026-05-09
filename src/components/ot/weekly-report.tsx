@@ -252,7 +252,7 @@ export function WeeklyReport({ assignments, trainerName }: Props) {
             <div>
               <p className="text-xs font-bold text-gray-700 mb-2">결과 (성공/실패사례/클로징과정)</p>
               <div className="rounded-md border border-gray-200 overflow-x-auto">
-                <Table>
+                <Table className="min-w-[420px]">
                   <TableHeader>
                     <TableRow className="bg-gray-50">
                       <TableHead className="text-center text-[10px] text-gray-700 px-2">날짜</TableHead>
@@ -294,7 +294,7 @@ export function WeeklyReport({ assignments, trainerName }: Props) {
             <div>
               <p className="text-xs font-bold text-gray-700 mb-2">금주 대상자</p>
               <div className="rounded-md border border-gray-200 overflow-x-auto">
-                <Table>
+                <Table className="min-w-[360px]">
                   <TableHeader>
                     <TableRow className="bg-blue-50">
                       <TableHead className="text-center text-[10px] text-gray-700 px-2">날짜</TableHead>
@@ -328,7 +328,7 @@ export function WeeklyReport({ assignments, trainerName }: Props) {
                 <div className="mt-3">
                   <p className="text-xs font-bold text-gray-700 mb-2">차후 스케줄</p>
                   <div className="rounded-md border border-gray-200 overflow-x-auto">
-                    <Table>
+                    <Table className="min-w-[300px]">
                       <TableHeader>
                         <TableRow className="bg-green-50">
                           <TableHead className="text-center text-[10px] text-gray-700 px-2">날짜</TableHead>

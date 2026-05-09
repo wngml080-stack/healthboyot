@@ -26,6 +26,7 @@ export interface Profile {
   work_end_time: string | null
   has_folder?: boolean
   folder_order?: number
+  team_leader_id?: string | null
   created_at: string
   updated_at: string
 }

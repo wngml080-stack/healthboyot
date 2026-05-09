@@ -60,13 +60,25 @@ export default function RootLayout({
         <Script id="chunk-reload" strategy="beforeInteractive">
           {`
             if (typeof window !== 'undefined') {
+              // 청크 로드 실패 시 한 번만 새로고침 (배포 직후 stale chunk 해소)
+              var __chunkReloaded = false;
+              var __chunkRecover = function() {
+                if (__chunkReloaded) return;
+                var key = 'chunk_reload_' + location.pathname;
+                try { if (sessionStorage.getItem(key)) return; sessionStorage.setItem(key, '1'); } catch(_){}
+                __chunkReloaded = true;
+                location.reload();
+              };
               window.addEventListener('error', function(e) {
-                if (e.message && e.message.indexOf('Loading chunk') !== -1 || (e.message && e.message.indexOf('ChunkLoadError') !== -1)) {
-                  var key = 'chunk_reload_' + location.pathname;
-                  if (!sessionStorage.getItem(key)) {
-                    sessionStorage.setItem(key, '1');
-                    location.reload();
-                  }
+                var msg = (e && e.message) || '';
+                if (msg.indexOf('Loading chunk') !== -1 || msg.indexOf('ChunkLoadError') !== -1) {
+                  __chunkRecover();
+                }
+              });
+              window.addEventListener('unhandledrejection', function(e) {
+                var msg = (e && e.reason && (e.reason.message || String(e.reason))) || '';
+                if (msg.indexOf('Loading chunk') !== -1 || msg.indexOf('Failed to fetch dynamically imported module') !== -1) {
+                  __chunkRecover();
                 }
               });
             }

@@ -858,68 +858,70 @@ export function TrainerCardList({ assignments, trainers = [], trainerId, trainer
             </div>
             {/* 세일즈 필터 — removed dropdown, now part of filter buttons */}
           </div>
-          {/* 전체 / 거부·제외 버튼 */}
-          <div className="flex gap-2">
-            <button
-              onClick={() => { setFilter('전체'); setCategoryFilter('전체') }}
-              className={`h-8 px-4 rounded-md text-xs font-bold transition-colors ${
-                filter === '전체' && categoryFilter === '전체'
-                  ? 'bg-yellow-400 text-black border-2 border-yellow-500'
-                  : 'bg-yellow-300 text-black border border-yellow-400 hover:bg-yellow-400'
-              }`}
-            >
-              전체 {(filterCounts['전체'] ?? 0) > 0 && <span className="ml-1 text-[10px]">{filterCounts['전체']}</span>}
-            </button>
-            <button
-              onClick={() => { setCategoryFilter(categoryFilter === '매출대상' ? '전체' : '매출대상'); setFilter('전체') }}
-              className={`h-8 px-4 rounded-md text-xs font-bold transition-colors ${
-                categoryFilter === '매출대상'
-                  ? 'bg-purple-600 text-white border-2 border-purple-700'
-                  : 'bg-purple-100 text-purple-700 border border-purple-300 hover:bg-purple-200'
-              }`}
-            >
-              매출대상 {(filterCounts['매출대상'] ?? 0) > 0 && <span className="ml-1 text-[10px]">{filterCounts['매출대상']}</span>}
-            </button>
-            <button
-              onClick={() => { setCategoryFilter(categoryFilter === 'PT전환' ? '전체' : 'PT전환'); setFilter('전체') }}
-              className={`h-8 px-4 rounded-md text-xs font-bold transition-colors ${
-                categoryFilter === 'PT전환'
-                  ? 'bg-blue-600 text-white border-2 border-blue-700'
-                  : 'bg-blue-100 text-blue-700 border border-blue-300 hover:bg-blue-200'
-              }`}
-            >
-              PT전환 {(filterCounts['PT전환'] ?? 0) > 0 && <span className="ml-1 text-[10px]">{filterCounts['PT전환']}</span>}
-            </button>
-            <button
-              onClick={() => { setCategoryFilter(categoryFilter === '클로징실패' ? '전체' : '클로징실패'); setFilter('전체') }}
-              className={`h-8 px-4 rounded-md text-xs font-bold transition-colors ${
-                categoryFilter === '클로징실패'
-                  ? 'bg-pink-500 text-white border-2 border-pink-600'
-                  : 'bg-pink-50 text-pink-600 border border-pink-200 hover:bg-pink-100'
-              }`}
-            >
-              클로징실패 {(filterCounts['클로징실패'] ?? 0) > 0 && <span className="ml-1 text-[10px]">{filterCounts['클로징실패']}</span>}
-            </button>
-            <button
-              onClick={() => { setFilter('수업상태변경'); setCategoryFilter('전체') }}
-              className={`h-8 px-4 rounded-md text-xs font-bold transition-colors ${
-                filter === '수업상태변경'
-                  ? 'bg-amber-400 text-amber-900 border-2 border-amber-500'
-                  : 'bg-amber-50 text-amber-700 border border-amber-200 hover:bg-amber-100'
-              }`}
-            >
-              수업상태변경 {(filterCounts['수업상태변경'] ?? 0) > 0 && <span className="ml-1 text-[10px]">{filterCounts['수업상태변경']}</span>}
-            </button>
-            <button
-              onClick={() => { setFilter('승인필요'); setCategoryFilter('전체') }}
-              className={`h-8 px-4 rounded-md text-xs font-bold transition-colors ${
-                filter === '승인필요'
-                  ? 'bg-green-400 text-green-900 border-2 border-green-500'
-                  : 'bg-green-50 text-green-700 border border-green-200 hover:bg-green-100'
-              }`}
-            >
-              승인필요 {(filterCounts['승인필요'] ?? 0) > 0 && <span className="ml-1 text-[10px]">{filterCounts['승인필요']}</span>}
-            </button>
+          {/* 전체 / 거부·제외 버튼 — 모바일은 가로 스크롤, 데스크톱은 wrap */}
+          <div className="overflow-x-auto -mx-4 px-4 sm:mx-0 sm:px-0">
+            <div className="flex gap-2 w-max sm:flex-wrap sm:w-auto">
+              <button
+                onClick={() => { setFilter('전체'); setCategoryFilter('전체') }}
+                className={`h-8 px-4 rounded-md text-xs font-bold transition-colors whitespace-nowrap shrink-0 ${
+                  filter === '전체' && categoryFilter === '전체'
+                    ? 'bg-yellow-400 text-black border-2 border-yellow-500'
+                    : 'bg-yellow-300 text-black border border-yellow-400 hover:bg-yellow-400'
+                }`}
+              >
+                전체 {(filterCounts['전체'] ?? 0) > 0 && <span className="ml-1 text-[10px]">{filterCounts['전체']}</span>}
+              </button>
+              <button
+                onClick={() => { setCategoryFilter(categoryFilter === '매출대상' ? '전체' : '매출대상'); setFilter('전체') }}
+                className={`h-8 px-4 rounded-md text-xs font-bold transition-colors whitespace-nowrap shrink-0 ${
+                  categoryFilter === '매출대상'
+                    ? 'bg-purple-600 text-white border-2 border-purple-700'
+                    : 'bg-purple-100 text-purple-700 border border-purple-300 hover:bg-purple-200'
+                }`}
+              >
+                매출대상 {(filterCounts['매출대상'] ?? 0) > 0 && <span className="ml-1 text-[10px]">{filterCounts['매출대상']}</span>}
+              </button>
+              <button
+                onClick={() => { setCategoryFilter(categoryFilter === 'PT전환' ? '전체' : 'PT전환'); setFilter('전체') }}
+                className={`h-8 px-4 rounded-md text-xs font-bold transition-colors whitespace-nowrap shrink-0 ${
+                  categoryFilter === 'PT전환'
+                    ? 'bg-blue-600 text-white border-2 border-blue-700'
+                    : 'bg-blue-100 text-blue-700 border border-blue-300 hover:bg-blue-200'
+                }`}
+              >
+                PT전환 {(filterCounts['PT전환'] ?? 0) > 0 && <span className="ml-1 text-[10px]">{filterCounts['PT전환']}</span>}
+              </button>
+              <button
+                onClick={() => { setCategoryFilter(categoryFilter === '클로징실패' ? '전체' : '클로징실패'); setFilter('전체') }}
+                className={`h-8 px-4 rounded-md text-xs font-bold transition-colors whitespace-nowrap shrink-0 ${
+                  categoryFilter === '클로징실패'
+                    ? 'bg-pink-500 text-white border-2 border-pink-600'
+                    : 'bg-pink-50 text-pink-600 border border-pink-200 hover:bg-pink-100'
+                }`}
+              >
+                클로징실패 {(filterCounts['클로징실패'] ?? 0) > 0 && <span className="ml-1 text-[10px]">{filterCounts['클로징실패']}</span>}
+              </button>
+              <button
+                onClick={() => { setFilter('수업상태변경'); setCategoryFilter('전체') }}
+                className={`h-8 px-4 rounded-md text-xs font-bold transition-colors whitespace-nowrap shrink-0 ${
+                  filter === '수업상태변경'
+                    ? 'bg-amber-400 text-amber-900 border-2 border-amber-500'
+                    : 'bg-amber-50 text-amber-700 border border-amber-200 hover:bg-amber-100'
+                }`}
+              >
+                수업상태변경 {(filterCounts['수업상태변경'] ?? 0) > 0 && <span className="ml-1 text-[10px]">{filterCounts['수업상태변경']}</span>}
+              </button>
+              <button
+                onClick={() => { setFilter('승인필요'); setCategoryFilter('전체') }}
+                className={`h-8 px-4 rounded-md text-xs font-bold transition-colors whitespace-nowrap shrink-0 ${
+                  filter === '승인필요'
+                    ? 'bg-green-400 text-green-900 border-2 border-green-500'
+                    : 'bg-green-50 text-green-700 border border-green-200 hover:bg-green-100'
+                }`}
+              >
+                승인필요 {(filterCounts['승인필요'] ?? 0) > 0 && <span className="ml-1 text-[10px]">{filterCounts['승인필요']}</span>}
+              </button>
+            </div>
           </div>
         </div>
 
@@ -1333,12 +1335,12 @@ export function TrainerCardList({ assignments, trainers = [], trainerId, trainer
                                       </div>
                                     )}
                                     {!isInactive && !isEditing && (
-                                      <div className="flex gap-2">
+                                      <div className="grid grid-cols-2 sm:flex sm:flex-wrap gap-1.5 sm:gap-2">
                                         {QUICK_STATUSES.map((s) => (
                                           <button
                                             key={s}
                                             type="button"
-                                            className="px-3 py-1.5 rounded-md text-xs font-medium border border-gray-300 bg-white text-gray-600 hover:bg-red-50 hover:border-red-300 hover:text-red-700 transition-colors"
+                                            className="px-2 sm:px-3 py-1.5 rounded-md text-[11px] sm:text-xs font-medium border border-gray-300 bg-white text-gray-600 hover:bg-red-50 hover:border-red-300 hover:text-red-700 transition-colors whitespace-nowrap"
                                             onClick={(e) => {
                                               e.stopPropagation()
                                               setQuickStatusTarget(a.id)
@@ -1353,12 +1355,12 @@ export function TrainerCardList({ assignments, trainers = [], trainerId, trainer
                                     )}
                                     {isEditing && (
                                       <div className="space-y-2" onClick={(e) => e.stopPropagation()}>
-                                        <div className="flex gap-2">
+                                        <div className="grid grid-cols-2 sm:flex sm:flex-wrap gap-1.5 sm:gap-2">
                                           {QUICK_STATUSES.map((s) => (
                                             <button
                                               key={s}
                                               type="button"
-                                              className={`px-3 py-1.5 rounded-md text-xs font-medium transition-colors ${
+                                              className={`px-2 sm:px-3 py-1.5 rounded-md text-[11px] sm:text-xs font-medium transition-colors whitespace-nowrap ${
                                                 quickStatusValue === s
                                                   ? 'bg-red-500 text-white'
                                                   : 'border border-gray-300 bg-white text-gray-600 hover:bg-red-50'
@@ -1524,17 +1526,17 @@ export function TrainerCardList({ assignments, trainers = [], trainerId, trainer
                                     <p className="text-sm font-bold text-emerald-800">💰 세일즈 정보</p>
 
                                     {/* 상태 버튼: 매출대상자 / PT전환 / 클로징실패 — 클릭은 로컬 상태만 변경 */}
-                                    <div className="grid grid-cols-3 gap-1.5">
+                                    <div className="grid grid-cols-3 gap-1 sm:gap-1.5">
                                       <button type="button"
-                                        className={`h-10 rounded-lg border-2 text-sm font-bold transition-colors ${isSalesTarget ? 'bg-purple-600 text-white border-purple-600' : 'bg-white border-purple-200 text-purple-600'}`}
+                                        className={`h-10 px-1 rounded-lg border-2 text-[11px] sm:text-sm font-bold leading-tight transition-colors ${isSalesTarget ? 'bg-purple-600 text-white border-purple-600' : 'bg-white border-purple-200 text-purple-600'}`}
                                         onClick={() => setSalesOverrides((prev) => ({ ...prev, [a.id]: { ...prev[a.id], is_sales_target: !isSalesTarget } }))}
                                       >★ 매출대상자 {isSalesTarget ? '✓' : ''}</button>
                                       <button type="button"
-                                        className={`h-10 rounded-lg border-2 text-sm font-bold transition-colors ${isPtConversion ? 'bg-blue-600 text-white border-blue-600' : 'bg-white text-blue-600 border-blue-200'}`}
+                                        className={`h-10 px-1 rounded-lg border-2 text-[11px] sm:text-sm font-bold leading-tight transition-colors ${isPtConversion ? 'bg-blue-600 text-white border-blue-600' : 'bg-white text-blue-600 border-blue-200'}`}
                                         onClick={() => setSalesOverrides((prev) => ({ ...prev, [a.id]: { ...prev[a.id], is_pt_conversion: !isPtConversion, ...(isPtConversion ? { sales_status: 'OT진행중' } : { sales_status: '등록완료' }) } }))}
                                       >PT전환 {isPtConversion ? '✓' : ''}</button>
                                       <button type="button"
-                                        className={`h-10 rounded-lg border-2 text-sm font-bold transition-colors ${isClosingFail ? 'bg-red-500 text-white border-red-500' : 'bg-white text-red-500 border-red-200'}`}
+                                        className={`h-10 px-1 rounded-lg border-2 text-[11px] sm:text-sm font-bold leading-tight transition-colors ${isClosingFail ? 'bg-red-500 text-white border-red-500' : 'bg-white text-red-500 border-red-200'}`}
                                         onClick={() => setSalesOverrides((prev) => ({ ...prev, [a.id]: { ...prev[a.id], is_pt_conversion: false, sales_status: isClosingFail ? 'OT진행중' : '클로징실패' } }))}
                                       >클로징실패 {isClosingFail ? '✓' : ''}</button>
                                     </div>

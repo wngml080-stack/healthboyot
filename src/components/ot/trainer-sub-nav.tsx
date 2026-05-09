@@ -12,7 +12,7 @@ interface Props {
 
 const TABS = [
   { key: 'schedule', label: '스케줄', icon: CalendarDays },
-  { key: 'members', label: '회원관리', icon: Users },
+  { key: 'members', label: 'OT회원', icon: Users },
   { key: 'stats', label: '통계표', icon: BarChart3 },
 ]
 

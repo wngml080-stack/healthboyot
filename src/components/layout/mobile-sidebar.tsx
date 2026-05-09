@@ -3,7 +3,7 @@
 import { useState } from 'react'
 import Link from 'next/link'
 import { usePathname } from 'next/navigation'
-import { Menu, LayoutDashboard, ClipboardList, CalendarDays, Users, BarChart3, FileText, CheckSquare, LogOut } from 'lucide-react'
+import { Menu, LayoutDashboard, ClipboardList, CalendarDays, Users, BarChart3, FileText, CheckSquare, LogOut, Dumbbell } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { NAV_ITEMS } from '@/lib/constants'
 import { signOut } from '@/actions/auth'
@@ -21,6 +21,7 @@ const iconMap: Record<string, React.ComponentType<{ className?: string }>> = {
   BarChart3,
   FileText,
   CheckSquare,
+  Dumbbell,
 }
 
 interface Props {

@@ -22,8 +22,10 @@ const OtProgramForm = dynamic(() => import('@/components/ot/ot-program-form').th
   ssr: false,
   loading: () => <div className="py-10 text-center text-sm text-gray-500">프로그램 로드 중...</div>,
 }) as unknown as typeof import('@/components/ot/ot-program-form').OtProgramForm
-import { getOtProgram, batchGetOtPrograms } from '@/actions/ot-program'
-import { ClipboardList } from 'lucide-react'
+import { getOtProgram, batchGetOtPrograms, upsertOtProgram } from '@/actions/ot-program'
+import { adjustPtMemberSessions } from '@/actions/pt-members'
+import { ClipboardList, ImageIcon } from 'lucide-react'
+import { RapoImportDialog } from './rapo-import-dialog'
 
 interface ScheduleItem {
   id: string
@@ -89,26 +91,38 @@ const SLOT_HEIGHT = 40 // px per 30min (데스크톱)
 const SLOT_HEIGHT_MOBILE = 24 // px per 30min (모바일 컴팩트)
 const TOTAL_SLOTS = HOURS.length * SLOTS_PER_HOUR
 
+// 스케줄 블록 색상 — 원색 대신 불투명도 톤다운
 const TYPE_COLORS: Record<string, string> = {
-  OT: 'bg-emerald-200 border-emerald-400 text-emerald-900',
-  PT: 'bg-blue-200 border-blue-400 text-blue-900',
-  PPT: 'bg-purple-200 border-purple-400 text-purple-900',
-  식사: 'bg-orange-200 border-orange-400 text-orange-900',
-  홍보: 'bg-pink-200 border-pink-400 text-pink-900',
-  간부회의: 'bg-yellow-300 border-yellow-500 text-yellow-900',
-  팀회의: 'bg-yellow-200 border-yellow-400 text-yellow-900',
-  전체회의: 'bg-amber-200 border-amber-400 text-amber-900',
-  간담회: 'bg-indigo-200 border-indigo-400 text-indigo-900',
-  당직: 'bg-rose-200 border-rose-400 text-rose-900',
-  대외활동: 'bg-teal-200 border-teal-400 text-teal-900',
-  유급휴식: 'bg-cyan-200 border-cyan-400 text-cyan-900',
-  기타: 'bg-gray-200 border-gray-400 text-gray-900',
+  OT: 'bg-blue-100/70 border-blue-300 text-blue-900',
+  PT: 'bg-slate-200/70 border-slate-400 text-slate-800',
+  PPT: 'bg-purple-100/70 border-purple-300 text-purple-900',
+  바챌: 'bg-green-100/70 border-green-300 text-green-900',
+  식사: 'bg-orange-100/70 border-orange-300 text-orange-900',
+  홍보: 'bg-pink-100/70 border-pink-300 text-pink-900',
+  간부회의: 'bg-yellow-200/70 border-yellow-400 text-yellow-900',
+  팀회의: 'bg-yellow-100/70 border-yellow-300 text-yellow-900',
+  전체회의: 'bg-amber-100/70 border-amber-300 text-amber-900',
+  간담회: 'bg-indigo-100/70 border-indigo-300 text-indigo-900',
+  당직: 'bg-rose-100/70 border-rose-300 text-rose-900',
+  대외활동: 'bg-teal-100/70 border-teal-300 text-teal-900',
+  유급휴식: 'bg-cyan-100/70 border-cyan-300 text-cyan-900',
+  기타: 'bg-gray-100/70 border-gray-300 text-gray-800',
 }
 
-const SCHEDULE_TYPES = ['PT', 'PPT', 'OT', '식사', '홍보', '간부회의', '팀회의', '전체회의', '간담회', '당직', '대외활동', '유급휴식', '기타'] as const
+// PT/PPT 블록 색상: IN/OUT/공동구매/주말 분기
+// IN: 회색, OUT: 주황, 공동구매: 노랑, 주말/공휴일: 슬레이트(다른 회색 톤)
+const PT_IN_COLOR = 'bg-slate-200/70 border-slate-400 text-slate-800'
+const PT_OUT_COLOR = 'bg-orange-100/70 border-orange-300 text-orange-900'
+const PT_GROUP_PURCHASE_COLOR = 'bg-yellow-200/80 border-yellow-400 text-yellow-900'
+const PT_WEEKEND_COLOR = 'bg-zinc-300/70 border-zinc-500 text-zinc-800'
 
-// OT/PT/PPT 이외의 타입은 시작~종료 시간으로 입력 (duration 자동 계산)
+const SCHEDULE_TYPES = ['PT', 'PPT', '바챌', 'OT', '식사', '홍보', '간부회의', '팀회의', '전체회의', '간담회', '당직', '대외활동', '유급휴식', '기타'] as const
+
+// OT/PT/PPT/바챌 이외의 타입은 시작~종료 시간으로 입력 (duration 자동 계산)
 const RANGE_TYPES = new Set(['식사', '홍보', '간부회의', '팀회의', '전체회의', '간담회', '당직', '대외활동', '유급휴식', '기타'])
+
+// PT 계열 (PT note 파싱/IN-OUT 로직 적용 대상)
+const isPtLikeType = (t: string) => t === 'PT' || t === 'PPT' || t === '바챌'
 
 // PT 수업 상태/결과 옵션 — buildPtNote에서 [수업완료] 같은 prefix로 저장
 const PT_CLASS_RESULTS = ['예약완료', '조정중', '수업완료', '노쇼', '차감노쇼', '서비스수업'] as const
@@ -185,17 +199,25 @@ interface ParsedPtNote {
   expectedAmount: string
   classResult: PtClassResult | ''
   inOut: 'IN' | 'OUT'
+  isGroupPurchase: boolean
   memo: string
 }
 
 function parsePtNote(note: string | null): ParsedPtNote {
-  const empty: ParsedPtNote = { phone: '', current: '', total: '', isSalesTarget: false, expectedAmount: '', classResult: '', inOut: 'IN', memo: '' }
+  const empty: ParsedPtNote = { phone: '', current: '', total: '', isSalesTarget: false, expectedAmount: '', classResult: '', inOut: 'IN', isGroupPurchase: false, memo: '' }
   if (!note) return empty
   let rest = note
   const result: ParsedPtNote = { ...empty }
 
   // IN/OUT
   if (rest.startsWith('[OUT]')) { result.inOut = 'OUT'; rest = rest.slice(5).replace(/^\s+/, '') }
+
+  // 공동구매 — 항상 IN으로 강제
+  if (rest.startsWith('[공동구매]')) {
+    result.isGroupPurchase = true
+    result.inOut = 'IN'
+    rest = rest.slice(6).replace(/^\s+/, '')
+  }
 
   // 전화번호 prefix [010-...] 또는 숫자만
   const phoneMatch = rest.match(/^\[([\d][\d\s-]*)\]\s*/)
@@ -247,10 +269,13 @@ function buildPtNote(opts: {
   expectedAmount?: string | number
   classResult?: PtClassResult | ''
   inOut?: 'IN' | 'OUT'
+  isGroupPurchase?: boolean
   memo?: string
 }): string | null {
   const parts: string[] = []
-  if (opts.inOut === 'OUT') parts.push('[OUT]')
+  // 공동구매는 항상 IN — OUT 태그를 붙이지 않음
+  if (opts.inOut === 'OUT' && !opts.isGroupPurchase) parts.push('[OUT]')
+  if (opts.isGroupPurchase) parts.push('[공동구매]')
   const phone = opts.phone?.trim()
   const cur = opts.current?.trim()
   const tot = opts.total?.trim()
@@ -271,30 +296,105 @@ export function WeeklyCalendar({ assignments, trainerId, profile, workStartTime,
   const [weekOffset, setWeekOffset] = useState(0)
   const [viewMode, setViewMode] = useState<'week' | 'month'>('week')
   const [monthOffset, setMonthOffset] = useState(0)
-  const [monthFilter, setMonthFilter] = useState<'전체' | 'OT' | 'PT' | 'PPT'>('전체')
+  const [monthFilter, setMonthFilter] = useState<'전체' | 'OT' | 'PT' | 'PPT' | '바챌'>('전체')
   const [, startTransition] = useTransition()
   const [schedules, setSchedules] = useState<ScheduleItem[]>([])
   const [loading, setLoading] = useState(false)
   const supabaseRef = useRef(createClient())
 
-  // ── OT 세션별 승인 상태 맵: { ot_session_id → approved } ──
+  // PT 회원 목록 (스케줄 생성 시 선택용 / 캘린더 블록 라이브 회차 표시용)
+  // 월별 분리 저장 — 모든 월 데이터를 가져와서 (name, month) 키로 lookup
+  type PtMemberLite = { id: string; name: string; phone: string | null; total_sessions: number; completed_sessions: number; data_month: string | null }
+  const [ptMembers, setPtMembers] = useState<PtMemberLite[]>([])
+  useEffect(() => {
+    supabaseRef.current
+      .from('pt_members')
+      .select('id, name, phone, total_sessions, completed_sessions, data_month')
+      .eq('trainer_id', trainerId)
+      .eq('status', '진행중')
+      .order('data_month', { ascending: false })
+      .order('name')
+      .then(({ data }) => setPtMembers((data ?? []) as PtMemberLite[]))
+  }, [trainerId])
+
+  // 같은 이름 중 가장 최신 월 (스케줄 생성 폼 dropdown용)
+  const ptMembersDedup = useMemo(() => {
+    const seen = new Set<string>()
+    return ptMembers.filter((m) => {
+      if (seen.has(m.name)) return false
+      seen.add(m.name)
+      return true
+    })
+  }, [ptMembers])
+
+  // (name, month) → pt_members row 매핑 (캘린더 블록에서 라이브 회차 lookup)
+  const ptMemberByNameMonth = useMemo(() => {
+    const map = new Map<string, PtMemberLite>()
+    for (const m of ptMembers) {
+      if (m.data_month) map.set(`${m.name}|${m.data_month}`, m)
+    }
+    return map
+  }, [ptMembers])
+
+  // 회원별 PT/PPT/바챌 시간순 회차 매핑: schedule.id → 회차 번호 (전체 기간 누적)
+  // 트레이너의 모든 PT/PPT/바챌 스케줄을 조회해 회원별로 정렬, 1차 2차 3차 ... 자동 부여
+  const [sessionPosById, setSessionPosById] = useState<Map<string, number>>(new Map())
+  useEffect(() => {
+    if (!trainerId) return
+    let cancelled = false
+    supabaseRef.current
+      .from('trainer_schedules')
+      .select('id, member_name, schedule_type, scheduled_date, start_time')
+      .eq('trainer_id', trainerId)
+      .in('schedule_type', ['PT', 'PPT', '바챌'])
+      .then(({ data }) => {
+        if (cancelled || !data) return
+        const groups = new Map<string, typeof data>()
+        for (const s of data) {
+          const name = (s.member_name ?? '').trim()
+          if (!name) continue
+          const arr = groups.get(name) ?? []
+          arr.push(s)
+          groups.set(name, arr)
+        }
+        const map = new Map<string, number>()
+        for (const arr of Array.from(groups.values())) {
+          arr.sort((a, b) => {
+            if (a.scheduled_date !== b.scheduled_date) return a.scheduled_date.localeCompare(b.scheduled_date)
+            if (a.start_time !== b.start_time) return a.start_time.localeCompare(b.start_time)
+            return a.id.localeCompare(b.id)
+          })
+          arr.forEach((s, idx) => map.set(s.id, idx + 1))
+        }
+        setSessionPosById(map)
+      })
+    return () => { cancelled = true }
+  }, [trainerId, schedules])
+
+  // ── OT 세션별 승인 / 인바디 상태 맵 ──
   const [approvedSessionIds, setApprovedSessionIds] = useState<Set<string>>(new Set())
+  const [inbodySessionIds, setInbodySessionIds] = useState<Set<string>>(new Set())
+  // 프로그램 데이터 캐시 (인바디 토글 저장 시 다시 fetch 안 하도록)
+  const programCacheRef = useRef<Record<string, OtProgram | null>>({})
   useEffect(() => {
     const ids = assignments.map((a) => a.id)
     if (ids.length === 0) return
     batchGetOtPrograms(ids).then((programMap) => {
       const approved = new Set<string>()
+      const inbody = new Set<string>()
       for (const [aid, prog] of Object.entries(programMap)) {
+        programCacheRef.current[aid] = prog
         const a = assignments.find((x) => x.id === aid)
         if (!prog.sessions || !a?.sessions) continue
         prog.sessions.forEach((s, i) => {
-          if (s.approval_status === '승인') {
-            const otSession = a.sessions?.find((os) => os.session_number === i + 1)
-            if (otSession?.id) approved.add(otSession.id)
-          }
+          const otSession = a.sessions?.find((os) => os.session_number === i + 1)
+          if (!otSession?.id) return
+          if (s.approval_status === '승인') approved.add(otSession.id)
+          if (s.inbody) inbody.add(otSession.id)
         })
       }
       setApprovedSessionIds(approved)
+      setInbodySessionIds(inbody)
     })
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [assignments])
@@ -305,6 +405,37 @@ export function WeeklyCalendar({ assignments, trainerId, profile, workStartTime,
     if (!schedule.ot_session_id) return false
     return approvedSessionIds.has(schedule.ot_session_id)
   }, [approvedSessionIds])
+
+  // OT 세션의 인바디 측정 여부 토글 — 프로그램 sessions[i].inbody 갱신
+  const toggleInbodyForOtSchedule = useCallback(async (schedule: ScheduleItem, next: boolean) => {
+    if (schedule.schedule_type !== 'OT' || !schedule.ot_session_id) return
+    const assignment = assignments.find((a) => a.sessions?.some((s) => s.id === schedule.ot_session_id))
+    if (!assignment) return
+    const session = assignment.sessions?.find((s) => s.id === schedule.ot_session_id)
+    if (!session) return
+    const idx = session.session_number - 1
+    // 캐시된 프로그램 우선, 없으면 fetch
+    let program = programCacheRef.current[assignment.id]
+    if (!program) {
+      program = await getOtProgram(assignment.id)
+      programCacheRef.current[assignment.id] = program
+    }
+    if (!program) return
+    const sessions = [...(program.sessions ?? [])]
+    while (sessions.length <= idx) {
+      sessions.push({ date: '', time: '', exercises: [], tip: '', next_ot_date: '', cardio: { types: [], duration_min: '' }, inbody: false, images: [], completed: false })
+    }
+    sessions[idx] = { ...sessions[idx], inbody: next }
+    await upsertOtProgram(assignment.id, assignment.member_id, { sessions })
+    // 캐시 + 표시 상태 즉시 갱신
+    programCacheRef.current[assignment.id] = { ...program, sessions }
+    setInbodySessionIds((prev) => {
+      const nextSet = new Set(prev)
+      if (next) nextSet.add(schedule.ot_session_id!)
+      else nextSet.delete(schedule.ot_session_id!)
+      return nextSet
+    })
+  }, [assignments])
 
   // ── 모바일 감지 (640px 미만) ──
   const [isMobile, setIsMobile] = useState(false)
@@ -328,7 +459,7 @@ export function WeeklyCalendar({ assignments, trainerId, profile, workStartTime,
   // 종료 시간 (RANGE_TYPES용) — start_time + duration으로 계산하지만, 사용자는 종료 시간을 직접 지정
   const [createEndTime, setCreateEndTime] = useState('')
   const [createNote, setCreateNote] = useState('')
-  const [createInOut, setCreateInOut] = useState<'IN' | 'OUT'>('IN')
+  // IN/OUT은 근무시간 기준 자동 판별 (수동 토글 제거됨)
   const [createIsSalesTarget, setCreateIsSalesTarget] = useState(false)
   const [createExpectedAmount, setCreateExpectedAmount] = useState(0)
   const [createClosingProb, setCreateClosingProb] = useState(0)
@@ -348,10 +479,12 @@ export function WeeklyCalendar({ assignments, trainerId, profile, workStartTime,
   // OT 회원 검색 필터
   const [createOtFilter, setCreateOtFilter] = useState('')
 
-  // PT/PPT 신규 입력 필드 (검색 X — 그냥 텍스트로 입력해서 trainer_schedules에 기록)
+  // PT/PPT/바챌 신규 입력 필드
   const [createMemberPhone, setCreateMemberPhone] = useState('')
   const [createPtCurrentSession, setCreatePtCurrentSession] = useState('')
   const [createPtTotalSession, setCreatePtTotalSession] = useState('')
+  const [createIsGroupPurchase, setCreateIsGroupPurchase] = useState(false)
+  const [createPtFilter, setCreatePtFilter] = useState('')
 
   // 회원 상세 다이얼로그
   const [detailAssignment, setDetailAssignment] = useState<OtAssignmentWithDetails | null>(null)
@@ -385,10 +518,12 @@ export function WeeklyCalendar({ assignments, trainerId, profile, workStartTime,
   const [editDate, setEditDate] = useState('')
   const [editTime, setEditTime] = useState('')
   const [editDuration, setEditDuration] = useState(50)
+  const [editInbody, setEditInbody] = useState(false)
   const [editSaving, setEditSaving] = useState(false)
 
   // PT 수업 진행 다이얼로그 (PT/PPT 스케줄 클릭 시)
   const [editPtSchedule, setEditPtSchedule] = useState<ScheduleItem | null>(null)
+  const [editPtScheduleType, setEditPtScheduleType] = useState<'PT' | 'PPT' | '바챌'>('PT')
   const [editPtMemberName, setEditPtMemberName] = useState('')
   const [editPtPhone, setEditPtPhone] = useState('')
   const [editPtTime, setEditPtTime] = useState('')
@@ -399,6 +534,8 @@ export function WeeklyCalendar({ assignments, trainerId, profile, workStartTime,
   const [editPtExpectedAmount, setEditPtExpectedAmount] = useState('')
   const [editPtClassResult, setEditPtClassResult] = useState<PtClassResult | ''>('')
   const [editPtMemo, setEditPtMemo] = useState('')
+  // editPtInOut도 근무시간 기준 자동 판별로 대체
+  const [editPtIsGroupPurchase, setEditPtIsGroupPurchase] = useState(false)
   const [editPtSaving, setEditPtSaving] = useState(false)
 
   // ── 드래그 이동 상태 ──
@@ -422,9 +559,11 @@ export function WeeklyCalendar({ assignments, trainerId, profile, workStartTime,
   // 각 day column의 DOM 참조 (드래그 중 좌표 계산용)
   const dayColRefs = useRef<(HTMLDivElement | null)[]>([])
   const calendarScrollRef = useRef<HTMLDivElement>(null)
+  const statsScrollRef = useRef<HTMLDivElement>(null)
 
   // ── 복사/붙여넣기 ──
   const [copiedSchedule, setCopiedSchedule] = useState<ScheduleItem | null>(null)
+  const [showRapoImport, setShowRapoImport] = useState(false)
   const lastClickedScheduleRef = useRef<ScheduleItem | null>(null)
   const [pasteSaving, setPasteSaving] = useState(false)
 
@@ -453,14 +592,14 @@ export function WeeklyCalendar({ assignments, trainerId, profile, workStartTime,
     const dateStr = format(day, 'yyyy-MM-dd')
     const timeStr = `${String(hour).padStart(2, '0')}:${half === 0 ? '00' : '30'}`
 
-    // PT/PPT인 경우 IN/OUT 자동 판별
+    // PT/PPT는 붙여넣은 시간 기준 IN/OUT 재계산. 공동구매는 IN 유지.
+    // 바챌은 별도 카테고리 (IN/OUT 무관, 통계는 schedule_type만 사용)
     let note = copiedSchedule.note
-    if (copiedSchedule.schedule_type === 'PT' || copiedSchedule.schedule_type === 'PPT') {
+    if (isPtLikeType(copiedSchedule.schedule_type)) {
       const parsed = parsePtNote(note)
-      const newInOut = getAutoInOut(dateStr, timeStr)
-      if (parsed.inOut !== newInOut) {
-        note = buildPtNote({ ...parsed, inOut: newInOut })
-      }
+      const isBaChal = copiedSchedule.schedule_type === '바챌'
+      const newInOut = isBaChal || parsed.isGroupPurchase ? 'IN' : getAutoInOut(dateStr, timeStr)
+      note = buildPtNote({ ...parsed, inOut: newInOut })
     }
 
     const doPaste = async () => {
@@ -557,13 +696,6 @@ export function WeeklyCalendar({ assignments, trainerId, profile, workStartTime,
     return (effectiveH - 6) * SLOTS_PER_HOUR + (m >= 30 ? 1 : 0) + SLOTS_PER_HOUR
   })() : TOTAL_SLOTS
 
-  // 특정 날짜 + 슬롯이 근무시간(IN)인지 판별
-  const isWorkSlot = useCallback((day: Date, slotIdx: number): boolean => {
-    if (!hasWorkHours) return true // 근무시간 미설정 시 전체 IN
-    if (isWeekendOrHoliday(day)) return true // 주말/공휴일은 전체 IN
-    return slotIdx >= workStartSlot && slotIdx < workEndSlot
-  }, [hasWorkHours, workStartSlot, workEndSlot])
-
   // PT/PPT 생성 시 시작 시간 기준으로 IN/OUT 자동 판별
   const getAutoInOut = useCallback((dateStr: string, time: string): 'IN' | 'OUT' => {
     if (!hasWorkHours) return 'IN'
@@ -575,9 +707,16 @@ export function WeeklyCalendar({ assignments, trainerId, profile, workStartTime,
     return (slot >= workStartSlot && slot < workEndSlot) ? 'IN' : 'OUT'
   }, [hasWorkHours, workStartSlot, workEndSlot])
 
-  const now = new Date()
-  const baseWeekStart = startOfWeek(now, { weekStartsOn: 1 })
-  const weekStart = useMemo(() => addDays(baseWeekStart, weekOffset * 7), [weekOffset])
+  // 서버(UTC)와 클라이언트(KST)의 시간 불일치로 hydration mismatch가 나면 React 18 production은
+  // 전체 트리를 unmount → global-error 가 떠 버린다. 첫 렌더는 안정 placeholder로 통일하고,
+  // mount 후에만 진짜 now 를 사용한다.
+  const [now, setNow] = useState<Date | null>(null)
+  useEffect(() => { setNow(new Date()) }, [])
+  // SSR/첫 렌더에서 사용할 stable placeholder (서버/클라 동일 결과 보장 — 2026-01-05는 월요일)
+  const stableNow = now ?? new Date('2026-01-05T00:00:00Z')
+
+  const baseWeekStart = useMemo(() => startOfWeek(stableNow, { weekStartsOn: 1 }), [stableNow])
+  const weekStart = useMemo(() => addDays(baseWeekStart, weekOffset * 7), [baseWeekStart, weekOffset])
   const weekStartStr = format(weekStart, 'yyyy-MM-dd')
   const days = useMemo(() => Array.from({ length: 7 }, (_, i) => addDays(weekStart, i)), [weekStart])
   const weekNum = Math.ceil(days[0].getDate() / 7)
@@ -585,14 +724,30 @@ export function WeeklyCalendar({ assignments, trainerId, profile, workStartTime,
   // 모바일: 오늘 날짜 컬럼으로 자동 스크롤
   useEffect(() => {
     const container = calendarScrollRef.current
-    if (!container) return
+    if (!container || !now) return
     const todayIdx = days.findIndex((d) => isSameDay(d, now))
     if (todayIdx <= 0) return
     const colWidth = 90
     const timeAxisWidth = 56
     const scrollTo = timeAxisWidth + colWidth * todayIdx - container.clientWidth / 2 + colWidth / 2
     container.scrollLeft = Math.max(0, scrollTo)
-  }, [days]) // eslint-disable-line react-hooks/exhaustive-deps
+  }, [days, now]) // eslint-disable-line react-hooks/exhaustive-deps
+
+  // 월간 통계: 오늘 날짜 컬럼으로 자동 스크롤 (좌우 sticky 컬럼은 항상 보임)
+  useEffect(() => {
+    if (viewMode !== 'month') return
+    const container = statsScrollRef.current
+    if (!container) return
+    const today = new Date()
+    const base = new Date()
+    base.setDate(1)
+    base.setMonth(base.getMonth() + monthOffset)
+    if (today.getFullYear() !== base.getFullYear() || today.getMonth() !== base.getMonth()) return
+    const labelWidth = 110
+    const colWidth = 36
+    const scrollTo = labelWidth + colWidth * (today.getDate() - 1) - container.clientWidth / 2 + colWidth / 2
+    container.scrollLeft = Math.max(0, scrollTo)
+  }, [viewMode, monthOffset, schedules])
 
   // OT 배정된 회원 목록 (선택용)
   const otMembers = assignments.filter((a) => !['거부', '완료'].includes(a.status))
@@ -654,7 +809,6 @@ export function WeeklyCalendar({ assignments, trainerId, profile, workStartTime,
     setCreateOtSessionId('')
     setCreateDuration(50)
     setCreateNote('')
-    setCreateInOut(getAutoInOut(format(day, 'yyyy-MM-dd'), startTime))
     setCreateIsSalesTarget(false)
     setCreateExpectedAmount(0)
     setCreateClosingProb(0)
@@ -663,12 +817,14 @@ export function WeeklyCalendar({ assignments, trainerId, profile, workStartTime,
     setCreateMemberPhone('')
     setCreatePtCurrentSession('')
     setCreatePtTotalSession('')
+    setCreateIsGroupPurchase(false)
+    setCreatePtFilter('')
     setShowCreate(true)
   }
 
   const handleCreate = async () => {
     if (createType === 'OT' && !createOtSessionId) return
-    if ((createType === 'PT' || createType === 'PPT') && !createName.trim()) return
+    if (isPtLikeType(createType) && !createName.trim()) return
     // 식사/회의/대외활동 등 비-회원 타입은 제목(createName) 입력 불필요 — 빈 문자열로 저장
 
     // 이중 클릭 방지: ref로 즉시 차단 (state는 비동기라 rapid click 허용될 수 있음)
@@ -803,19 +959,26 @@ export function WeeklyCalendar({ assignments, trainerId, profile, workStartTime,
       // 3) 이름 결정
       const memberName = createName.trim()
 
-      // 4) PT/PPT는 phone+회차+메모를 note에 통합 저장. 그 외는 createNote 그대로.
-      const noteValue = (createType === 'PT' || createType === 'PPT')
-        ? buildPtNote({
-            phone: createMemberPhone,
-            current: createPtCurrentSession,
-            total: createPtTotalSession,
-            inOut: createInOut,
-            memo: createNote,
-          })
-        : (createNote || null)
+      // 4) PT/PPT/바챌는 phone+회차+메모를 note에 통합 저장. 그 외는 createNote 그대로.
+      // - 공동구매(PT/PPT): 강제 IN
+      // - 바챌: IN/OUT과 무관한 별도 카테고리 (note의 inOut 값은 통계에서 무시됨)
+      // - 그 외 PT/PPT: 날짜·시간 기준 자동 판별 (반복 등록 시 날짜별로 다르게)
+      const ptLike = isPtLikeType(createType)
+      const groupPurchase = (createType === 'PT' || createType === 'PPT') && createIsGroupPurchase
+      const isBaChal = createType === '바챌'
+      const buildPtNoteFor = (date: string) =>
+        buildPtNote({
+          phone: createMemberPhone,
+          current: createPtCurrentSession,
+          total: createPtTotalSession,
+          // 바챌은 별도 카테고리(IN/OUT 무관) — 편의상 IN으로 저장하지만 통계는 schedule_type만 사용
+          inOut: isBaChal || groupPurchase ? 'IN' : getAutoInOut(date, createTime),
+          isGroupPurchase: groupPurchase,
+          memo: createNote,
+        })
 
       const doNonOtCreate = async () => {
-        // 일괄 INSERT
+        // 일괄 INSERT (날짜별로 IN/OUT 자동 판별)
         const rows = dateList.map((d) => ({
           trainer_id: trainerId,
           schedule_type: createType,
@@ -824,13 +987,33 @@ export function WeeklyCalendar({ assignments, trainerId, profile, workStartTime,
           scheduled_date: d,
           start_time: createTime,
           duration: effectiveDuration,
-          note: noteValue,
+          note: ptLike ? buildPtNoteFor(d) : (createNote || null),
         }))
         const { error } = await supabaseRef.current.from('trainer_schedules').insert(rows)
         if (error) {
           alert('저장 실패: ' + error.message)
           stopCreateSaving()
           return
+        }
+        // PT/PPT/바챌 스케줄: 해당 월 pt_members 4 카테고리 카운트 증가
+        if (isPtLikeType(createType) && memberName) {
+          const results = await Promise.all(dateList.map((d) => {
+            const month = d.slice(0, 7)
+            let category: 'IN' | 'OUT' | 'GROUP_PURCHASE' | 'BACHAL'
+            if (createType === '바챌') category = 'BACHAL'
+            else {
+              const parsed = parsePtNote(buildPtNoteFor(d))
+              if (parsed.isGroupPurchase) category = 'GROUP_PURCHASE'
+              else if (parsed.inOut === 'OUT') category = 'OUT'
+              else category = 'IN'
+            }
+            return adjustPtMemberSessions(trainerId, memberName, month, category, +1)
+          }))
+          const missing = results.some((r) => 'skipped' in r && r.skipped)
+          if (missing) {
+            const months = Array.from(new Set(dateList.map((d) => d.slice(0, 7)))).join(', ')
+            alert(`⚠️ PT 회원 미등록\n회원: ${memberName}\n월: ${months}\n→ PT회원 페이지에서 먼저 ${memberName} 등록 필요`)
+          }
         }
         setShowCreate(false)
         startTransition(() => router.refresh())
@@ -882,6 +1065,18 @@ export function WeeklyCalendar({ assignments, trainerId, profile, workStartTime,
       const { error } = await supabaseRef.current.from('trainer_schedules').delete().eq('id', id)
       if (error) {
         console.error('삭제 실패:', error.message)
+      } else if (target && isPtLikeType(target.schedule_type) && target.member_name) {
+        // PT/PPT/바챌 삭제 시 해당 월 카테고리 카운트 차감 (잔여세션 복원)
+        let category: 'IN' | 'OUT' | 'GROUP_PURCHASE' | 'BACHAL'
+        if (target.schedule_type === '바챌') category = 'BACHAL'
+        else {
+          const parsed = parsePtNote(target.note)
+          if (parsed.isGroupPurchase) category = 'GROUP_PURCHASE'
+          else if (parsed.inOut === 'OUT') category = 'OUT'
+          else category = 'IN'
+        }
+        const month = target.scheduled_date.slice(0, 7)
+        await adjustPtMemberSessions(target.trainer_id, target.member_name, month, category, -1)
       }
     }
     fetchSchedules()
@@ -890,10 +1085,11 @@ export function WeeklyCalendar({ assignments, trainerId, profile, workStartTime,
 
   // 스케줄 블록 클릭 → 타입에 따라 적절한 다이얼로그 분기
   const openMemberDetail = (schedule: ScheduleItem) => {
-    // PT/PPT 스케줄은 PT 수업 진행 전용 다이얼로그
-    if (schedule.schedule_type === 'PT' || schedule.schedule_type === 'PPT') {
+    // PT/PPT/바챌 스케줄은 PT 수업 진행 전용 다이얼로그
+    if (isPtLikeType(schedule.schedule_type)) {
       const parsed = parsePtNote(schedule.note)
       setEditPtSchedule(schedule)
+      setEditPtScheduleType(schedule.schedule_type as 'PT' | 'PPT' | '바챌')
       setEditPtMemberName(schedule.member_name)
       setEditPtPhone(parsed.phone)
       setEditPtTime(schedule.start_time)
@@ -904,6 +1100,7 @@ export function WeeklyCalendar({ assignments, trainerId, profile, workStartTime,
       setEditPtExpectedAmount(parsed.expectedAmount)
       setEditPtClassResult(parsed.classResult)
       setEditPtMemo(parsed.memo)
+      setEditPtIsGroupPurchase(parsed.isGroupPurchase)
       return
     }
     // 승인된 OT 세션은 수정 불가 (관리자/개발자는 예외)
@@ -916,11 +1113,17 @@ export function WeeklyCalendar({ assignments, trainerId, profile, workStartTime,
     setEditDate(schedule.scheduled_date)
     setEditTime(schedule.start_time)
     setEditDuration(schedule.duration)
+    setEditInbody(schedule.schedule_type === 'OT' && !!schedule.ot_session_id ? inbodySessionIds.has(schedule.ot_session_id) : false)
   }
 
   const handleEditPtScheduleSave = async () => {
     if (!editPtSchedule) return
     setEditPtSaving(true)
+    // - 공동구매(PT/PPT): 강제 IN
+    // - 바챌: IN/OUT과 무관한 별도 카테고리 (저장 값은 통계에서 무시됨)
+    // - 그 외: 시간 기준 자동 판별
+    const groupPurchase = (editPtScheduleType === 'PT' || editPtScheduleType === 'PPT') && editPtIsGroupPurchase
+    const isBaChal = editPtScheduleType === '바챌'
     const noteValue = buildPtNote({
       phone: editPtPhone,
       current: editPtCurrentSession,
@@ -928,11 +1131,14 @@ export function WeeklyCalendar({ assignments, trainerId, profile, workStartTime,
       isSalesTarget: editPtIsSalesTarget,
       expectedAmount: editPtExpectedAmount,
       classResult: editPtClassResult,
+      inOut: isBaChal || groupPurchase ? 'IN' : getAutoInOut(editPtSchedule.scheduled_date, editPtTime),
+      isGroupPurchase: groupPurchase,
       memo: editPtMemo,
     })
     const { error } = await supabaseRef.current
       .from('trainer_schedules')
       .update({
+        schedule_type: editPtScheduleType,
         member_name: editPtMemberName.trim() || editPtSchedule.member_name,
         start_time: editPtTime,
         duration: editPtDuration,
@@ -1106,9 +1312,21 @@ export function WeeklyCalendar({ assignments, trainerId, profile, workStartTime,
             alert(result.warning)
           }
         } else {
+          // PT/PPT는 이동한 시간대에 맞춰 note의 IN/OUT 재계산. 공동구매는 IN 유지.
+          // 바챌은 별도 카테고리 (IN/OUT 무관, 통계는 schedule_type만 사용)
+          const updates: { scheduled_date: string; start_time: string; note?: string | null } = {
+            scheduled_date: newDateStr,
+            start_time: newTimeStr,
+          }
+          if (isPtLikeType(cur.schedule.schedule_type)) {
+            const parsed = parsePtNote(cur.schedule.note)
+            const isBaChal = cur.schedule.schedule_type === '바챌'
+            const newInOut = isBaChal || parsed.isGroupPurchase ? 'IN' : getAutoInOut(newDateStr, newTimeStr)
+            updates.note = buildPtNote({ ...parsed, inOut: newInOut })
+          }
           const { error } = await supabaseRef.current
             .from('trainer_schedules')
-            .update({ scheduled_date: newDateStr, start_time: newTimeStr })
+            .update(updates)
             .eq('id', cur.schedule.id)
           if (error) {
             alert('이동 실패: ' + error.message)
@@ -1174,6 +1392,15 @@ export function WeeklyCalendar({ assignments, trainerId, profile, workStartTime,
         alert('수정 실패: ' + result.error)
         setEditSaving(false)
         return
+      }
+      // 인바디 토글 변경 적용
+      const wasInbody = inbodySessionIds.has(editSchedule.ot_session_id)
+      if (wasInbody !== editInbody) {
+        try {
+          await toggleInbodyForOtSchedule(editSchedule, editInbody)
+        } catch (err) {
+          console.error('인바디 저장 실패:', err)
+        }
       }
     } else {
       // OT가 아닌 일정 — 단일 row update
@@ -1246,18 +1473,30 @@ export function WeeklyCalendar({ assignments, trainerId, profile, workStartTime,
             <span className="text-xs sm:text-sm font-bold text-white bg-gray-900 px-2 sm:px-3 py-0.5 sm:py-1 rounded-md min-w-0 sm:min-w-[140px] text-center whitespace-nowrap">
               {viewMode === 'week'
                 ? `${format(weekStart, 'M월', { locale: ko })} ${weekNum}주차`
-                : format(addDays(new Date(), monthOffset * 30), 'yyyy년 M월', { locale: ko })
+                : format(addDays(stableNow, monthOffset * 30), 'yyyy년 M월', { locale: ko })
               }
             </span>
             <Button variant="outline" size="icon" className="h-7 w-7 sm:h-8 sm:w-8 bg-white text-gray-700 border-gray-300" onClick={() => startTransition(() => viewMode === 'week' ? setWeekOffset((p) => p + 1) : setMonthOffset((p) => p + 1))}>
               <ChevronRight className="h-3.5 w-3.5 sm:h-4 sm:w-4" />
             </Button>
           </div>
-          {hasWorkHours && (
-            <span className="text-[10px] sm:text-sm font-bold text-white bg-blue-600 px-1.5 sm:px-3 py-0.5 sm:py-1.5 rounded-md shadow-sm whitespace-nowrap">
-              {workStartTime}~{workEndTime}
-            </span>
-          )}
+          <div className="flex items-center gap-1 sm:gap-2">
+            {hasWorkHours && (
+              <span className="text-[10px] sm:text-sm font-bold text-white bg-blue-600 px-1.5 sm:px-3 py-0.5 sm:py-1.5 rounded-md shadow-sm whitespace-nowrap">
+                {workStartTime}~{workEndTime}
+              </span>
+            )}
+            <Button
+              variant="outline"
+              size="sm"
+              className="h-7 sm:h-8 text-[10px] sm:text-xs bg-indigo-50 hover:bg-indigo-100 text-indigo-700 border-indigo-200 whitespace-nowrap px-2 sm:px-3"
+              onClick={() => setShowRapoImport(true)}
+              title="라포스케줄 이미지"
+            >
+              <ImageIcon className="h-3.5 w-3.5 sm:mr-1" />
+              <span className="hidden sm:inline">라포스케줄 이미지</span>
+            </Button>
+          </div>
         </div>
 
         {/* 범례 — 모바일에서 숨김 */}
@@ -1295,7 +1534,7 @@ export function WeeklyCalendar({ assignments, trainerId, profile, workStartTime,
 
         {/* 월간 뷰 */}
         {viewMode === 'month' && (() => {
-          const baseMonth = new Date()
+          const baseMonth = new Date(stableNow.getTime())
           baseMonth.setDate(1)
           baseMonth.setMonth(baseMonth.getMonth() + monthOffset)
           const year = baseMonth.getFullYear()
@@ -1312,7 +1551,7 @@ export function WeeklyCalendar({ assignments, trainerId, profile, workStartTime,
           }
           if (week.length > 0) { while (week.length < 7) week.push(null); weeks.push(week) }
 
-          const typeColor: Record<string, string> = { OT: 'bg-emerald-400', PT: 'bg-blue-400', PPT: 'bg-violet-400' }
+          const typeColor: Record<string, string> = { OT: 'bg-emerald-400', PT: 'bg-blue-400', PPT: 'bg-violet-400', 바챌: 'bg-yellow-400' }
 
           // 필터 적용
           const filteredSchedules = monthFilter === '전체' ? schedules : schedules.filter((s) => s.schedule_type === monthFilter)
@@ -1339,12 +1578,12 @@ export function WeeklyCalendar({ assignments, trainerId, profile, workStartTime,
           return (
             <div className="space-y-2">
             <div className="flex gap-1.5">
-              {(['전체', 'OT', 'PT', 'PPT'] as const).map((f) => (
+              {(['전체', 'OT', 'PT', 'PPT', '바챌'] as const).map((f) => (
                 <button
                   key={f}
                   className={`px-3 py-1 rounded-full text-xs font-bold transition-colors ${
                     monthFilter === f
-                      ? f === 'OT' ? 'bg-emerald-500 text-white' : f === 'PT' ? 'bg-blue-500 text-white' : f === 'PPT' ? 'bg-violet-500 text-white' : 'bg-gray-900 text-white'
+                      ? f === 'OT' ? 'bg-emerald-500 text-white' : f === 'PT' ? 'bg-blue-500 text-white' : f === 'PPT' ? 'bg-violet-500 text-white' : f === '바챌' ? 'bg-yellow-500 text-black' : 'bg-gray-900 text-white'
                       : 'bg-white text-gray-600 border border-gray-300 hover:bg-gray-50'
                   }`}
                   onClick={() => setMonthFilter(f)}
@@ -1360,7 +1599,7 @@ export function WeeklyCalendar({ assignments, trainerId, profile, workStartTime,
               {weeks.map((week, wi) => (
                 <div key={wi} className="grid grid-cols-7 border-t border-gray-200">
                   {week.map((day, di) => {
-                    const isToday = day && new Date().getDate() === day && new Date().getMonth() === month && new Date().getFullYear() === year
+                    const isToday = !!(day && now && now.getDate() === day && now.getMonth() === month && now.getFullYear() === year)
                     const dayItems = day ? (daySchedules.get(day) ?? []).sort((a, b) => a.start_time.localeCompare(b.start_time)) : []
                     return (
                       <div
@@ -1410,7 +1649,7 @@ export function WeeklyCalendar({ assignments, trainerId, profile, workStartTime,
           <div className="flex border-b border-gray-200 sticky top-0 bg-gray-900 z-10">
             <div className={`${isMobile ? 'w-8' : 'w-14'} shrink-0`} />
             {days.map((day, i) => {
-              const isToday = isSameDay(day, now)
+              const isToday = !!now && isSameDay(day, now)
               const dateStr = format(day, 'yyyy-MM-dd')
               const holidayName = KOREAN_HOLIDAYS[dateStr]
               const isWeekend = i >= 5
@@ -1442,7 +1681,7 @@ export function WeeklyCalendar({ assignments, trainerId, profile, workStartTime,
 
             {/* 날짜 컬럼 */}
             {days.map((day, dayIdx) => {
-              const isToday = isSameDay(day, now)
+              const isToday = !!now && isSameDay(day, now)
               const daySchedules = getSchedulesForDay(day)
 
               return (
@@ -1451,16 +1690,15 @@ export function WeeklyCalendar({ assignments, trainerId, profile, workStartTime,
                   ref={(el) => { dayColRefs.current[dayIdx] = el }}
                   className={`flex-1 border-l border-gray-300 relative ${isMobile ? 'min-w-0' : 'min-w-[90px]'} ${isToday ? 'bg-yellow-50/50' : ''}`}
                 >
-                  {/* 30분 단위 그리드 */}
+                  {/* 30분 단위 그리드 — 배경은 흰색 통일, IN/OUT 구분은 블록 색상으로 표기 */}
                   {Array.from({ length: TOTAL_SLOTS }).map((_, slotIdx) => {
                     const hour = Math.floor(slotIdx / 2) + 6
                     const half = slotIdx % 2
-                    const inWork = isWorkSlot(day, slotIdx)
                     return (
                       <div
                         key={slotIdx}
                         style={{ height: slotH, ...(copiedSchedule ? { cursor: 'copy' } : {}) }}
-                        className={`${half === 1 ? 'border-b border-gray-300' : 'border-b border-gray-100'} ${copiedSchedule ? '' : 'cursor-pointer'} hover:bg-yellow-100 transition-colors ${hasWorkHours && !inWork ? 'bg-orange-100/70' : ''} ${copiedSchedule ? 'hover:bg-green-100' : ''}`}
+                        className={`${half === 1 ? 'border-b border-gray-300' : 'border-b border-gray-100'} ${copiedSchedule ? '' : 'cursor-pointer'} hover:bg-yellow-100 transition-colors ${copiedSchedule ? 'hover:bg-green-100' : ''}`}
                         onClick={() => copiedSchedule ? handlePaste(day, hour, half) : openCreate(day, hour, half)}
                       />
                     )
@@ -1530,18 +1768,40 @@ export function WeeklyCalendar({ assignments, trainerId, profile, workStartTime,
                     const colWidth = 100 / layout.total
                     const colLeft = layout.col * colWidth
                     // 회원 정보 매칭 — OT 스케줄만 ot_assignments에서 찾음
-                    // PT/PPT는 동명이인 OT 회원의 매출대상자 표시가 잘못 묻어오는 문제를 방지
+                    // PT/PPT/바챌은 동명이인 OT 회원의 매출대상자 표시가 잘못 묻어오는 문제를 방지
                     const matched = s.schedule_type === 'OT'
                       ? assignments.find((a) => a.member.name === s.member_name)
                       : null
-                    // PT 매출대상자/금액/수업결과는 note의 prefix로 판별
-                    const ptParsed = (s.schedule_type === 'PT' || s.schedule_type === 'PPT') ? parsePtNote(s.note) : null
-                    // 색상: PT/PPT 노쇼/차감노쇼는 빨간색, 나머지는 타입 기본색
+                    // PT 매출대상자/금액/수업결과는 note의 prefix로 판별 (PT/PPT/바챌)
+                    const ptParsed = isPtLikeType(s.schedule_type) ? parsePtNote(s.note) : null
+                    // 주말/공휴일은 무조건 IN으로 표시 (저장된 값 무시)
+                    const sDate = new Date(s.scheduled_date + 'T00:00:00')
+                    const isInForce = isWeekendOrHoliday(sDate)
+                    const effectiveInOut: 'IN' | 'OUT' = ptParsed
+                      ? (isInForce || ptParsed.isGroupPurchase ? 'IN' : ptParsed.inOut)
+                      : 'IN'
+                    // 색상 결정:
+                    //   - PT/PPT 노쇼/차감노쇼: 빨강
+                    //   - 바챌: 항상 초록
+                    //   - 공동구매 PT: 노랑
+                    //   - PT/PPT 주말·공휴일(강제 IN): 슬레이트(회색 변형)
+                    //   - PT/PPT IN: 회색 / OUT: 주황
+                    //   - 그 외 타입(OT/식사/회의 등): 타입 기본색
                     const ptResult = ptParsed?.classResult ?? ''
                     const isNoShow = ptResult === '노쇼' || ptResult === '차감노쇼'
-                    const color = isNoShow
-                      ? 'bg-red-300 border-red-500 text-red-900'
-                      : (TYPE_COLORS[s.schedule_type] ?? TYPE_COLORS.OT)
+                    let color: string
+                    if (isNoShow) {
+                      color = 'bg-red-200/70 border-red-400 text-red-900'
+                    } else if (s.schedule_type === '바챌') {
+                      color = TYPE_COLORS['바챌']
+                    } else if (s.schedule_type === 'PT' || s.schedule_type === 'PPT') {
+                      if (ptParsed?.isGroupPurchase) color = PT_GROUP_PURCHASE_COLOR
+                      else if (effectiveInOut === 'OUT') color = PT_OUT_COLOR
+                      else if (isInForce) color = PT_WEEKEND_COLOR
+                      else color = PT_IN_COLOR
+                    } else {
+                      color = TYPE_COLORS[s.schedule_type] ?? TYPE_COLORS.OT
+                    }
                     const isSales = s.schedule_type === 'OT'
                       ? !!matched?.is_sales_target
                       : !!ptParsed?.isSalesTarget
@@ -1550,6 +1810,24 @@ export function WeeklyCalendar({ assignments, trainerId, profile, workStartTime,
                       : (ptParsed?.expectedAmount ? Number(ptParsed.expectedAmount) : 0)
                     // OT 회원의 sales_status (진행중/거부자/등록완료 등) — 캘린더 블록에 라벨로 표시
                     const otSalesStatus = s.schedule_type === 'OT' ? (matched?.sales_status as SalesStatus | null | undefined) : null
+                    // PT/PPT 회차 라벨: 시간순으로 자동 계산된 회차 번호 사용
+                    // - 회차(N): 전체 기간 회원의 PT/PPT/바챌 스케줄을 시간순 정렬한 위치 (sessionPosById)
+                    // - 총(M): 해당 월 pt_members의 total_sessions 우선, 0이면 note의 [N/M] fallback
+                    let sessionLabel: string | null = null
+                    if (s.schedule_type === 'PT' || s.schedule_type === 'PPT') {
+                      const autoPos = sessionPosById.get(s.id)
+                      const noteCurrent = Number(ptParsed?.current) || 0
+                      const noteTotal = Number(ptParsed?.total) || 0
+                      const month = s.scheduled_date.slice(0, 7)
+                      const pm = s.member_name ? ptMemberByNameMonth.get(`${s.member_name}|${month}`) : null
+                      const total = (pm && pm.total_sessions > 0) ? pm.total_sessions : (noteTotal > 0 ? noteTotal : 0)
+                      const current = autoPos ?? (noteCurrent > 0 ? noteCurrent : 0)
+                      if (current > 0 && total > 0) {
+                        sessionLabel = `${total}회 중 ${current}회차`
+                      } else if (current > 0) {
+                        sessionLabel = `${current}회차`
+                      }
+                    }
                     const draggable = canDragSchedule(s)
                     const isDragging = draggingId === s.id
 
@@ -1585,9 +1863,15 @@ export function WeeklyCalendar({ assignments, trainerId, profile, workStartTime,
                             <p className="text-xs font-bold truncate">
                               {isOtApproved(s) && <span className="text-gray-500">🔒 </span>}
                               {isSales && <span className="text-yellow-500">★ </span>}
+                              {s.schedule_type === 'OT' && s.ot_session_id && inbodySessionIds.has(s.ot_session_id) && (
+                                <span className="text-fuchsia-600" title="인바디 측정">● </span>
+                              )}
                               {s.schedule_type}
                               {s.member_name ? ` ${s.member_name}` : ''}
                             </p>
+                            {sessionLabel && (
+                              <p className="text-[10px] font-semibold opacity-80 truncate">{sessionLabel}</p>
+                            )}
                             {ptResult && (
                               <p className={`text-[10px] font-bold ${PT_RESULT_TEXT_COLORS[ptResult as PtClassResult] ?? 'text-gray-700'}`}>
                                 [{ptResult}]
@@ -1639,7 +1923,7 @@ export function WeeklyCalendar({ assignments, trainerId, profile, workStartTime,
 
         {loading && <p className="text-xs text-gray-400 text-center">로딩 중...</p>}
 
-        {/* ── 일별 통계표 ── */}
+        {/* ── 통계표 (주간 = 일별 / 월간 = 합계만) ── */}
         {schedules.length > 0 && (() => {
           const formatMin = (min: number) => {
             if (min === 0) return '-'
@@ -1648,32 +1932,74 @@ export function WeeklyCalendar({ assignments, trainerId, profile, workStartTime,
             return h > 0 ? (m > 0 ? `${h}h${m}m` : `${h}h`) : `${m}m`
           }
           const meetingTypes = new Set(['간부회의', '팀회의', '전체회의', '간담회'])
+          const isWeekStats = viewMode === 'week'
 
-          // 일별 집계 (노쇼/차감노쇼 별도 카운트)
+          // 통계 컬럼 계산: 주간이면 7일, 월간이면 1일~말일 전체
+          const statsDays: Date[] = isWeekStats ? days : (() => {
+            const base = new Date(stableNow.getTime())
+            base.setDate(1)
+            base.setMonth(base.getMonth() + monthOffset)
+            const year = base.getFullYear()
+            const month = base.getMonth()
+            const lastDay = new Date(year, month + 1, 0).getDate()
+            return Array.from({ length: lastDay }, (_, i) => new Date(year, month, i + 1))
+          })()
+
+          // 통계 키별 카운트 (노쇼/차감노쇼는 별도)
           type DayStat = {
-            ptIn: number; ptOut: number; pptIn: number; pptOut: number
-            ptInNoshow: number; ptOutNoshow: number; pptInNoshow: number; pptOutNoshow: number
-            ot: number; meetingMin: number; otherMin: Record<string, number>
+            ptInReg: number; ptInRegNoshow: number  // PT IN (정상, 평일, 비-공동구매)
+            ptGP: number; ptGPNoshow: number        // PT 공동구매 (항상 IN)
+            ptWH: number; ptWHNoshow: number        // PT 주말/공휴일 (강제 IN)
+            ptOut: number; ptOutNoshow: number      // PT OUT
+            pptIn: number; pptInNoshow: number      // PPT IN (주말/공휴일 포함)
+            pptOut: number; pptOutNoshow: number    // PPT OUT
+            baChal: number; baChalNoshow: number    // 바챌 (고정급여, IN/OUT 없음)
+            ot: number                              // OT 세션 수
+            inbody: number                          // OT 중 인바디 측정 건수
+            meetingMin: number                      // 회의 시간(분)
+            otherMin: Record<string, number>
           }
-          const emptyStat = (): DayStat => ({ ptIn: 0, ptOut: 0, pptIn: 0, pptOut: 0, ptInNoshow: 0, ptOutNoshow: 0, pptInNoshow: 0, pptOutNoshow: 0, ot: 0, meetingMin: 0, otherMin: {} })
+          const emptyStat = (): DayStat => ({
+            ptInReg: 0, ptInRegNoshow: 0, ptGP: 0, ptGPNoshow: 0, ptWH: 0, ptWHNoshow: 0,
+            ptOut: 0, ptOutNoshow: 0, pptIn: 0, pptInNoshow: 0, pptOut: 0, pptOutNoshow: 0,
+            baChal: 0, baChalNoshow: 0, ot: 0, inbody: 0, meetingMin: 0, otherMin: {},
+          })
           const dayStats = new Map<string, DayStat>()
-          for (const d of days) {
+          for (const d of statsDays) {
             dayStats.set(format(d, 'yyyy-MM-dd'), emptyStat())
           }
-          for (const s of schedules) {
-            const st = dayStats.get(s.scheduled_date)
-            if (!st) continue
-            if (s.schedule_type === 'PT' || s.schedule_type === 'PPT') {
+          const total: DayStat = emptyStat()
+
+          const accumulate = (st: DayStat, s: typeof schedules[number]) => {
+            if (s.schedule_type === '바챌') {
               const parsed = parsePtNote(s.note)
-              const isPt = s.schedule_type === 'PT'
               const isNoshow = parsed.classResult === '노쇼' || parsed.classResult === '차감노쇼'
-              if (parsed.inOut === 'OUT') {
-                if (isPt) { st.ptOut++; if (isNoshow) st.ptOutNoshow++ } else { st.pptOut++; if (isNoshow) st.pptOutNoshow++ }
-              } else {
-                if (isPt) { st.ptIn++; if (isNoshow) st.ptInNoshow++ } else { st.pptIn++; if (isNoshow) st.pptInNoshow++ }
+              st.baChal++; if (isNoshow) st.baChalNoshow++
+            } else if (s.schedule_type === 'PT' || s.schedule_type === 'PPT') {
+              const parsed = parsePtNote(s.note)
+              const isNoshow = parsed.classResult === '노쇼' || parsed.classResult === '차감노쇼'
+              const sDate = new Date(s.scheduled_date + 'T00:00:00')
+              const isWH = isWeekendOrHoliday(sDate)
+              if (s.schedule_type === 'PPT') {
+                if (parsed.inOut === 'OUT' && !isWH) {
+                  st.pptOut++; if (isNoshow) st.pptOutNoshow++
+                } else {
+                  st.pptIn++; if (isNoshow) st.pptInNoshow++
+                }
+              } else { // PT
+                if (parsed.isGroupPurchase) {
+                  st.ptGP++; if (isNoshow) st.ptGPNoshow++
+                } else if (isWH) {
+                  st.ptWH++; if (isNoshow) st.ptWHNoshow++
+                } else if (parsed.inOut === 'OUT') {
+                  st.ptOut++; if (isNoshow) st.ptOutNoshow++
+                } else {
+                  st.ptInReg++; if (isNoshow) st.ptInRegNoshow++
+                }
               }
             } else if (s.schedule_type === 'OT') {
               st.ot++
+              if (s.ot_session_id && inbodySessionIds.has(s.ot_session_id)) st.inbody++
             } else if (meetingTypes.has(s.schedule_type)) {
               st.meetingMin += s.duration
             } else {
@@ -1681,38 +2007,31 @@ export function WeeklyCalendar({ assignments, trainerId, profile, workStartTime,
             }
           }
 
-          // 합계
-          const total: DayStat = emptyStat()
-          Array.from(dayStats.values()).forEach((st) => {
-            total.ptIn += st.ptIn; total.ptOut += st.ptOut
-            total.pptIn += st.pptIn; total.pptOut += st.pptOut
-            total.ptInNoshow += st.ptInNoshow; total.ptOutNoshow += st.ptOutNoshow
-            total.pptInNoshow += st.pptInNoshow; total.pptOutNoshow += st.pptOutNoshow
-            total.ot += st.ot; total.meetingMin += st.meetingMin
-            Object.entries(st.otherMin).forEach(([k, v]) => { total.otherMin[k] = (total.otherMin[k] ?? 0) + (v as number) })
-          })
+          for (const s of schedules) {
+            const st = dayStats.get(s.scheduled_date)
+            if (st) accumulate(st, s)
+            accumulate(total, s)
+          }
 
           // 기타 타입 목록
-          const allOtherTypes: string[] = []
-          Array.from(dayStats.values()).forEach((st) => {
-            Object.keys(st.otherMin).forEach((k) => { if (!allOtherTypes.includes(k)) allOtherTypes.push(k) })
-          })
+          const allOtherTypes = Object.keys(total.otherMin)
 
-          // 셀 렌더링 (노쇼 괄호 표시 포함)
+          // 셀 렌더링 — isTotal=true면 sticky-right로 고정
           const cell = (val: number | string, isTotal = false) => {
             const empty = val === 0 || val === '-'
+            const stickyCls = isTotal ? 'sticky right-0 z-[1] bg-gray-50 shadow-[-4px_0_6px_-3px_rgba(0,0,0,0.06)]' : ''
             return (
-              <td className={`text-center py-2.5 px-1 text-xs border-r border-gray-100 last:border-r-0 ${isTotal ? 'font-black bg-gray-50' : 'font-semibold'} ${empty ? 'text-gray-300' : isTotal ? 'text-gray-900' : 'text-gray-700'}`}>
+              <td className={`text-center py-2.5 px-1 text-xs border-r border-gray-100 last:border-r-0 ${isTotal ? 'font-black' : 'font-semibold'} ${stickyCls} ${empty ? 'text-gray-300' : isTotal ? 'text-gray-900' : 'text-gray-700'}`}>
                 {empty ? '-' : val}
               </td>
             )
           }
-          // 수업 건수 + 노쇼 표시 셀: "3 (1)" 형태, 합계는 노쇼 제외
           const classCell = (count: number, noshow: number, isTotal = false) => {
             const effective = count - noshow
             const empty = effective === 0 && noshow === 0
+            const stickyCls = isTotal ? 'sticky right-0 z-[1] bg-gray-50 shadow-[-4px_0_6px_-3px_rgba(0,0,0,0.06)]' : ''
             return (
-              <td className={`text-center py-2.5 px-1 text-xs border-r border-gray-100 last:border-r-0 ${isTotal ? 'font-black bg-gray-50' : 'font-semibold'}`}>
+              <td className={`text-center py-2.5 px-1 text-xs border-r border-gray-100 last:border-r-0 ${isTotal ? 'font-black' : 'font-semibold'} ${stickyCls}`}>
                 {empty ? <span className="text-gray-300">-</span> : (
                   <>
                     <span className={isTotal ? 'text-gray-900' : 'text-gray-700'}>{effective}</span>
@@ -1723,132 +2042,136 @@ export function WeeklyCalendar({ assignments, trainerId, profile, workStartTime,
             )
           }
 
-          // 일별 총 수업 건수 (노쇼 제외)
-          const dayTotalClass = (dateStr: string) => {
-            const st = dayStats.get(dateStr)!
-            return (st.ptIn - st.ptInNoshow) + (st.ptOut - st.ptOutNoshow) + (st.pptIn - st.pptInNoshow) + (st.pptOut - st.pptOutNoshow) + st.ot
-          }
-          const dayTotalNoshow = (dateStr: string) => {
-            const st = dayStats.get(dateStr)!
-            return st.ptInNoshow + st.ptOutNoshow + st.pptInNoshow + st.pptOutNoshow
-          }
-          const weekTotalClass = (total.ptIn - total.ptInNoshow) + (total.ptOut - total.ptOutNoshow) + (total.pptIn - total.pptInNoshow) + (total.pptOut - total.pptOutNoshow) + total.ot
-          const weekTotalNoshow = total.ptInNoshow + total.ptOutNoshow + total.pptInNoshow + total.pptOutNoshow
+          // 일별/주별 누적 합 (노쇼 제외)
+          const stTotal = (st: DayStat) => (
+            (st.ptInReg - st.ptInRegNoshow) + (st.ptGP - st.ptGPNoshow) + (st.ptWH - st.ptWHNoshow) + (st.ptOut - st.ptOutNoshow)
+            + (st.pptIn - st.pptInNoshow) + (st.pptOut - st.pptOutNoshow)
+            + (st.baChal - st.baChalNoshow) + st.ot
+          )
+          const stNoshow = (st: DayStat) => (
+            st.ptInRegNoshow + st.ptGPNoshow + st.ptWHNoshow + st.ptOutNoshow
+            + st.pptInNoshow + st.pptOutNoshow + st.baChalNoshow
+          )
+          const grandTotalClass = stTotal(total)
+          const grandTotalNoshow = stNoshow(total)
+
+          // 행 렌더링 헬퍼: 모든 일자 컬럼 + 합계
+          const classRow = (
+            label: React.ReactNode, dotColor: string, textColor: string,
+            getCount: (st: DayStat) => number, getNoshow: (st: DayStat) => number,
+          ) => (
+            <tr className={`border-b border-gray-100 transition-colors`}>
+              <td className="py-2.5 px-2 sm:px-3 sticky left-0 bg-white z-[1]">
+                <span className={`inline-flex items-center gap-1 text-[11px] font-bold ${textColor}`}>
+                  <span className={`w-2 h-2 rounded-full ${dotColor}`} />{label}
+                </span>
+              </td>
+              {statsDays.map((d, i) => {
+                const st = dayStats.get(format(d, 'yyyy-MM-dd'))!
+                return <React.Fragment key={i}>{classCell(getCount(st), getNoshow(st))}</React.Fragment>
+              })}
+              {classCell(getCount(total), getNoshow(total), true)}
+            </tr>
+          )
+          const numRow = (
+            label: React.ReactNode, dotColor: string, textColor: string,
+            getVal: (st: DayStat) => number,
+          ) => (
+            <tr className={`border-b border-gray-100 transition-colors`}>
+              <td className="py-2.5 px-2 sm:px-3 sticky left-0 bg-white z-[1]">
+                <span className={`inline-flex items-center gap-1 text-[11px] font-bold ${textColor}`}>
+                  <span className={`w-2 h-2 rounded-full ${dotColor}`} />{label}
+                </span>
+              </td>
+              {statsDays.map((d, i) => {
+                const st = dayStats.get(format(d, 'yyyy-MM-dd'))!
+                return <React.Fragment key={i}>{cell(getVal(st))}</React.Fragment>
+              })}
+              {cell(getVal(total), true)}
+            </tr>
+          )
+          const minRow = (
+            label: React.ReactNode, dotColor: string, textColor: string,
+            getMin: (st: DayStat) => number,
+          ) => (
+            <tr className={`border-b border-gray-100 transition-colors`}>
+              <td className="py-2.5 px-2 sm:px-3 sticky left-0 bg-white z-[1]">
+                <span className={`inline-flex items-center gap-1 text-[11px] font-bold ${textColor}`}>
+                  <span className={`w-2 h-2 rounded-full ${dotColor}`} />{label}
+                </span>
+              </td>
+              {statsDays.map((d, i) => {
+                const st = dayStats.get(format(d, 'yyyy-MM-dd'))!
+                return <React.Fragment key={i}>{cell(formatMin(getMin(st)))}</React.Fragment>
+              })}
+              {cell(formatMin(getMin(total)), true)}
+            </tr>
+          )
 
           return (
             <div className="rounded-xl border border-gray-200 bg-white overflow-hidden shadow-sm -mx-4 sm:mx-0">
               {/* 타이틀 */}
               <div className="bg-gray-900 px-4 py-3 flex items-center justify-between">
-                <p className="text-sm font-bold text-white">일별 통계</p>
-                <p className="text-xs text-gray-400">총 수업 <span className="text-yellow-400 font-black text-sm">{weekTotalClass}</span>건</p>
+                <p className="text-sm font-bold text-white">{isWeekStats ? '일별 통계' : '월간 통계'}</p>
+                <p className="text-xs text-gray-400">총 수업 <span className="text-yellow-400 font-black text-sm">{grandTotalClass}</span>건{grandTotalNoshow > 0 && <span className="text-red-400 ml-1">({grandTotalNoshow} 노쇼)</span>}</p>
               </div>
-              <div className="overflow-x-auto">
-                <table className="w-full min-w-[540px]">
+              <div ref={statsScrollRef} className="overflow-x-auto">
+                <table className="w-full min-w-[360px] border-separate border-spacing-0">
                   <thead>
                     <tr className="bg-gray-50 border-b border-gray-200">
-                      <th className="py-2.5 px-3 text-left text-[11px] font-bold text-gray-500 min-w-[90px] w-[90px]" />
-                      {days.map((d, i) => {
-                        const isWe = i >= 5
+                      <th className="py-2.5 px-2 sm:px-3 text-left text-[11px] font-bold text-gray-500 w-[72px] min-w-[72px] sm:w-[110px] sm:min-w-[110px] sticky left-0 bg-gray-50 z-[2]" />
+                      {statsDays.map((d, i) => {
+                        const dow = d.getDay()
+                        const isWe = dow === 0 || dow === 6
                         const isHol = !!KOREAN_HOLIDAYS[format(d, 'yyyy-MM-dd')]
                         return (
-                          <th key={i} className={`py-2.5 px-1 text-center text-[11px] font-bold border-r border-gray-100 last:border-r-0 ${isWe || isHol ? 'text-red-400' : 'text-gray-500'}`}>
-                            <span className="block">{DAY_LABELS[d.getDay()]}</span>
-                            <span className="block text-sm">{d.getDate()}일</span>
+                          <th key={i} className={`py-2.5 px-0.5 sm:px-1 text-center text-[11px] font-bold border-r border-gray-100 last:border-r-0 min-w-[28px] sm:min-w-[36px] ${isWe || isHol ? 'text-red-400' : 'text-gray-500'}`}>
+                            <span className="block">{DAY_LABELS[dow]}</span>
+                            <span className="block text-sm">{d.getDate()}{isWeekStats ? '일' : ''}</span>
                           </th>
                         )
                       })}
-                      <th className="py-2.5 px-2 text-center text-[11px] font-bold text-gray-900 bg-gray-100 w-[52px]">합계</th>
+                      <th className="py-2.5 px-1 sm:px-2 text-center text-[11px] font-bold text-gray-900 bg-gray-100 min-w-[44px] sm:min-w-[60px] sticky right-0 z-[2]">합계</th>
                     </tr>
                   </thead>
                   <tbody>
-                    {/* 총 수업 (노쇼 제외) */}
+                    {/* 수업 합계 */}
                     <tr className="border-b-2 border-gray-200 bg-yellow-50/60">
-                      <td className="py-2.5 px-3 text-[11px] font-black text-gray-900">수업 합계</td>
-                      {days.map((d, i) => {
-                        const ds = format(d, 'yyyy-MM-dd')
-                        const v = dayTotalClass(ds)
-                        const ns = dayTotalNoshow(ds)
+                      <td className="py-2.5 px-2 sm:px-3 text-[11px] font-black text-gray-900 sticky left-0 bg-yellow-50/60 z-[1] whitespace-nowrap">수업 합계</td>
+                      {statsDays.map((d, i) => {
+                        const st = dayStats.get(format(d, 'yyyy-MM-dd'))!
+                        const v = stTotal(st)
+                        const ns = stNoshow(st)
                         return <React.Fragment key={i}>{classCell(v + ns, ns)}</React.Fragment>
                       })}
-                      <td className="text-center py-2.5 px-1 font-black text-sm bg-yellow-100">
-                        <span className="text-gray-900">{weekTotalClass}</span>
-                        {weekTotalNoshow > 0 && <span className="text-red-500 text-[10px] ml-0.5">({weekTotalNoshow})</span>}
+                      <td className="text-center py-2.5 px-1 font-black text-sm bg-yellow-100 sticky right-0 z-[1]">
+                        <span className="text-gray-900">{grandTotalClass}</span>
+                        {grandTotalNoshow > 0 && <span className="text-red-500 text-[10px] ml-0.5">({grandTotalNoshow})</span>}
                       </td>
                     </tr>
-                    {/* PT IN */}
-                    <tr className="border-b border-gray-100 hover:bg-blue-50/30 transition-colors">
-                      <td className="py-2.5 px-3">
-                        <span className="inline-flex items-center gap-1 text-[11px] font-bold text-blue-700">
-                          <span className="w-2 h-2 rounded-full bg-blue-400" />PT IN
-                        </span>
-                      </td>
-                      {days.map((d, i) => { const st = dayStats.get(format(d, 'yyyy-MM-dd'))!; return <React.Fragment key={i}>{classCell(st.ptIn, st.ptInNoshow)}</React.Fragment> })}
-                      {classCell(total.ptIn, total.ptInNoshow, true)}
-                    </tr>
+                    {/* PT IN (정상 평일) */}
+                    {classRow('PT IN', 'bg-blue-400', 'text-blue-700', (st) => st.ptInReg, (st) => st.ptInRegNoshow)}
+                    {/* PT 공동구매 */}
+                    {classRow('PT 공동구매', 'bg-blue-700', 'text-blue-900', (st) => st.ptGP, (st) => st.ptGPNoshow)}
+                    {/* PT 주말/공휴일 */}
+                    {classRow('PT 주말/공휴일', 'bg-rose-400', 'text-rose-700', (st) => st.ptWH, (st) => st.ptWHNoshow)}
                     {/* PT OUT */}
-                    <tr className="border-b border-gray-100 hover:bg-orange-50/30 transition-colors">
-                      <td className="py-2.5 px-3">
-                        <span className="inline-flex items-center gap-1 text-[11px] font-bold text-orange-500">
-                          <span className="w-2 h-2 rounded-full bg-orange-400" />PT OUT
-                        </span>
-                      </td>
-                      {days.map((d, i) => { const st = dayStats.get(format(d, 'yyyy-MM-dd'))!; return <React.Fragment key={i}>{classCell(st.ptOut, st.ptOutNoshow)}</React.Fragment> })}
-                      {classCell(total.ptOut, total.ptOutNoshow, true)}
-                    </tr>
-                    {/* PPT IN */}
-                    <tr className="border-b border-gray-100 hover:bg-purple-50/30 transition-colors">
-                      <td className="py-2.5 px-3">
-                        <span className="inline-flex items-center gap-1 text-[11px] font-bold text-purple-700">
-                          <span className="w-2 h-2 rounded-full bg-purple-400" />PPT IN
-                        </span>
-                      </td>
-                      {days.map((d, i) => { const st = dayStats.get(format(d, 'yyyy-MM-dd'))!; return <React.Fragment key={i}>{classCell(st.pptIn, st.pptInNoshow)}</React.Fragment> })}
-                      {classCell(total.pptIn, total.pptInNoshow, true)}
-                    </tr>
-                    {/* PPT OUT */}
-                    <tr className="border-b border-gray-100 hover:bg-orange-50/30 transition-colors">
-                      <td className="py-2.5 px-3">
-                        <span className="inline-flex items-center gap-1 text-[11px] font-bold text-orange-500">
-                          <span className="w-2 h-2 rounded-full bg-orange-400" />PPT OUT
-                        </span>
-                      </td>
-                      {days.map((d, i) => { const st = dayStats.get(format(d, 'yyyy-MM-dd'))!; return <React.Fragment key={i}>{classCell(st.pptOut, st.pptOutNoshow)}</React.Fragment> })}
-                      {classCell(total.pptOut, total.pptOutNoshow, true)}
-                    </tr>
+                    {classRow('PT OUT', 'bg-orange-400', 'text-orange-600', (st) => st.ptOut, (st) => st.ptOutNoshow)}
+                    {/* PPT — 데이터 있을 때만 */}
+                    {(total.pptIn + total.pptOut) > 0 && (<>
+                      {classRow('PPT IN', 'bg-purple-400', 'text-purple-700', (st) => st.pptIn, (st) => st.pptInNoshow)}
+                      {classRow('PPT OUT', 'bg-orange-400', 'text-orange-600', (st) => st.pptOut, (st) => st.pptOutNoshow)}
+                    </>)}
+                    {/* 바챌 */}
+                    {classRow('바챌', 'bg-yellow-400', 'text-yellow-700', (st) => st.baChal, (st) => st.baChalNoshow)}
                     {/* OT */}
-                    <tr className="border-b border-gray-200 hover:bg-emerald-50/30 transition-colors">
-                      <td className="py-2.5 px-3">
-                        <span className="inline-flex items-center gap-1 text-[11px] font-bold text-emerald-700">
-                          <span className="w-2 h-2 rounded-full bg-emerald-400" />OT
-                        </span>
-                      </td>
-                      {days.map((d, i) => <React.Fragment key={i}>{cell(dayStats.get(format(d, 'yyyy-MM-dd'))!.ot)}</React.Fragment>)}
-                      {cell(total.ot, true)}
-                    </tr>
+                    {numRow('OT', 'bg-emerald-400', 'text-emerald-700', (st) => st.ot)}
+                    {/* 인바디 */}
+                    {numRow(<span className="flex items-center gap-1">인바디 <span className="text-fuchsia-500">●</span></span>, 'bg-fuchsia-400', 'text-fuchsia-700', (st) => st.inbody)}
                     {/* 회의 */}
-                    {total.meetingMin > 0 && (
-                      <tr className="border-b border-gray-100 hover:bg-yellow-50/30 transition-colors">
-                        <td className="py-2.5 px-3">
-                          <span className="inline-flex items-center gap-1 text-[11px] font-bold text-yellow-700">
-                            <span className="w-2 h-2 rounded-full bg-yellow-400" />회의
-                          </span>
-                        </td>
-                        {days.map((d, i) => <React.Fragment key={i}>{cell(formatMin(dayStats.get(format(d, 'yyyy-MM-dd'))!.meetingMin))}</React.Fragment>)}
-                        {cell(formatMin(total.meetingMin), true)}
-                      </tr>
-                    )}
+                    {total.meetingMin > 0 && minRow('회의', 'bg-yellow-500', 'text-yellow-700', (st) => st.meetingMin)}
                     {/* 기타 타입들 */}
-                    {allOtherTypes.sort().map((t) => (
-                      <tr key={t} className="border-b border-gray-100 hover:bg-gray-50 transition-colors">
-                        <td className="py-2.5 px-3">
-                          <span className="inline-flex items-center gap-1 text-[11px] font-bold text-gray-600">
-                            <span className="w-2 h-2 rounded-full bg-gray-400" />{t}
-                          </span>
-                        </td>
-                        {days.map((d, i) => <React.Fragment key={i}>{cell(formatMin(dayStats.get(format(d, 'yyyy-MM-dd'))!.otherMin[t] ?? 0))}</React.Fragment>)}
-                        {cell(formatMin(total.otherMin[t] ?? 0), true)}
-                      </tr>
-                    ))}
+                    {allOtherTypes.sort().map((t) => minRow(t, 'bg-gray-400', 'text-gray-600', (st) => st.otherMin[t] ?? 0))}
                   </tbody>
                 </table>
               </div>
@@ -1880,6 +2203,30 @@ export function WeeklyCalendar({ assignments, trainerId, profile, workStartTime,
                 )
               })}
             </div>
+
+            {/* 공동구매 체크박스 (PT/PPT, 타입 선택 바로 아래) */}
+            {(createType === 'PT' || createType === 'PPT') && (
+              <label
+                className={`flex items-center gap-2 rounded-md border-2 px-3 py-2 cursor-pointer transition-colors ${
+                  createIsGroupPurchase
+                    ? 'bg-sky-50 border-sky-500'
+                    : 'bg-white border-gray-200 hover:border-sky-300'
+                }`}
+              >
+                <input
+                  type="checkbox"
+                  checked={createIsGroupPurchase}
+                  onChange={(e) => setCreateIsGroupPurchase(e.target.checked)}
+                  className="h-4 w-4 accent-sky-600 cursor-pointer"
+                />
+                <span className={`text-sm font-bold ${createIsGroupPurchase ? 'text-sky-700' : 'text-gray-600'}`}>
+                  공동구매
+                </span>
+                {createIsGroupPurchase && (
+                  <span className="ml-auto text-[10px] font-bold text-sky-600">항상 IN</span>
+                )}
+              </label>
+            )}
 
             {/* OT: 배정된 회원 검색 + 선택 */}
             {createType === 'OT' && (
@@ -1936,9 +2283,61 @@ export function WeeklyCalendar({ assignments, trainerId, profile, workStartTime,
               </div>
             )}
 
-            {/* PT/PPT: 신규 입력 폼 (회원 등록 없이 trainer_schedules에 텍스트로만 기록) */}
-            {(createType === 'PT' || createType === 'PPT') && (<>
+            {/* PT/PPT/바챌: PT 회원 선택 또는 직접 입력 */}
+            {isPtLikeType(createType) && (<>
               <div className="space-y-3">
+                {/* PT 회원 검색 + 선택 */}
+                {ptMembersDedup.length > 0 && (
+                  <div className="space-y-1.5">
+                    <Label className="flex items-center gap-1">
+                      <Search className="h-3 w-3" /> PT 회원 검색
+                    </Label>
+                    <Input
+                      value={createPtFilter}
+                      onChange={(e) => setCreatePtFilter(e.target.value)}
+                      placeholder="이름 또는 전화번호 일부 입력"
+                      className="bg-white"
+                    />
+                    {/* 검색 결과 — 입력값이 있을 때만 노출 */}
+                    {createPtFilter.trim() && (
+                      <div className="rounded-md border border-gray-200 max-h-[180px] overflow-y-auto">
+                        {(() => {
+                          const q = createPtFilter.trim().toLowerCase()
+                          const filtered = ptMembersDedup.filter((pm) =>
+                            pm.name.toLowerCase().includes(q) ||
+                            (pm.phone ?? '').includes(q),
+                          )
+                          if (filtered.length === 0) {
+                            return <p className="text-xs text-gray-400 text-center py-2">결과 없음</p>
+                          }
+                          return filtered.map((pm) => {
+                            const isSelected = createName === pm.name && createMemberPhone === (pm.phone ?? '')
+                            return (
+                              <button
+                                key={pm.id}
+                                type="button"
+                                onClick={() => {
+                                  setCreateName(pm.name)
+                                  setCreateMemberPhone(pm.phone ?? '')
+                                  setCreatePtTotalSession(String(pm.total_sessions))
+                                  setCreatePtCurrentSession(String(pm.completed_sessions + 1))
+                                  setCreatePtFilter('')
+                                }}
+                                className={`w-full text-left px-3 py-2 text-sm border-b border-gray-100 last:border-0 hover:bg-yellow-50 ${isSelected ? 'bg-yellow-100' : ''}`}
+                              >
+                                <div className="flex items-center justify-between">
+                                  <span className="font-medium text-gray-900">{pm.name}</span>
+                                  <span className="text-[10px] text-gray-500">{pm.completed_sessions}/{pm.total_sessions}회</span>
+                                </div>
+                                <p className="text-[10px] text-gray-400">{pm.phone ? pm.phone.replace(/(\d{3})(\d{4})(\d{4})/, '$1-$2-$3') : '전화번호 없음'}</p>
+                              </button>
+                            )
+                          })
+                        })()}
+                      </div>
+                    )}
+                  </div>
+                )}
                 {/* 이름 (필수) */}
                 <div className="space-y-1.5">
                   <Label>이름 <span className="text-red-500">*</span></Label>
@@ -1986,18 +2385,11 @@ export function WeeklyCalendar({ assignments, trainerId, profile, workStartTime,
                   </div>
                 </div>
               </div>
-              {/* IN/OUT 선택 */}
-              <div className="space-y-1.5">
-                <Label>근무구분</Label>
-                <div className="flex gap-2">
-                  <button type="button" className={`flex-1 rounded-md border py-2 text-sm font-bold transition-colors ${createInOut === 'IN' ? 'bg-blue-600 text-white border-blue-600' : 'bg-white text-gray-600 border-gray-300'}`} onClick={() => setCreateInOut('IN')}>IN (근무내)</button>
-                  <button type="button" className={`flex-1 rounded-md border py-2 text-sm font-bold transition-colors ${createInOut === 'OUT' ? 'bg-orange-500 text-white border-orange-500' : 'bg-white text-gray-600 border-gray-300'}`} onClick={() => setCreateInOut('OUT')}>OUT (근무외)</button>
-                </div>
-              </div>
+              {/* IN/OUT은 근무시간 기준 자동 판별 — 토글 제거됨 */}
             </>)}
 
             {/* 기타 타입: 내용 선택사항 (제목 없이도 저장 가능) */}
-            {createType !== 'OT' && createType !== 'PT' && createType !== 'PPT' && (
+            {createType !== 'OT' && !isPtLikeType(createType) && (
               <div className="space-y-2">
                 <Label>내용 <span className="text-gray-400 text-xs">(선택)</span></Label>
                 <Input value={createName} onChange={(e) => setCreateName(e.target.value)} placeholder={`${createType} 내용 (비워둬도 됩니다)`} />
@@ -2106,8 +2498,8 @@ export function WeeklyCalendar({ assignments, trainerId, profile, workStartTime,
               </div>
             )}
 
-            {/* 매출 정보 (OT/PT/PPT) */}
-            {(createType === 'OT' || createType === 'PT' || createType === 'PPT') && (
+            {/* 매출 정보 (OT/PT/PPT/바챌) */}
+            {(createType === 'OT' || isPtLikeType(createType)) && (
               <div className="space-y-3 border-t border-gray-100 pt-3">
                 <button
                   type="button"
@@ -2472,6 +2864,27 @@ export function WeeklyCalendar({ assignments, trainerId, profile, workStartTime,
                     ))}
                   </div>
                 </div>
+                {/* 인바디 측정 (OT 한정) — OT 진행 중 인바디 측정 여부 체크 */}
+                {editSchedule.schedule_type === 'OT' && editSchedule.ot_session_id && (
+                  <label
+                    className={`flex items-center gap-2 rounded-md border-2 px-3 py-2 cursor-pointer transition-colors ${
+                      editInbody
+                        ? 'bg-fuchsia-50 border-fuchsia-500'
+                        : 'bg-white border-gray-200 hover:border-fuchsia-300'
+                    }`}
+                  >
+                    <input
+                      type="checkbox"
+                      checked={editInbody}
+                      onChange={(e) => setEditInbody(e.target.checked)}
+                      className="h-4 w-4 accent-fuchsia-600 cursor-pointer"
+                    />
+                    <span className={`text-sm font-bold ${editInbody ? 'text-fuchsia-700' : 'text-gray-600'}`}>
+                      인바디 측정
+                    </span>
+                    {editInbody && <span className="ml-auto text-fuchsia-600">●</span>}
+                  </label>
+                )}
                 <div className="flex gap-2">
                   {editSchedule.schedule_type === 'OT' && (() => {
                     const matched = assignments.find((a) => a.member.name === editSchedule.member_name)
@@ -2510,9 +2923,51 @@ export function WeeklyCalendar({ assignments, trainerId, profile, workStartTime,
             <>
               <DialogHeader>
                 <DialogTitle>PT 수업 진행</DialogTitle>
-                <DialogDescription>{editPtSchedule.scheduled_date} · {editPtSchedule.schedule_type}</DialogDescription>
+                <DialogDescription>{editPtSchedule.scheduled_date} · {editPtScheduleType}</DialogDescription>
               </DialogHeader>
               <div className="space-y-4">
+                {/* 유형 변경 (PT/PPT/바챌) */}
+                <div className="space-y-1.5">
+                  <Label>유형</Label>
+                  <div className="grid grid-cols-3 gap-1.5">
+                    {(['PT', 'PPT', '바챌'] as const).map((t) => {
+                      const c = TYPE_COLORS[t]
+                      const selected = editPtScheduleType === t
+                      return (
+                        <button
+                          key={t}
+                          type="button"
+                          className={`rounded-md border-2 py-2 text-sm font-bold transition-colors ${
+                            selected ? `${c} border-current` : 'bg-white border-gray-200 text-gray-400'
+                          }`}
+                          onClick={() => {
+                            setEditPtScheduleType(t)
+                            // 바챌은 공동구매 사용 안함
+                            if (t === '바챌') setEditPtIsGroupPurchase(false)
+                          }}
+                        >
+                          {t}
+                        </button>
+                      )
+                    })}
+                  </div>
+                </div>
+
+                {/* 공동구매 토글 (PT/PPT, 유형 바로 아래) */}
+                {(editPtScheduleType === 'PT' || editPtScheduleType === 'PPT') && (
+                  <button
+                    type="button"
+                    className={`w-full rounded-md border-2 py-2 text-sm font-bold transition-colors ${
+                      editPtIsGroupPurchase
+                        ? 'bg-yellow-200/80 border-yellow-400 text-yellow-900'
+                        : 'bg-white border-gray-200 text-gray-500'
+                    }`}
+                    onClick={() => setEditPtIsGroupPurchase(!editPtIsGroupPurchase)}
+                  >
+                    {editPtIsGroupPurchase ? '✓ 공동구매 (항상 IN)' : '공동구매로 지정'}
+                  </button>
+                )}
+
                 {/* 회원 이름 */}
                 <div className="space-y-2">
                   <Label>회원 이름</Label>
@@ -2617,6 +3072,8 @@ export function WeeklyCalendar({ assignments, trainerId, profile, workStartTime,
                     <span className="text-xs text-gray-600 shrink-0">회차</span>
                   </div>
                 </div>
+
+                {/* IN/OUT은 근무시간 기준 자동 판별 — 토글 제거됨. 공동구매는 유형 아래로 이동 */}
 
                 {/* 매출 대상 + 예상 금액 */}
                 <div className="space-y-2 rounded-md border border-blue-100 bg-blue-50/40 p-3">
@@ -2777,6 +3234,16 @@ export function WeeklyCalendar({ assignments, trainerId, profile, workStartTime,
           )}
         </DialogContent>
       </Dialog>
+
+      {/* 라포 가져오기 */}
+      <RapoImportDialog
+        open={showRapoImport}
+        onClose={() => setShowRapoImport(false)}
+        trainerId={trainerId}
+        year={weekStart.getFullYear()}
+        month={weekStart.getMonth() + 1}
+        onImported={() => { fetchSchedules(); router.refresh() }}
+      />
     </>
   )
 }

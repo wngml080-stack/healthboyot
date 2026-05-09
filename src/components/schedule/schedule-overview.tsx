@@ -3,7 +3,7 @@
 import { useState, useEffect, useCallback, useMemo, useTransition, memo, useRef } from 'react'
 import { format, addDays, subDays } from 'date-fns'
 import { ko } from 'date-fns/locale'
-import { ChevronLeft, ChevronRight, Calendar, User, Clock, Filter } from 'lucide-react'
+import { ChevronLeft, ChevronRight, Calendar, User, Clock, Filter, Search } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import {
   Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription,
@@ -15,35 +15,37 @@ import type { OtProgram } from '@/types'
 import { cn } from '@/lib/utils'
 
 const TYPE_COLORS: Record<string, { bg: string; border: string; text: string }> = {
-  OT: { bg: 'bg-emerald-100', border: 'border-l-emerald-500', text: 'text-emerald-800' },
-  PT: { bg: 'bg-blue-100', border: 'border-l-blue-500', text: 'text-blue-800' },
-  PPT: { bg: 'bg-purple-100', border: 'border-l-purple-500', text: 'text-purple-800' },
-  '식사': { bg: 'bg-orange-100', border: 'border-l-orange-500', text: 'text-orange-800' },
-  '홍보': { bg: 'bg-pink-100', border: 'border-l-pink-500', text: 'text-pink-800' },
-  '간부회의': { bg: 'bg-yellow-100', border: 'border-l-yellow-500', text: 'text-yellow-800' },
-  '팀회의': { bg: 'bg-yellow-50', border: 'border-l-yellow-400', text: 'text-yellow-800' },
-  '전체회의': { bg: 'bg-amber-100', border: 'border-l-amber-500', text: 'text-amber-800' },
-  '간담회': { bg: 'bg-indigo-100', border: 'border-l-indigo-500', text: 'text-indigo-800' },
-  '당직': { bg: 'bg-rose-100', border: 'border-l-rose-500', text: 'text-rose-800' },
-  '대외활동': { bg: 'bg-teal-100', border: 'border-l-teal-500', text: 'text-teal-800' },
-  '유급휴식': { bg: 'bg-cyan-100', border: 'border-l-cyan-500', text: 'text-cyan-800' },
-  '기타': { bg: 'bg-gray-100', border: 'border-l-gray-500', text: 'text-gray-800' },
+  OT: { bg: 'bg-blue-100/70', border: 'border-l-blue-400', text: 'text-blue-800' },
+  PT: { bg: 'bg-slate-200/70', border: 'border-l-slate-400', text: 'text-slate-800' },
+  PPT: { bg: 'bg-purple-100/70', border: 'border-l-purple-400', text: 'text-purple-800' },
+  '바챌': { bg: 'bg-green-100/70', border: 'border-l-green-400', text: 'text-green-800' },
+  '식사': { bg: 'bg-orange-100/70', border: 'border-l-orange-400', text: 'text-orange-800' },
+  '홍보': { bg: 'bg-pink-100/70', border: 'border-l-pink-400', text: 'text-pink-800' },
+  '간부회의': { bg: 'bg-yellow-100/70', border: 'border-l-yellow-500', text: 'text-yellow-800' },
+  '팀회의': { bg: 'bg-yellow-50/70', border: 'border-l-yellow-400', text: 'text-yellow-800' },
+  '전체회의': { bg: 'bg-amber-100/70', border: 'border-l-amber-400', text: 'text-amber-800' },
+  '간담회': { bg: 'bg-indigo-100/70', border: 'border-l-indigo-400', text: 'text-indigo-800' },
+  '당직': { bg: 'bg-rose-100/70', border: 'border-l-rose-400', text: 'text-rose-800' },
+  '대외활동': { bg: 'bg-teal-100/70', border: 'border-l-teal-400', text: 'text-teal-800' },
+  '유급휴식': { bg: 'bg-cyan-100/70', border: 'border-l-cyan-400', text: 'text-cyan-800' },
+  '기타': { bg: 'bg-gray-100/70', border: 'border-l-gray-400', text: 'text-gray-800' },
 }
 
 const TYPE_BADGE_COLORS: Record<string, string> = {
-  OT: 'bg-emerald-200 border-emerald-400 text-emerald-900',
-  PT: 'bg-blue-200 border-blue-400 text-blue-900',
-  PPT: 'bg-purple-200 border-purple-400 text-purple-900',
-  '식사': 'bg-orange-200 border-orange-400 text-orange-900',
-  '홍보': 'bg-pink-200 border-pink-400 text-pink-900',
-  '간부회의': 'bg-yellow-300 border-yellow-500 text-yellow-900',
-  '팀회의': 'bg-yellow-200 border-yellow-400 text-yellow-900',
-  '전체회의': 'bg-amber-200 border-amber-400 text-amber-900',
-  '간담회': 'bg-indigo-200 border-indigo-400 text-indigo-900',
-  '당직': 'bg-rose-200 border-rose-400 text-rose-900',
-  '대외활동': 'bg-teal-200 border-teal-400 text-teal-900',
-  '유급휴식': 'bg-cyan-200 border-cyan-400 text-cyan-900',
-  '기타': 'bg-gray-200 border-gray-400 text-gray-900',
+  OT: 'bg-blue-100/70 border-blue-300 text-blue-900',
+  PT: 'bg-slate-200/70 border-slate-400 text-slate-800',
+  PPT: 'bg-purple-100/70 border-purple-300 text-purple-900',
+  '바챌': 'bg-green-100/70 border-green-300 text-green-900',
+  '식사': 'bg-orange-100/70 border-orange-300 text-orange-900',
+  '홍보': 'bg-pink-100/70 border-pink-300 text-pink-900',
+  '간부회의': 'bg-yellow-200/70 border-yellow-400 text-yellow-900',
+  '팀회의': 'bg-yellow-100/70 border-yellow-300 text-yellow-900',
+  '전체회의': 'bg-amber-100/70 border-amber-300 text-amber-900',
+  '간담회': 'bg-indigo-100/70 border-indigo-300 text-indigo-900',
+  '당직': 'bg-rose-100/70 border-rose-300 text-rose-900',
+  '대외활동': 'bg-teal-100/70 border-teal-300 text-teal-900',
+  '유급휴식': 'bg-cyan-100/70 border-cyan-300 text-cyan-900',
+  '기타': 'bg-gray-100/70 border-gray-300 text-gray-800',
 }
 
 const ROLE_COLORS: Record<string, string> = {
@@ -85,6 +87,7 @@ export function ScheduleOverview() {
   const [, startTransition] = useTransition()
   const [selectedTrainer, setSelectedTrainer] = useState<string | null>(null)
   const [viewMode, setViewMode] = useState<'all' | 'timeline'>('timeline')
+  const [memberSearch, setMemberSearch] = useState('')
 
   // OT 프로그램 팝업
   const [programDialog, setProgramDialog] = useState<{
@@ -211,10 +214,18 @@ export function ScheduleOverview() {
   const dayOfWeek = format(dateObj, 'EEEE', { locale: ko })
   const isWeekend = dateObj.getDay() === 0 || dateObj.getDay() === 6
 
-  const displayed = useMemo(() =>
-    selectedTrainer ? data.filter((t) => t.trainer_id === selectedTrainer) : data,
-    [data, selectedTrainer]
-  )
+  const displayed = useMemo(() => {
+    const byTrainer = selectedTrainer ? data.filter((t) => t.trainer_id === selectedTrainer) : data
+    const q = memberSearch.trim().toLowerCase()
+    if (!q) return byTrainer
+    // 회원명 부분 일치하는 스케줄만 남기고, 매칭 결과가 없는 트레이너는 제외
+    return byTrainer
+      .map((t) => ({
+        ...t,
+        schedules: t.schedules.filter((s) => (s.member_name ?? '').toLowerCase().includes(q)),
+      }))
+      .filter((t) => t.schedules.length > 0)
+  }, [data, selectedTrainer, memberSearch])
 
   // 스케줄 클릭 -> OT 프로그램 조회 (병렬)
   const handleScheduleClick = useCallback(async (schedule: ScheduleOverviewItem) => {
@@ -289,12 +300,24 @@ export function ScheduleOverview() {
             type="date"
             value={date}
             onChange={(e) => e.target.value && setDate(e.target.value)}
-            className="text-sm border border-white/20 bg-white/10 text-white rounded-lg px-2 py-1 w-[140px]"
+            className="text-xs sm:text-sm border border-white/20 bg-white/10 text-white rounded-lg px-2 py-1 w-[120px] sm:w-[140px]"
           />
         </div>
         <Button variant="ghost" size="icon" onClick={next} className="h-9 w-9 text-gray-300 hover:text-white hover:bg-white/10">
           <ChevronRight className="h-5 w-5" />
         </Button>
+      </div>
+
+      {/* 회원 검색 */}
+      <div className="relative">
+        <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-gray-400" />
+        <input
+          type="text"
+          value={memberSearch}
+          onChange={(e) => setMemberSearch(e.target.value)}
+          placeholder="회원 검색..."
+          className="w-full pl-9 pr-3 py-2 rounded-lg bg-white/5 border border-white/20 text-white placeholder:text-gray-300 placeholder:font-medium text-sm focus:outline-none focus:ring-2 focus:ring-yellow-400/40 focus:border-yellow-400/40"
+        />
       </div>
 
       {/* 트레이너 필터 칩 */}
@@ -592,7 +615,8 @@ const TrainerCard = memo(function TrainerCard({ trainer, onScheduleClick }: { tr
   const otCount = trainer.schedules.filter((s) => s.schedule_type === 'OT').length
   const ptCount = trainer.schedules.filter((s) => s.schedule_type === 'PT').length
   const pptCount = trainer.schedules.filter((s) => s.schedule_type === 'PPT').length
-  const otherCount = trainer.schedules.length - otCount - ptCount - pptCount
+  const baChalCount = trainer.schedules.filter((s) => s.schedule_type === '바챌').length
+  const otherCount = trainer.schedules.length - otCount - ptCount - pptCount - baChalCount
   const salesCount = trainer.schedules.filter((s) => s.is_sales_target).length
 
   return (
@@ -609,10 +633,11 @@ const TrainerCard = memo(function TrainerCard({ trainer, onScheduleClick }: { tr
               ★ 매출 {salesCount}
             </span>
           )}
-          {otCount > 0 && <span className="px-2 py-0.5 bg-emerald-200 text-emerald-800 text-[10px] font-bold rounded-full">OT {otCount}</span>}
-          {ptCount > 0 && <span className="px-2 py-0.5 bg-blue-200 text-blue-800 text-[10px] font-bold rounded-full">PT {ptCount}</span>}
-          {pptCount > 0 && <span className="px-2 py-0.5 bg-purple-200 text-purple-800 text-[10px] font-bold rounded-full">PPT {pptCount}</span>}
-          {otherCount > 0 && <span className="px-2 py-0.5 bg-gray-200 text-gray-700 text-[10px] font-bold rounded-full">기타 {otherCount}</span>}
+          {otCount > 0 && <span className="px-2 py-0.5 bg-blue-100/80 text-blue-800 text-[10px] font-bold rounded-full">OT {otCount}</span>}
+          {ptCount > 0 && <span className="px-2 py-0.5 bg-slate-200/80 text-slate-700 text-[10px] font-bold rounded-full">PT {ptCount}</span>}
+          {pptCount > 0 && <span className="px-2 py-0.5 bg-purple-100/80 text-purple-800 text-[10px] font-bold rounded-full">PPT {pptCount}</span>}
+          {baChalCount > 0 && <span className="px-2 py-0.5 bg-green-100/80 text-green-800 text-[10px] font-bold rounded-full">바챌 {baChalCount}</span>}
+          {otherCount > 0 && <span className="px-2 py-0.5 bg-gray-100/80 text-gray-600 text-[10px] font-bold rounded-full">기타 {otherCount}</span>}
         </div>
       </div>
       {hasSchedules ? (

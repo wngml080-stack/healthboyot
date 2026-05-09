@@ -61,15 +61,39 @@ function useCustomTargets(key: string) {
   }
 }
 
+// 차주 매출대상자 제외 (localStorage)
+interface ExcludedTarget { id: string; reason: string }
+function useExcludedTargets(key: string) {
+  const [excluded, setExcluded] = useState<ExcludedTarget[]>([])
+  useEffect(() => { try { const s = localStorage.getItem(key); if (s) setExcluded(JSON.parse(s)) } catch {} }, [key])
+  const save = (e: ExcludedTarget[]) => { setExcluded(e); localStorage.setItem(key, JSON.stringify(e)) }
+  return {
+    excluded,
+    exclude: (id: string, reason: string) => save([...excluded.filter((e) => e.id !== id), { id, reason }]),
+    restore: (id: string) => save(excluded.filter((e) => e.id !== id)),
+    getReason: (id: string) => excluded.find((e) => e.id === id)?.reason ?? '',
+    isExcluded: (id: string) => excluded.some((e) => e.id === id),
+  }
+}
+
 export function TrainerStats({ assignments, trainerName, programs, registrations: initialRegistrations = [], trainerId }: Props) {
-  const [now] = useState(() => new Date())
+  // 서버(UTC)와 클라이언트(KST) 시간 불일치로 hydration mismatch가 나면 안 되므로
+  // 안정 placeholder로 첫 렌더 통일하고 mount 후 실제 시간 사용
+  const STABLE = new Date('2026-01-05T00:00:00Z')
+  const [now, setNow] = useState<Date>(STABLE)
+  useEffect(() => { setNow(new Date()) }, [])
   const captureRef = useRef<HTMLDivElement>(null)
   const [capturing, setCapturing] = useState(false)
   const [viewMode, setViewMode] = useState<'monthly' | 'weekly'>('weekly')
 
-  // 월별 상태
-  const [year, setYear] = useState(() => now.getFullYear())
-  const [month, setMonth] = useState(() => now.getMonth() + 1)
+  // 월별 상태 — 첫 렌더는 placeholder 기반 → mount 후 effect에서 실제 월로 동기화
+  const [year, setYear] = useState(() => STABLE.getFullYear())
+  const [month, setMonth] = useState(() => STABLE.getMonth() + 1)
+  useEffect(() => {
+    const d = new Date()
+    setYear(d.getFullYear())
+    setMonth(d.getMonth() + 1)
+  }, [])
   const daysInMonth = getDaysInMonth(year, month)
   const todayDate = now.getDate()
   const isCurrentMonth = now.getFullYear() === year && now.getMonth() + 1 === month
@@ -112,6 +136,11 @@ export function TrainerStats({ assignments, trainerName, programs, registrations
   const nextWeekStart = addWeeks(goalWeekStart, 1)
   const customTargetKey = `next-targets-${trainerName}-${format(nextWeekStart, 'yyyy-MM-dd')}`
   const { targets: customTargets, add: addCustomTarget, remove: removeCustomTarget } = useCustomTargets(customTargetKey)
+  const excludedTargetKey = `next-excluded-${trainerName}-${format(nextWeekStart, 'yyyy-MM-dd')}`
+  const { excluded: excludedTargets, exclude: excludeTarget, restore: restoreTarget, isExcluded: isTargetExcluded } = useExcludedTargets(excludedTargetKey)
+  const [excludingId, setExcludingId] = useState<string | null>(null)
+  const [excludeReason, setExcludeReason] = useState('')
+  const [showExcluded, setShowExcluded] = useState(false)
   const [newTargetName, setNewTargetName] = useState('')
   const [newTargetAmount, setNewTargetAmount] = useState('')
   const [newTargetCount, setNewTargetCount] = useState('')
@@ -528,7 +557,9 @@ export function TrainerStats({ assignments, trainerName, programs, registrations
     ...nextWeekTargets,
     ...customTargets.map((t) => ({ id: t.id, name: t.name, expectedAmount: t.expectedAmount, session: undefined as typeof nextWeekTargets[number]['session'], isCustom: true, isCarryOver: false })),
   ]
-  const totalNextExpected = allNextTargets.reduce((s, t) => s + t.expectedAmount, 0)
+  const activeNextTargets = allNextTargets.filter((t) => !isTargetExcluded(t.id))
+  const excludedNextTargets = allNextTargets.filter((t) => isTargetExcluded(t.id))
+  const totalNextExpected = activeNextTargets.reduce((s, t) => s + t.expectedAmount, 0)
 
   return (
     <div className="space-y-4">
@@ -605,7 +636,7 @@ export function TrainerStats({ assignments, trainerName, programs, registrations
                 <td className="py-2 font-bold text-gray-700 whitespace-nowrap">차주</td>
                 <td className="py-2 text-center">
                   <span className="text-gray-500">대상자 </span>
-                  <span className="font-bold text-indigo-600">{otOverview.nextWeekTargetCount + customTargets.length}</span>
+                  <span className="font-bold text-indigo-600">{activeNextTargets.length}</span>
                   <span className="text-gray-500">명</span>
                 </td>
                 <td className="py-2 text-center">
@@ -741,29 +772,115 @@ export function TrainerStats({ assignments, trainerName, programs, registrations
               <p className="text-xs text-gray-400 text-center py-3">다음주 매출대상자가 없습니다</p>
             ) : (
               <div className="space-y-2">
-                {allNextTargets.map((t, i) => (
-                  <div key={t.id || i} className={`flex items-center justify-between rounded-lg px-3 py-2.5 ${t.isCarryOver ? 'bg-amber-50 border border-amber-200' : 'bg-blue-50'}`}>
-                    <div className="flex items-center gap-2">
-                      <span className="text-sm font-bold text-gray-900">{t.name}</span>
-                      {t.isCarryOver && <Badge className="bg-amber-200 text-amber-800 text-[8px]">이월</Badge>}
-                      {t.session ? (
-                        <span className="text-[10px] text-blue-600">{t.session.session_number}차 · {format(new Date(t.session.scheduled_at!), 'M/d (EEE) HH:mm', { locale: ko })}</span>
-                      ) : !t.isCustom ? (
-                        <span className="text-[10px] text-gray-400">스케줄 미정</span>
-                      ) : (
-                        <Badge className="bg-gray-200 text-gray-600 text-[8px]">수동 입력</Badge>
-                      )}
+                {activeNextTargets.map((t, i) => (
+                  <div key={t.id || i}>
+                    <div className={`flex items-center justify-between rounded-lg px-3 py-2.5 ${t.isCarryOver ? 'bg-amber-50 border border-amber-200' : 'bg-blue-50'}`}>
+                      <div className="flex items-center gap-2">
+                        <span className="text-sm font-bold text-gray-900">{t.name}</span>
+                        {t.isCarryOver && <Badge className="bg-amber-200 text-amber-800 text-[8px]">이월</Badge>}
+                        {t.session ? (
+                          <span className="text-[10px] text-blue-600">{t.session.session_number}차 · {format(new Date(t.session.scheduled_at!), 'M/d (EEE) HH:mm', { locale: ko })}</span>
+                        ) : !t.isCustom ? (
+                          <span className="text-[10px] text-gray-400">스케줄 미정</span>
+                        ) : (
+                          <Badge className="bg-gray-200 text-gray-600 text-[8px]">수동 입력</Badge>
+                        )}
+                      </div>
+                      <div className="flex items-center gap-1.5">
+                        {t.expectedAmount > 0 && <Badge className="bg-blue-600 text-white text-[10px]">예상 {t.expectedAmount.toLocaleString()}만</Badge>}
+                        {t.isCustom ? (
+                          <button onClick={() => removeCustomTarget(t.id)} className="text-gray-400 hover:text-red-500 transition-colors">
+                            <X className="h-3.5 w-3.5" />
+                          </button>
+                        ) : (
+                          <button
+                            onClick={() => { setExcludingId(excludingId === t.id ? null : t.id); setExcludeReason('') }}
+                            className="text-gray-400 hover:text-red-500 transition-colors"
+                            title="제외"
+                          >
+                            <X className="h-3.5 w-3.5" />
+                          </button>
+                        )}
+                      </div>
                     </div>
-                    <div className="flex items-center gap-1.5">
-                      {t.expectedAmount > 0 && <Badge className="bg-blue-600 text-white text-[10px]">예상 {t.expectedAmount.toLocaleString()}만</Badge>}
-                      {t.isCustom && (
-                        <button onClick={() => removeCustomTarget(t.id)} className="text-gray-400 hover:text-red-500 transition-colors">
-                          <X className="h-3.5 w-3.5" />
-                        </button>
-                      )}
-                    </div>
+                    {excludingId === t.id && (
+                      <div className="flex items-center gap-2 mt-1.5 ml-1">
+                        <Input
+                          value={excludeReason}
+                          onChange={(e) => setExcludeReason(e.target.value)}
+                          placeholder="제외 사유를 입력하세요..."
+                          className="text-xs h-7 bg-white flex-1"
+                          autoFocus
+                          onKeyDown={(e) => {
+                            if (e.key === 'Enter' && excludeReason.trim()) {
+                              excludeTarget(t.id, excludeReason.trim())
+                              setExcludingId(null)
+                              setExcludeReason('')
+                            }
+                          }}
+                        />
+                        <Button
+                          size="sm"
+                          className="h-7 text-[10px] bg-red-500 hover:bg-red-600 text-white px-2"
+                          disabled={!excludeReason.trim()}
+                          onClick={() => {
+                            excludeTarget(t.id, excludeReason.trim())
+                            setExcludingId(null)
+                            setExcludeReason('')
+                          }}
+                        >
+                          제외
+                        </Button>
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          className="h-7 text-[10px] px-2"
+                          onClick={() => { setExcludingId(null); setExcludeReason('') }}
+                        >
+                          취소
+                        </Button>
+                      </div>
+                    )}
                   </div>
                 ))}
+
+                {/* 제외된 대상자 */}
+                {excludedNextTargets.length > 0 && (
+                  <div className="border-t border-gray-200 pt-2">
+                    <button
+                      onClick={() => setShowExcluded(!showExcluded)}
+                      className="text-[10px] text-gray-400 hover:text-gray-600 flex items-center gap-1"
+                    >
+                      <span>{showExcluded ? '▼' : '▶'}</span>
+                      제외됨 ({excludedNextTargets.length}명)
+                    </button>
+                    {showExcluded && (
+                      <div className="space-y-1.5 mt-1.5">
+                        {excludedNextTargets.map((t) => {
+                          const reason = excludedTargets.find((e) => e.id === t.id)?.reason ?? ''
+                          return (
+                            <div key={t.id} className="rounded-lg bg-gray-100 px-3 py-2 opacity-60">
+                              <div className="flex items-center justify-between">
+                                <div className="flex items-center gap-2">
+                                  <span className="text-sm font-bold text-gray-500 line-through">{t.name}</span>
+                                  <Badge className="bg-red-100 text-red-500 text-[8px]">제외</Badge>
+                                  {t.expectedAmount > 0 && <span className="text-[10px] text-gray-400 line-through">예상 {t.expectedAmount.toLocaleString()}만</span>}
+                                </div>
+                                <button
+                                  onClick={() => restoreTarget(t.id)}
+                                  className="text-[10px] text-blue-500 hover:text-blue-700 font-bold"
+                                >
+                                  복원
+                                </button>
+                              </div>
+                              {reason && <p className="text-[10px] text-red-400 mt-1">사유: {reason}</p>}
+                            </div>
+                          )
+                        })}
+                      </div>
+                    )}
+                  </div>
+                )}
               </div>
             )}
             {/* 수동 추가 */}
@@ -829,7 +946,7 @@ export function TrainerStats({ assignments, trainerName, programs, registrations
               <span className="text-[10px] text-gray-400">{periodLabel}</span>
             </div>
             {/* 상위 필터 */}
-            <div className="grid grid-cols-4 gap-2">
+            <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
               <StatPill label="전체" value={summary.totalMembers} color="bg-yellow-100 text-yellow-800" sub="총 회원" />
               <StatPill label="거부/제외" value={summary.rejected} color="bg-red-100 text-red-800" sub="거부/제외 처리" />
               <StatPill label="매출대상" value={summary.salesTargets} color="bg-purple-100 text-purple-800" sub="매출 대상자" />
@@ -837,7 +954,7 @@ export function TrainerStats({ assignments, trainerName, programs, registrations
             </div>
             <div className="border-t border-gray-100 my-1" />
             {/* 하위 필터 — 차수별 */}
-            <div className="grid grid-cols-5 gap-2">
+            <div className="grid grid-cols-3 sm:grid-cols-5 gap-2">
               <StatPill label="미진행" value={summary.notStarted} color="bg-orange-100 text-orange-800" sub="스케줄 미잡힌" />
               <StatPill label="1차" value={summary.session1} color="bg-emerald-100 text-emerald-800" sub="1차 진행/완료" />
               <StatPill label="2차" value={summary.session2} color="bg-emerald-100 text-emerald-800" sub="2차 진행/완료" />
@@ -846,7 +963,7 @@ export function TrainerStats({ assignments, trainerName, programs, registrations
             </div>
             <div className="border-t border-gray-100 my-1" />
             {/* 상태별 */}
-            <div className="grid grid-cols-4 gap-2">
+            <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
               <StatPill label="연락두절" value={summary.noContact} color="bg-gray-100 text-gray-800" sub="연락 안 됨" />
               <StatPill label="스케줄미확정" value={summary.scheduleUndecided} color="bg-yellow-100 text-yellow-800" sub="스케줄 조율중" />
               <StatPill label="수업후 거부" value={summary.postClassRefusal} color="bg-orange-100 text-orange-800" sub="수업 후 거부" />
