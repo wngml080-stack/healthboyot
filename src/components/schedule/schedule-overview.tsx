@@ -3,7 +3,7 @@
 import { useState, useEffect, useCallback, useMemo, useTransition, memo, useRef } from 'react'
 import { format, addDays, subDays } from 'date-fns'
 import { ko } from 'date-fns/locale'
-import { ChevronLeft, ChevronRight, Calendar, User, Clock, Filter, Search } from 'lucide-react'
+import { ChevronLeft, ChevronRight, Calendar, User, Clock, Filter, Search, AlertCircle, RefreshCw } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import {
   Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription,
@@ -84,7 +84,10 @@ export function ScheduleOverview() {
   const [date, setDate] = useState(() => format(new Date(), 'yyyy-MM-dd'))
   const [data, setData] = useState<TrainerDaySchedule[]>([])
   const [loading, setLoading] = useState(true)
+  const [loadError, setLoadError] = useState<string | null>(null)
   const [, startTransition] = useTransition()
+  const retryCountRef = useRef(0)
+  const retryTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const [selectedTrainer, setSelectedTrainer] = useState<string | null>(null)
   const [viewMode, setViewMode] = useState<'all' | 'timeline'>('timeline')
   const [memberSearch, setMemberSearch] = useState('')
@@ -99,7 +102,9 @@ export function ScheduleOverview() {
 
   const supabaseRef = useRef(createClient())
   const isMountedRef = useRef(true)
+  const dataRef = useRef<TrainerDaySchedule[]>([])
   useEffect(() => () => { isMountedRef.current = false }, [])
+  useEffect(() => { dataRef.current = data }, [data])
 
   const load = useCallback(async (targetDate: string) => {
     const supabase = supabaseRef.current
@@ -120,8 +125,12 @@ export function ScheduleOverview() {
         .order('start_time', { ascending: true }),
     ])
 
+    // 인증 미준비/RLS 차단 감지 — 트레이너가 0명이면 에러 취급해서 재시도 유도
+    if (trainersRes.error) throw new Error(trainersRes.error.message)
+    if (schedulesRes.error) throw new Error(schedulesRes.error.message)
     const trainers = trainersRes.data ?? []
     const schedules = schedulesRes.data ?? []
+    if (trainers.length === 0) throw new Error('트레이너 데이터가 비었습니다 (인증 대기 가능성)')
 
     // OT assignment 정보 병렬 조회
     const otSessionIds = schedules.filter((s) => s.ot_session_id).map((s) => s.ot_session_id as string)
@@ -201,10 +210,51 @@ export function ScheduleOverview() {
     })
   }, [])
 
-  useEffect(() => {
+  const MAX_RETRIES = 3
+
+  const tryLoad = useCallback(async (targetDate: string) => {
     setLoading(true)
-    load(date)
-  }, [date, load])
+    setLoadError(null)
+    try {
+      await load(targetDate)
+      retryCountRef.current = 0
+    } catch (err) {
+      console.error('[ScheduleOverview] 로딩 실패:', err)
+      if (!isMountedRef.current) return
+      if (retryCountRef.current < MAX_RETRIES) {
+        retryCountRef.current += 1
+        const delay = 400 * retryCountRef.current
+        retryTimerRef.current = setTimeout(() => { void tryLoad(targetDate) }, delay)
+      } else {
+        setLoading(false)
+        setLoadError(err instanceof Error ? err.message : '데이터를 불러오지 못했습니다')
+      }
+    }
+  }, [load])
+
+  useEffect(() => {
+    retryCountRef.current = 0
+    void tryLoad(date)
+
+    // 탭 복귀 시 데이터가 비어있으면 재조회 (최신값은 dataRef로 참조)
+    const handleVisibility = () => {
+      if (document.visibilityState === 'visible' && dataRef.current.length === 0) {
+        retryCountRef.current = 0
+        void tryLoad(date)
+      }
+    }
+    document.addEventListener('visibilitychange', handleVisibility)
+
+    return () => {
+      if (retryTimerRef.current) clearTimeout(retryTimerRef.current)
+      document.removeEventListener('visibilitychange', handleVisibility)
+    }
+  }, [date, tryLoad])
+
+  const handleManualRetry = () => {
+    retryCountRef.current = 0
+    void tryLoad(date)
+  }
 
   const prev = () => setDate((d) => format(subDays(new Date(d), 1), 'yyyy-MM-dd'))
   const next = () => setDate((d) => format(addDays(new Date(d), 1), 'yyyy-MM-dd'))
@@ -347,7 +397,19 @@ export function ScheduleOverview() {
         ))}
       </div>
 
-      {loading && data.length === 0 && <div className="py-20 text-center text-sm text-gray-400">불러오는 중...</div>}
+      {loading && data.length === 0 && !loadError && <div className="py-20 text-center text-sm text-gray-400">불러오는 중...</div>}
+      {loadError && data.length === 0 && (
+        <div className="flex flex-col items-center justify-center py-16 gap-3 text-gray-400">
+          <AlertCircle className="h-6 w-6 text-red-400" />
+          <span className="text-sm">{loadError}</span>
+          <button
+            onClick={handleManualRetry}
+            className="flex items-center gap-1 px-3 py-1.5 bg-yellow-400 hover:bg-yellow-500 text-black text-xs font-bold rounded-lg transition-colors"
+          >
+            <RefreshCw className="h-3 w-3" /> 다시 시도
+          </button>
+        </div>
+      )}
 
       {/* 타임라인뷰 */}
       {!(loading && data.length === 0) && viewMode === 'timeline' && (

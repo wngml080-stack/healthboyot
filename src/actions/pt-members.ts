@@ -335,22 +335,36 @@ export async function carryOverPreviousMonthPayroll(trainerId: string, targetMon
     .eq('data_month', target)
   const existingByName = new Map((existingTarget ?? []).map((r) => [r.name, r.id]))
 
-  let created = 0, updated = 0, expired = 0, skipped = 0
+  let created = 0, updated = 0, expired = 0, skipped = 0, removedFromTarget = 0
   for (const m of prevMembers) {
-    // 이미 전월에 만료/완료된 회원은 이월 대상 제외 (해당 월 row에 그대로 남음)
-    if (m.status === '만료' || m.status === '완료') { skipped++; continue }
+    // 이미 전월에 만료/완료된 회원은 이월 대상 제외
+    // → 당월에 row가 잘못 들어가 있다면 삭제 (5월에 4월 만료자가 보이지 않게)
+    if (m.status === '만료' || m.status === '완료') {
+      const stale = existingByName.get(m.name)
+      if (stale) {
+        await supabase.from('pt_members').delete().eq('id', stale)
+        removedFromTarget++
+      }
+      skipped++
+      continue
+    }
 
     // 전월 남은세션 = previous_remaining + sessions_added + handover + refund - 진행
     const prevProgress = (m.sessions_in ?? 0) + (m.sessions_out ?? 0) + (m.sessions_group_purchase ?? 0) + (m.sessions_bachal ?? 0)
     const prevRemaining = (m.previous_remaining ?? 0) + (m.sessions_added ?? 0) + (m.handover_sessions ?? 0) + (m.refund_sessions ?? 0) - prevProgress
 
-    // 남은세션 0 이하 → 전월 row를 '만료'로 마킹하고 당월에는 row 생성하지 않음
+    // 남은세션 0 이하 → 전월 row를 '만료'로 마킹, 당월에 잘못 들어간 row 있으면 삭제
     if (prevRemaining <= 0) {
-      const { error } = await supabase
+      await supabase
         .from('pt_members')
         .update({ status: '만료', updated_at: new Date().toISOString() })
         .eq('id', m.id)
-      if (!error) expired++
+      const stale = existingByName.get(m.name)
+      if (stale) {
+        await supabase.from('pt_members').delete().eq('id', stale)
+        removedFromTarget++
+      }
+      expired++
       continue
     }
 
@@ -358,23 +372,23 @@ export async function carryOverPreviousMonthPayroll(trainerId: string, targetMon
     if (existingId) {
       const { error } = await supabase
         .from('pt_members')
-        .update({ previous_remaining: prevRemaining, updated_at: new Date().toISOString() })
+        .update({ previous_remaining: prevRemaining, status: '진행중', updated_at: new Date().toISOString() })
         .eq('id', existingId)
       if (!error) updated++
     } else {
       const row = buildRow({
         trainer_id: trainerId,
         name: m.name,
-        status: m.status || '진행중',
+        status: '진행중',
         data_month: target,
         previous_remaining: prevRemaining,
-        category: '기존',
+        category: '전월기존',
       })
       const { error } = await supabase.from('pt_members').insert(row)
       if (!error) created++
     }
   }
-  return { success: true as const, prev, target, created, updated, expired, skipped }
+  return { success: true as const, prev, target, created, updated, expired, skipped, removedFromTarget }
 }
 
 // 5월 1일 이후 PT/PPT 스케줄을 집계해 각 PT 회원의 sessions_in/sessions_out에 반영.

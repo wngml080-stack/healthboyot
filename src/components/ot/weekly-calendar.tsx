@@ -336,8 +336,8 @@ export function WeeklyCalendar({ assignments, trainerId, profile, workStartTime,
     return map
   }, [ptMembers])
 
-  // 회원별 PT/PPT/바챌 시간순 회차 매핑: schedule.id → 회차 번호 (전체 기간 누적)
-  // 트레이너의 모든 PT/PPT/바챌 스케줄을 조회해 회원별로 정렬, 1차 2차 3차 ... 자동 부여
+  // 회원별 PT/PPT/바챌 시간순 회차 매핑: schedule.id → 해당 월 내 회차 번호 (월 단위로 1차부터 reset)
+  // 트레이너의 모든 PT/PPT/바챌 스케줄을 조회해 (회원, 월) 단위로 정렬해 1차 2차 3차 ... 자동 부여
   const [sessionPosById, setSessionPosById] = useState<Map<string, number>>(new Map())
   useEffect(() => {
     if (!trainerId) return
@@ -349,13 +349,16 @@ export function WeeklyCalendar({ assignments, trainerId, profile, workStartTime,
       .in('schedule_type', ['PT', 'PPT', '바챌'])
       .then(({ data }) => {
         if (cancelled || !data) return
+        // (이름 + YYYY-MM)으로 그룹핑 → 월 단위 회차 reset
         const groups = new Map<string, typeof data>()
         for (const s of data) {
           const name = (s.member_name ?? '').trim()
           if (!name) continue
-          const arr = groups.get(name) ?? []
+          const month = s.scheduled_date.slice(0, 7)
+          const key = `${name}|${month}`
+          const arr = groups.get(key) ?? []
           arr.push(s)
-          groups.set(name, arr)
+          groups.set(key, arr)
         }
         const map = new Map<string, number>()
         for (const arr of Array.from(groups.values())) {
@@ -1501,19 +1504,23 @@ export function WeeklyCalendar({ assignments, trainerId, profile, workStartTime,
 
         {/* 범례 — 모바일에서 숨김 */}
         <div className="hidden sm:flex flex-wrap gap-3 text-xs">
-          <span className="flex items-center gap-1"><span className="w-3 h-3 rounded bg-emerald-300" /> OT</span>
-          <span className="flex items-center gap-1"><span className="w-3 h-3 rounded bg-blue-300" /> PT</span>
-          <span className="flex items-center gap-1"><span className="w-3 h-3 rounded bg-orange-300" /> 식사</span>
-          <span className="flex items-center gap-1"><span className="w-3 h-3 rounded bg-pink-300" /> 홍보</span>
-          <span className="flex items-center gap-1"><span className="w-3 h-3 rounded bg-yellow-300" /> 회의</span>
-          <span className="flex items-center gap-1"><span className="w-3 h-3 rounded bg-amber-300" /> 전체회의</span>
-          <span className="flex items-center gap-1"><span className="w-3 h-3 rounded bg-indigo-300" /> 간담회</span>
-          <span className="flex items-center gap-1"><span className="w-3 h-3 rounded bg-rose-300" /> 당직</span>
-          <span className="flex items-center gap-1"><span className="w-3 h-3 rounded bg-gray-300" /> 기타</span>
+          <span className="flex items-center gap-1"><span className="w-3 h-3 rounded bg-blue-100/70 border border-blue-300" /> OT</span>
+          <span className="flex items-center gap-1"><span className="w-3 h-3 rounded bg-slate-200/70 border border-slate-400" /> PT</span>
+          <span className="flex items-center gap-1"><span className="w-3 h-3 rounded bg-purple-100/70 border border-purple-300" /> PPT</span>
+          <span className="flex items-center gap-1"><span className="w-3 h-3 rounded bg-green-100/70 border border-green-300" /> 바챌</span>
+          <span className="flex items-center gap-1"><span className="w-3 h-3 rounded bg-yellow-200/80 border border-yellow-400" /> 공동구매</span>
+          <span className="flex items-center gap-1"><span className="w-3 h-3 rounded bg-orange-100/70 border border-orange-300" /> 식사·OUT</span>
+          <span className="flex items-center gap-1"><span className="w-3 h-3 rounded bg-pink-100/70 border border-pink-300" /> 홍보</span>
+          <span className="flex items-center gap-1"><span className="w-3 h-3 rounded bg-yellow-100/70 border border-yellow-300" /> 회의</span>
+          <span className="flex items-center gap-1"><span className="w-3 h-3 rounded bg-amber-100/70 border border-amber-300" /> 전체회의</span>
+          <span className="flex items-center gap-1"><span className="w-3 h-3 rounded bg-indigo-100/70 border border-indigo-300" /> 간담회</span>
+          <span className="flex items-center gap-1"><span className="w-3 h-3 rounded bg-rose-100/70 border border-rose-300" /> 당직</span>
+          <span className="flex items-center gap-1"><span className="w-3 h-3 rounded bg-gray-100/70 border border-gray-300" /> 기타</span>
           <span className="flex items-center gap-1"><span className="text-yellow-500">★</span> 매출대상</span>
           {hasWorkHours && (<>
-            <span className="flex items-center gap-1"><span className="w-3 h-3 rounded bg-blue-100 border border-blue-200" /> 근무(IN)</span>
-            <span className="flex items-center gap-1"><span className="w-3 h-3 rounded bg-gray-200 border border-gray-300" /> 근무외(OUT)</span>
+            <span className="flex items-center gap-1"><span className="w-3 h-3 rounded bg-slate-200/70 border border-slate-400" /> 근무(IN)</span>
+            <span className="flex items-center gap-1"><span className="w-3 h-3 rounded bg-zinc-300/70 border border-zinc-500" /> 주말·공휴일</span>
+            <span className="flex items-center gap-1"><span className="w-3 h-3 rounded bg-orange-100/70 border border-orange-300" /> 근무외(OUT)</span>
           </>)}
         </div>
 

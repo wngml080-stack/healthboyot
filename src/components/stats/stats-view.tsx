@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useRef, useCallback } from 'react'
+import { useState, useRef, useCallback, useEffect } from 'react'
 import { useRouter } from 'next/navigation'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
@@ -31,7 +31,9 @@ export function StatsView({ stats: initialStats, target }: Props) {
   const [period, setPeriod] = useState<'weekly' | 'monthly'>('monthly')
   const [offset, setOffset] = useState(0)
   const [loading, setLoading] = useState(false)
-  const [baseDate] = useState(() => new Date())
+  // SSR/CSR 시간 불일치로 hydration mismatch가 나면 안 됨 → 안정 placeholder, mount 후 동기화
+  const [baseDate, setBaseDate] = useState<Date>(() => new Date('2026-01-05T00:00:00Z'))
+  useEffect(() => { setBaseDate(new Date()) }, [])
   const [showTarget, setShowTarget] = useState(false)
   const [targetAmount, setTargetAmount] = useState(target?.target_amount ?? 0)
   const [w1, setW1] = useState(target?.week1_target ?? 0)

@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useMemo, useRef } from 'react'
+import { useState, useMemo, useRef, useEffect } from 'react'
 import { useRouter } from 'next/navigation'
 import { Card, CardContent } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
@@ -40,6 +40,15 @@ const progressOf = (m: PtMember) =>
   m.sessions_in + m.sessions_out + (m.sessions_group_purchase ?? 0) + (m.sessions_bachal ?? 0)
 const remainingOf = (m: PtMember) =>
   m.previous_remaining + m.sessions_added + m.handover_sessions + m.refund_sessions - progressOf(m)
+
+// 표시용 상태: status가 만료/완료가 아니어도 남은세션 ≤ 0이면 만료로 간주
+// 완료는 노출하지 않음
+function effectiveStatus(m: PtMember): '진행중' | '정지' | '만료' | '완료' {
+  if (m.status === '완료') return '완료'
+  if (m.status === '정지') return '정지'
+  if (m.status === '만료' || remainingOf(m) <= 0) return '만료'
+  return '진행중'
+}
 
 type Totals = {
   prev: number; reg: number; added: number
@@ -82,7 +91,9 @@ export function PtMemberList({ initialMembers, trainers, fixedTrainerId, isAdmin
   const [members, setMembers] = useState(initialMembers)
   const [search, setSearch] = useState('')
   const [filterStatus, setFilterStatus] = useState<string>('all')
-  const [selectedMonth, setSelectedMonth] = useState<string>(todayMonth())
+  // SSR/CSR 시간 불일치 방지 — 첫 렌더는 placeholder, mount 후 실제 월
+  const [selectedMonth, setSelectedMonth] = useState<string>('2026-01')
+  useEffect(() => { setSelectedMonth(todayMonth()) }, [])
   const fileRef = useRef<HTMLInputElement>(null)
   const [uploading, setUploading] = useState(false)
   const [selected, setSelected] = useState<Set<string>>(new Set())
@@ -336,20 +347,22 @@ export function PtMemberList({ initialMembers, trainers, fixedTrainerId, isAdmin
 
   const filtered = useMemo(() => members.filter((m) => {
     if (search && !m.name.includes(search)) return false
-    if (filterStatus !== 'all' && m.status !== filterStatus) return false
     // 월 필터: 선택한 월에 해당하는 데이터만 (NULL은 레거시 — 현재 월에 표시)
     const memberMonth = m.data_month ?? todayMonth()
     if (memberMonth !== selectedMonth) return false
+    // 완료 회원은 항상 숨김
+    const eff = effectiveStatus(m)
+    if (eff === '완료') return false
+    if (filterStatus !== 'all' && eff !== filterStatus) return false
     return true
   }), [members, search, filterStatus, selectedMonth])
 
   const stats = useMemo(() => {
-    const monthMembers = members.filter((m) => (m.data_month ?? todayMonth()) === selectedMonth)
+    const monthMembers = members.filter((m) => (m.data_month ?? todayMonth()) === selectedMonth && effectiveStatus(m) !== '완료')
     return {
-      total: monthMembers.length,
-      active: monthMembers.filter((m) => m.status === '진행중').length,
-      paused: monthMembers.filter((m) => m.status === '정지').length,
-      expired: monthMembers.filter((m) => m.status === '만료').length,
+      active: monthMembers.filter((m) => effectiveStatus(m) === '진행중').length,
+      paused: monthMembers.filter((m) => effectiveStatus(m) === '정지').length,
+      expired: monthMembers.filter((m) => effectiveStatus(m) === '만료').length,
     }
   }, [members, selectedMonth])
 
@@ -358,13 +371,8 @@ export function PtMemberList({ initialMembers, trainers, fixedTrainerId, isAdmin
 
   return (
     <div className="space-y-4">
-      {/* 회원 상태 통계 — 카드 클릭으로 필터 토글 */}
-      <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
-        <button type="button" onClick={() => setFilterStatus('all')}
-          className={`rounded-lg border bg-white text-center px-3 py-3 transition-colors hover:bg-gray-50 ${filterStatus === 'all' ? 'ring-2 ring-gray-400 border-gray-400' : 'border-gray-200'}`}>
-          <p className="text-xl font-black text-gray-900">{stats.total}</p>
-          <p className="text-[10px] text-gray-500">전체</p>
-        </button>
+      {/* 회원 상태 통계 — 카드 클릭으로 필터 토글 (완료 회원은 노출 안 함) */}
+      <div className="grid grid-cols-3 gap-2">
         <button type="button" onClick={() => setFilterStatus(filterStatus === '진행중' ? 'all' : '진행중')}
           className={`rounded-lg border bg-green-50 text-center px-3 py-3 transition-colors hover:bg-green-100 ${filterStatus === '진행중' ? 'ring-2 ring-green-500 border-green-500' : 'border-green-200'}`}>
           <p className="text-xl font-black text-green-700">{stats.active}</p>
@@ -414,8 +422,10 @@ export function PtMemberList({ initialMembers, trainers, fixedTrainerId, isAdmin
           <Input value={search} onChange={(e) => setSearch(e.target.value)} placeholder="회원명 검색..." className="pl-8 h-8 text-sm bg-white border-gray-300 text-gray-900 placeholder:text-gray-900 placeholder:font-medium" />
         </div>
         <select value={filterStatus} onChange={(e) => setFilterStatus(e.target.value)} className="h-8 text-xs bg-white text-gray-700 border border-gray-300 rounded-md px-2">
-          <option value="all">전체 상태</option>
-          {STATUS_OPTIONS.map((s) => <option key={s} value={s}>{s}</option>)}
+          <option value="all">전체</option>
+          <option value="진행중">진행중</option>
+          <option value="정지">정지</option>
+          <option value="만료">만료</option>
         </select>
         <Button size="sm" onClick={openAdd} className="h-8 bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold">
           <Plus className="h-3.5 w-3.5 mr-1" />추가
@@ -437,7 +447,7 @@ export function PtMemberList({ initialMembers, trainers, fixedTrainerId, isAdmin
           <input ref={fileRef} type="file" accept=".xlsx,.xls,.csv" className="hidden"
             onChange={(e) => { const f = e.target.files?.[0]; if (f) handleExcelUpload(f); e.target.value = '' }} />
           <Button size="sm" variant="outline" onClick={async () => {
-            if (!confirm(`전월 회원 명단을 ${selectedMonth} 페이롤로 이월합니다.\n\n• 전월 남은세션 > 0: ${selectedMonth} row 생성, 전월잔여로 복사\n• 전월 남은세션 ≤ 0: 전월 row를 '만료'로 마킹, ${selectedMonth}에는 표시되지 않음\n• 이미 ${selectedMonth} 회원으로 등록된 사람은 전월잔여만 갱신\n\n계속하시겠습니까?`)) return
+            if (!confirm(`전월 회원 명단을 ${selectedMonth} 페이롤로 이월합니다.\n\n• 전월 남은세션 > 0 → ${selectedMonth} row 생성/갱신\n• 전월 남은세션 ≤ 0 → 전월 row를 '만료'로 마킹, ${selectedMonth}에 잘못 들어간 row는 삭제\n• 이미 만료/완료된 회원 → 전월에 그대로, ${selectedMonth}에서는 제외\n\n계속하시겠습니까?`)) return
             const result = await carryOverPreviousMonthPayroll(trainerId, selectedMonth)
             if ('error' in result && result.error) {
               alert('가져오기 실패: ' + result.error)
@@ -446,7 +456,8 @@ export function PtMemberList({ initialMembers, trainers, fixedTrainerId, isAdmin
                 `[${result.prev} → ${result.target}] 이월 완료\n` +
                 `• 신규 ${result.created}명 / 갱신 ${result.updated}명\n` +
                 `• 만료 처리 ${result.expired}명 (${result.prev}에 남음)\n` +
-                `• 스킵 ${result.skipped}명 (이미 만료/완료)`
+                `• 스킵 ${result.skipped}명 (이미 만료/완료)\n` +
+                `• ${result.target}에서 제거 ${result.removedFromTarget}명 (만료자가 잘못 들어가 있던 경우)`
               )
               invalidatePtMembersCache()
               setMembers(await getPtMembers(trainerId))
@@ -533,9 +544,12 @@ export function PtMemberList({ initialMembers, trainers, fixedTrainerId, isAdmin
                     <TableCell className="text-xs font-bold text-gray-900 whitespace-nowrap">
                       <div className="flex items-center gap-1">
                         {m.name}
-                        {m.status !== '진행중' && (
-                          <Badge className={`text-[9px] ${STATUS_COLOR[m.status] ?? 'bg-gray-200'}`}>{m.status}</Badge>
-                        )}
+                        {(() => {
+                          const eff = effectiveStatus(m)
+                          return eff !== '진행중' && (
+                            <Badge className={`text-[9px] ${STATUS_COLOR[eff] ?? 'bg-gray-200'}`}>{eff}</Badge>
+                          )
+                        })()}
                       </div>
                     </TableCell>
                     <TableCell className="text-xs text-center text-gray-700">{fmt(m.previous_remaining)}</TableCell>
