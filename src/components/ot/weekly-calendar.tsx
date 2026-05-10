@@ -304,6 +304,9 @@ export function WeeklyCalendar({ assignments, trainerId, profile, workStartTime,
   const supabaseRef = useRef(createClient())
   const scheduleRetryRef = useRef(0)
   const scheduleRetryTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+  // 진행 중인 fetch가 신선한 state를 덮어쓰지 못하도록 세대 추적
+  // (placeholder 주차 fetch ↔ 현재 주차 fetch 레이스 방어)
+  const fetchGenRef = useRef(0)
   // schedulesRef는 1191줄에서 이미 선언/갱신됨 — 여기서는 loading만 ref화
   const loadingRef = useRef(false)
   useEffect(() => { loadingRef.current = loading }, [loading])
@@ -785,6 +788,7 @@ export function WeeklyCalendar({ assignments, trainerId, profile, workStartTime,
   const otMembers = assignments.filter((a) => !['거부', '완료'].includes(a.status))
 
   const fetchSchedules = useCallback(async () => {
+    const gen = ++fetchGenRef.current
     setLoading(true)
     setScheduleLoadError(null)
     try {
@@ -806,6 +810,8 @@ export function WeeklyCalendar({ assignments, trainerId, profile, workStartTime,
         .gte('scheduled_date', ws)
         .lte('scheduled_date', we)
         .order('start_time')
+      // 더 새로운 fetch가 시작됐으면 결과 무시 (placeholder 주차 → 현재 주차 전환 시 stale fetch 차단)
+      if (gen !== fetchGenRef.current) return
       if (error) throw new Error(error.message)
       // PostgreSQL time 컬럼은 "HH:MM:SS" 형식으로 반환됨 → "HH:MM"으로 정규화해서
       // 수정 다이얼로그의 슬롯 매칭/<input type="time"> 동작과 일관되게 함
@@ -816,6 +822,7 @@ export function WeeklyCalendar({ assignments, trainerId, profile, workStartTime,
       setSchedules(normalized)
       scheduleRetryRef.current = 0
     } catch (err) {
+      if (gen !== fetchGenRef.current) return
       console.error('스케줄 조회 에러:', err)
       // 인증/RLS 미준비로 인한 에러일 가능성 → 자동 재시도 (최대 3회, backoff)
       if (scheduleRetryRef.current < 3) {
@@ -826,11 +833,14 @@ export function WeeklyCalendar({ assignments, trainerId, profile, workStartTime,
       }
       setScheduleLoadError(err instanceof Error ? err.message : '스케줄을 불러오지 못했습니다')
     } finally {
-      setLoading(false)
+      if (gen === fetchGenRef.current) setLoading(false)
     }
   }, [trainerId, weekStartStr, viewMode, monthOffset, weekStart])
 
   useEffect(() => {
+    // 첫 렌더(SSR placeholder 시점) — now가 null이면 weekStartStr이 placeholder("2026-01-05")라
+    // 과거 주차 fetch가 발화되어 정상 데이터를 덮어쓰는 레이스를 만든다. now가 set된 뒤에만 fetch.
+    if (!now) return
     scheduleRetryRef.current = 0
     fetchSchedules()
     // 탭 복귀 시 스케줄이 비어있으면 재조회 (ref로 최신값 참조)
@@ -845,7 +855,7 @@ export function WeeklyCalendar({ assignments, trainerId, profile, workStartTime,
       if (scheduleRetryTimerRef.current) clearTimeout(scheduleRetryTimerRef.current)
       document.removeEventListener('visibilitychange', handleVisibility)
     }
-  }, [fetchSchedules])
+  }, [fetchSchedules, now])
 
   const openCreate = (day: Date, hour: number, half: number) => {
     setCreateDate(format(day, 'yyyy-MM-dd'))
@@ -1157,14 +1167,23 @@ export function WeeklyCalendar({ assignments, trainerId, profile, workStartTime,
     // PT/PPT/바챌 스케줄은 PT 수업 진행 전용 다이얼로그
     if (isPtLikeType(schedule.schedule_type)) {
       const parsed = parsePtNote(schedule.note)
+      // 회차/총회차는 캘린더 블록 라벨과 동일한 라이브 계산값을 사용 (note의 옛 값 우선순위 낮춤)
+      // - current: sessionPosById의 시간순 자동 회차 (없으면 note의 current)
+      // - total: 해당 월 pt_members.total_sessions (0 또는 없으면 note의 total)
+      const autoPos = sessionPosById.get(schedule.id)
+      const month = schedule.scheduled_date.slice(0, 7)
+      const pm = schedule.member_name ? ptMemberByNameMonth.get(`${schedule.member_name}|${month}`) : null
+      const liveCurrent = autoPos ?? (Number(parsed.current) || 0)
+      const liveTotal = (pm && pm.total_sessions > 0) ? pm.total_sessions : (Number(parsed.total) || 0)
+
       setEditPtSchedule(schedule)
       setEditPtScheduleType(schedule.schedule_type as 'PT' | 'PPT' | '바챌')
       setEditPtMemberName(schedule.member_name)
       setEditPtPhone(parsed.phone)
       setEditPtTime(schedule.start_time)
       setEditPtDuration(schedule.duration)
-      setEditPtCurrentSession(parsed.current)
-      setEditPtTotalSession(parsed.total)
+      setEditPtCurrentSession(liveCurrent > 0 ? String(liveCurrent) : '')
+      setEditPtTotalSession(liveTotal > 0 ? String(liveTotal) : '')
       setEditPtIsSalesTarget(parsed.isSalesTarget)
       setEditPtExpectedAmount(parsed.expectedAmount)
       setEditPtClassResult(parsed.classResult)
@@ -1870,8 +1889,10 @@ export function WeeklyCalendar({ assignments, trainerId, profile, workStartTime,
                     // 주말/공휴일은 무조건 IN으로 표시 (저장된 값 무시)
                     const sDate = new Date(s.scheduled_date + 'T00:00:00')
                     const isInForce = isWeekendOrHoliday(sDate)
+                    // IN/OUT은 현재 근무시간 기준으로 라이브 계산 — 저장 당시 근무시간이 비어있거나
+                    // 달랐던 과거 스케줄도 현재 근무시간 변경에 즉시 반영되도록 함
                     const effectiveInOut: 'IN' | 'OUT' = ptParsed
-                      ? (isInForce || ptParsed.isGroupPurchase ? 'IN' : ptParsed.inOut)
+                      ? (isInForce || ptParsed.isGroupPurchase ? 'IN' : getAutoInOut(s.scheduled_date, s.start_time))
                       : 'IN'
                     // 색상 결정:
                     //   - PT/PPT 노쇼/차감노쇼: 빨강
@@ -2073,8 +2094,13 @@ export function WeeklyCalendar({ assignments, trainerId, profile, workStartTime,
               const isNoshow = parsed.classResult === '노쇼' || parsed.classResult === '차감노쇼'
               const sDate = new Date(s.scheduled_date + 'T00:00:00')
               const isWH = isWeekendOrHoliday(sDate)
+              // IN/OUT은 캘린더 색상과 동일하게 현재 근무시간 기준으로 라이브 계산
+              // (저장 당시 근무시간이 비어있던 과거 스케줄도 즉시 반영)
+              const liveInOut: 'IN' | 'OUT' = parsed.isGroupPurchase
+                ? 'IN'
+                : getAutoInOut(s.scheduled_date, s.start_time)
               if (s.schedule_type === 'PPT') {
-                if (parsed.inOut === 'OUT' && !isWH) {
+                if (liveInOut === 'OUT' && !isWH) {
                   st.pptOut++; if (isNoshow) st.pptOutNoshow++
                 } else {
                   st.pptIn++; if (isNoshow) st.pptInNoshow++
@@ -2084,7 +2110,7 @@ export function WeeklyCalendar({ assignments, trainerId, profile, workStartTime,
                   st.ptGP++; if (isNoshow) st.ptGPNoshow++
                 } else if (isWH) {
                   st.ptWH++; if (isNoshow) st.ptWHNoshow++
-                } else if (parsed.inOut === 'OUT') {
+                } else if (liveInOut === 'OUT') {
                   st.ptOut++; if (isNoshow) st.ptOutNoshow++
                 } else {
                   st.ptInReg++; if (isNoshow) st.ptInRegNoshow++

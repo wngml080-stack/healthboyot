@@ -103,11 +103,17 @@ export function ScheduleOverview() {
   const supabaseRef = useRef(createClient())
   const isMountedRef = useRef(true)
   const dataRef = useRef<TrainerDaySchedule[]>([])
+  // schedules 빈 결과를 첫 1회는 의심해서 retry, 두 번째도 0이면 진짜 빈 날짜로 인정
+  const schedulesEmptyRetriedRef = useRef(false)
   useEffect(() => () => { isMountedRef.current = false }, [])
   useEffect(() => { dataRef.current = data }, [data])
 
   const load = useCallback(async (targetDate: string) => {
+    console.log('[ScheduleOverview] fetch 시작', targetDate, 'attempt=', retryCountRef.current)
     const supabase = supabaseRef.current
+
+    // 만료 직전 토큰 자동 리프레시 트리거 (INITIAL_SESSION 시점에 토큰이 만료된 케이스 회피)
+    await supabase.auth.getSession()
 
     // 클라이언트에서 직접 병렬 쿼리 (서버 왕복 제거)
     const [trainersRes, schedulesRes] = await Promise.all([
@@ -129,6 +135,14 @@ export function ScheduleOverview() {
     if (schedulesRes.error) throw new Error(schedulesRes.error.message)
     const trainers = trainersRes.data ?? []
     const schedules = schedulesRes.data ?? []
+    console.log('[ScheduleOverview] fetch 결과', { trainers: trainers.length, schedules: schedules.length })
+    // RLS/토큰 일시 실패로 빈 결과 받는 경우를 잡아서 outer retry로 자동 회복
+    if (trainers.length === 0) throw new Error('트레이너 데이터가 비었습니다 (인증/RLS 일시 이슈 가능성)')
+    // schedules 빈 결과는 정상 케이스(휴일 등)일 수 있어 1회만 의심해서 retry
+    if (schedules.length === 0 && !schedulesEmptyRetriedRef.current) {
+      schedulesEmptyRetriedRef.current = true
+      throw new Error('schedules 빈 결과 — 1회 retry로 검증')
+    }
 
     // OT assignment 정보 병렬 조회 — ot_sessions 조인으로 라운드트립 1회 단축
     const otSessionIds = schedules.filter((s) => s.ot_session_id).map((s) => s.ot_session_id as string)
@@ -214,7 +228,7 @@ export function ScheduleOverview() {
     })
   }, [])
 
-  const MAX_RETRIES = 3
+  const MAX_RETRIES = 5
 
   const tryLoad = useCallback(async (targetDate: string) => {
     setLoading(true)
@@ -223,11 +237,11 @@ export function ScheduleOverview() {
       await load(targetDate)
       retryCountRef.current = 0
     } catch (err) {
-      console.error('[ScheduleOverview] 로딩 실패:', err)
+      console.warn('[ScheduleOverview] 로딩 실패 (재시도', retryCountRef.current + 1, '/', MAX_RETRIES, '):', err)
       if (!isMountedRef.current) return
       if (retryCountRef.current < MAX_RETRIES) {
         retryCountRef.current += 1
-        const delay = 400 * retryCountRef.current
+        const delay = 250 * retryCountRef.current
         retryTimerRef.current = setTimeout(() => { void tryLoad(targetDate) }, delay)
       } else {
         setLoading(false)
@@ -238,9 +252,11 @@ export function ScheduleOverview() {
 
   useEffect(() => {
     retryCountRef.current = 0
+    schedulesEmptyRetriedRef.current = false
+    // 마운트/날짜 변경 시 즉시 fetch 시도 — 빈 결과면 throw로 retry 루프 진입
     void tryLoad(date)
 
-    // 탭 복귀 시 데이터가 비어있으면 재조회 (최신값은 dataRef로 참조)
+    // 탭 복귀 시 데이터가 비어있으면 재조회
     const handleVisibility = () => {
       if (document.visibilityState === 'visible' && dataRef.current.length === 0) {
         retryCountRef.current = 0
@@ -249,9 +265,10 @@ export function ScheduleOverview() {
     }
     document.addEventListener('visibilitychange', handleVisibility)
 
-    // 첫 로그인/세션 복원 시 데이터 비어있으면 재조회 — TOKEN_REFRESHED는 제외
+    // INITIAL_SESSION/SIGNED_IN 이벤트 시 데이터 비어있으면 재조회 (보조 트리거)
     const supabase = supabaseRef.current
     const { data: { subscription } } = supabase.auth.onAuthStateChange((event, session) => {
+      if (!isMountedRef.current) return
       if ((event === 'INITIAL_SESSION' || event === 'SIGNED_IN') && session && dataRef.current.length === 0) {
         retryCountRef.current = 0
         void tryLoad(date)

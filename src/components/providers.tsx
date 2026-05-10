@@ -31,10 +31,15 @@ async function checkBuildVersion() {
 }
 
 export function Providers({ children }: { children: React.ReactNode }) {
-  // 새 SW 등록 — HTML network-first로 PWA 옛 HTML 캐시 문제 해결
+  // 옛 SW 해제 (새 SW 도입했다 #310 재발해 다시 unregister-only로 롤백)
   useEffect(() => {
     if ('serviceWorker' in navigator) {
-      navigator.serviceWorker.register('/sw.js', { scope: '/' }).catch(() => {})
+      navigator.serviceWorker.getRegistrations().then((regs) => {
+        regs.forEach((r) => r.unregister())
+      })
+    }
+    if ('caches' in window) {
+      caches.keys().then((keys) => keys.forEach((k) => caches.delete(k)))
     }
     // stale HTML 감지
     checkBuildVersion()

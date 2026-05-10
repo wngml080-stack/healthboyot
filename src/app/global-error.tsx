@@ -4,6 +4,24 @@ import { useEffect, useState } from 'react'
 
 const RECOVERY_FLAG = '__ge_recovered_v2'
 
+interface ErrorLogEntry {
+  t: string
+  prefix: string
+  msg: string
+  stack: string
+  extra: unknown
+  url: string
+}
+
+function readErrorLog(): ErrorLogEntry[] {
+  try {
+    const raw = localStorage.getItem('__error_log')
+    return raw ? (JSON.parse(raw) as ErrorLogEntry[]) : []
+  } catch {
+    return []
+  }
+}
+
 async function purgeAndHardReload() {
   try {
     if ('serviceWorker' in navigator) {
@@ -29,8 +47,10 @@ export default function GlobalError({
   reset: () => void
 }) {
   const [exhausted, setExhausted] = useState(false)
+  const [log, setLog] = useState<ErrorLogEntry[]>([])
 
   useEffect(() => {
+    setLog(readErrorLog())
     console.error('[GlobalError]', error)
     // 세션당 1회만 자동 강제 새로고침 (옛 HTML/chunks 캐시 무효화)
     try {
@@ -69,7 +89,7 @@ export default function GlobalError({
               <p style={{ fontSize: '0.65rem', color: '#999', margin: '0.4rem 0 0 0' }}>digest: {error.digest}</p>
             )}
           </div>
-          <div style={{ display: 'flex', gap: '0.75rem' }}>
+          <div style={{ display: 'flex', gap: '0.75rem', marginBottom: '1rem' }}>
             <button
               onClick={() => {
                 try { sessionStorage.removeItem(RECOVERY_FLAG) } catch {}
@@ -86,6 +106,27 @@ export default function GlobalError({
               로그인으로
             </button>
           </div>
+          {log.length > 0 && (
+            <div style={{ width: '100%', maxWidth: '420px', padding: '0.75rem', background: '#1f1f1f', borderRadius: '0.5rem', textAlign: 'left', maxHeight: '50vh', overflow: 'auto', marginTop: '0.5rem' }}>
+              <p style={{ fontSize: '0.7rem', color: '#fbbf24', margin: '0 0 0.5rem 0', fontWeight: 600 }}>최근 에러 {log.length}개 (가장 최근 5개 표시)</p>
+              {log.slice(-5).reverse().map((e, i) => (
+                <div key={i} style={{ marginBottom: '0.75rem', paddingBottom: '0.5rem', borderBottom: '1px solid #333' }}>
+                  <p style={{ fontSize: '0.65rem', color: '#fbbf24', margin: '0 0 0.2rem 0' }}>{e.prefix} @ {e.t.slice(11, 19)}</p>
+                  <p style={{ fontSize: '0.7rem', color: '#fca5a5', margin: 0, wordBreak: 'break-word' }}>{e.msg}</p>
+                  {e.stack && (
+                    <pre style={{ fontSize: '0.55rem', color: '#999', whiteSpace: 'pre-wrap', wordBreak: 'break-word', maxHeight: '120px', overflow: 'auto', margin: '0.3rem 0 0 0' }}>
+                      {e.stack.split('\n').slice(0, 6).join('\n')}
+                    </pre>
+                  )}
+                  {!!e.extra && (
+                    <pre style={{ fontSize: '0.55rem', color: '#777', whiteSpace: 'pre-wrap', margin: '0.2rem 0 0 0' }}>
+                      {JSON.stringify(e.extra)}
+                    </pre>
+                  )}
+                </div>
+              ))}
+            </div>
+          )}
         </div>
       </body>
     </html>

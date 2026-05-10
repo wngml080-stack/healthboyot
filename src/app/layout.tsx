@@ -93,25 +93,38 @@ export default function RootLayout({
         <Script id="chunk-reload" strategy="beforeInteractive">
           {`
             if (typeof window !== 'undefined') {
-              // 청크 로드 실패 시 한 번만 새로고침 (배포 직후 stale chunk 해소)
-              var __chunkReloaded = false;
-              var __chunkRecover = function() {
-                if (__chunkReloaded) return;
-                var key = 'chunk_reload_' + location.pathname;
-                try { if (sessionStorage.getItem(key)) return; sessionStorage.setItem(key, '1'); } catch(_){}
-                __chunkReloaded = true;
-                location.reload();
+              // 모든 client 에러를 localStorage에 누적 저장 — 디버깅용
+              var __log = function(prefix, err, extra) {
+                try {
+                  var arr = JSON.parse(localStorage.getItem('__error_log') || '[]');
+                  arr.push({
+                    t: new Date().toISOString(),
+                    prefix: prefix,
+                    msg: (err && err.message) || String(err || ''),
+                    stack: (err && err.stack) || '',
+                    extra: extra || null,
+                    url: location.href,
+                  });
+                  if (arr.length > 20) arr = arr.slice(-20);
+                  localStorage.setItem('__error_log', JSON.stringify(arr));
+                } catch(_){}
               };
               window.addEventListener('error', function(e) {
                 var msg = (e && e.message) || '';
+                __log('window.error', e.error || e, { filename: e.filename, lineno: e.lineno, colno: e.colno });
                 if (msg.indexOf('Loading chunk') !== -1 || msg.indexOf('ChunkLoadError') !== -1) {
-                  __chunkRecover();
+                  var key = 'chunk_reload_' + location.pathname;
+                  try { if (sessionStorage.getItem(key)) return; sessionStorage.setItem(key, '1'); } catch(_){}
+                  location.reload();
                 }
               });
               window.addEventListener('unhandledrejection', function(e) {
+                __log('unhandledrejection', e.reason);
                 var msg = (e && e.reason && (e.reason.message || String(e.reason))) || '';
                 if (msg.indexOf('Loading chunk') !== -1 || msg.indexOf('Failed to fetch dynamically imported module') !== -1) {
-                  __chunkRecover();
+                  var key = 'chunk_reload_' + location.pathname;
+                  try { if (sessionStorage.getItem(key)) return; sessionStorage.setItem(key, '1'); } catch(_){}
+                  location.reload();
                 }
               });
             }

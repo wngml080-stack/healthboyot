@@ -14,18 +14,25 @@ export class DebugErrorBoundary extends React.Component<
   { children: React.ReactNode },
   State
 > {
-  state: State = { error: null, componentStack: null }
+  constructor(props: { children: React.ReactNode }) {
+    super(props)
+    this.state = { error: null, componentStack: null }
+    this.reset = this.reset.bind(this)
+  }
 
-  static getDerivedStateFromError(error: Error): Partial<State> {
-    return { error }
+  static getDerivedStateFromError(error: Error): State {
+    return { error, componentStack: null }
   }
 
   componentDidCatch(error: Error, info: React.ErrorInfo) {
     console.error('[DebugErrorBoundary]', error, info)
+    if (typeof window !== 'undefined') {
+      try { (window as unknown as { __lastDebugError: unknown }).__lastDebugError = { error, info } } catch {}
+    }
     this.setState({ error, componentStack: info.componentStack ?? null })
   }
 
-  reset = () => {
+  reset() {
     this.setState({ error: null, componentStack: null })
   }
 
@@ -37,15 +44,19 @@ export class DebugErrorBoundary extends React.Component<
     return (
       <div style={{
         padding: '1.5rem',
-        minHeight: '60vh',
+        minHeight: '100vh',
         display: 'flex',
         alignItems: 'center',
         justifyContent: 'center',
-        background: '#111',
+        background: '#7f1d1d', // 빨간 배경 — DebugErrorBoundary가 잡았는지 확인용
         color: '#fff',
         fontFamily: 'system-ui, sans-serif',
+        position: 'fixed',
+        inset: 0,
+        zIndex: 99999,
       }}>
         <div style={{ maxWidth: 480, width: '100%', textAlign: 'center' }}>
+          <p style={{ fontSize: '0.7rem', color: '#fde68a', marginBottom: '0.5rem', fontFamily: 'monospace' }}>[DEBUG_BOUNDARY]</p>
           <h2 style={{ fontSize: '1.05rem', marginBottom: '1rem' }}>잠시 후 다시 시도해주세요</h2>
           <div style={{ background: '#7f1d1d33', padding: '0.75rem', borderRadius: '0.5rem', textAlign: 'left', marginBottom: '1.25rem' }}>
             <p style={{ fontSize: '0.75rem', color: '#fca5a5', wordBreak: 'break-word', margin: 0 }}>
