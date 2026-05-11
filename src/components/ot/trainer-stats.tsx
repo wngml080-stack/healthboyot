@@ -450,14 +450,27 @@ export function TrainerStats({ assignments, trainerName, programs, registrations
         }
       })
 
-    // 결과가 난 대상자: PT전환, 등록완료, 클로징실패
+    // 결과가 난 대상자: 이번주에 마지막 OT 세션이 완료된 PT전환/클로징실패만 포함
+    // (전체 기간의 결과를 모두 표시하던 기존 버그 수정 — 이미지에서 사용자가 의문 제기한 부분)
+    const resolvedInThisWeek = (a: OtAssignmentWithDetails) => {
+      const completedTimes = (a.sessions ?? [])
+        .filter((s) => s.completed_at)
+        .map((s) => new Date(s.completed_at!).getTime())
+      if (completedTimes.length === 0) return false
+      const lastCompleted = Math.max(...completedTimes)
+      return lastCompleted >= tws.getTime() && lastCompleted <= twe.getTime() + 24 * 60 * 60 * 1000 - 1
+    }
     const resolvedTargets = {
-      ptConversion: allSalesTargets.filter((a) => a.is_pt_conversion || a.sales_status === '등록완료').map((a) => ({
-        name: a.member.name,
-        expectedAmount: toManwon(a.expected_amount ?? a.expected_sales ?? 0),
-        actualSales: toManwon(a.actual_sales ?? 0),
-      })),
-      closingFailed: allSalesTargets.filter((a) => a.sales_status === '클로징실패').map((a) => a.member.name),
+      ptConversion: allSalesTargets
+        .filter((a) => (a.is_pt_conversion || a.sales_status === '등록완료') && resolvedInThisWeek(a))
+        .map((a) => ({
+          name: a.member.name,
+          expectedAmount: toManwon(a.expected_amount ?? a.expected_sales ?? 0),
+          actualSales: toManwon(a.actual_sales ?? 0),
+        })),
+      closingFailed: allSalesTargets
+        .filter((a) => a.sales_status === '클로징실패' && resolvedInThisWeek(a))
+        .map((a) => a.member.name),
     }
 
     // 다음주 매출대상자: 활성 대상자 중 이월되는 대상
