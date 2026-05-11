@@ -5,9 +5,16 @@ import { getCurrentProfile } from '@/actions/auth'
 import { getAllOtPrograms } from '@/actions/ot-program'
 import { getOtRegistrationsByTrainer } from '@/actions/ot-registration'
 import { getTrainerScheduleSlots } from '@/actions/schedule'
+import { getPtMembers } from '@/actions/pt-members'
 import { TrainerDetailTabs } from '@/components/ot/trainer-detail-tabs'
 import { Loader2 } from 'lucide-react'
 import { redirect } from 'next/navigation'
+
+// KST 기준 현재 월 'YYYY-MM'
+function currentMonth(): string {
+  const d = new Date()
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`
+}
 
 interface OtPageProps {
   searchParams: Promise<{ trainer?: string; tab?: string }>
@@ -67,6 +74,9 @@ async function TrainerDetailView({ trainerId, tab }: { trainerId: string; tab: s
   let allPrograms: Awaited<ReturnType<typeof getAllOtPrograms>> = []
   let scheduleSlots: Awaited<ReturnType<typeof getTrainerScheduleSlots>> = []
   let trainerRegistrations: Awaited<ReturnType<typeof getOtRegistrationsByTrainer>> = []
+  let initialPtMembers: Awaited<ReturnType<typeof getPtMembers>> = []
+  const ptMonth = currentMonth()
+  const isRealTrainer = trainerId !== 'unassigned' && trainerId !== 'excluded'
 
   try {
     const results = await Promise.all([
@@ -76,11 +86,15 @@ async function TrainerDetailView({ trainerId, tab }: { trainerId: string; tab: s
       tab === 'stats'
         ? getAllOtPrograms({ includeAll: true })
         : Promise.resolve([]),
-      trainerId !== 'unassigned' && trainerId !== 'excluded'
+      isRealTrainer
         ? getTrainerScheduleSlots(trainerId)
         : Promise.resolve([]),
-      tab === 'stats' && trainerId !== 'unassigned' && trainerId !== 'excluded'
+      tab === 'stats' && isRealTrainer
         ? getOtRegistrationsByTrainer(trainerId)
+        : Promise.resolve([]),
+      // PT 회원 탭이면 현재 월 PT 회원도 미리 fetch — 클라이언트 첫 fetch 1회 왕복 제거
+      tab === 'pt-members' && isRealTrainer
+        ? getPtMembers(trainerId, ptMonth)
         : Promise.resolve([]),
     ])
     trainerAssignments = results[0]
@@ -89,6 +103,7 @@ async function TrainerDetailView({ trainerId, tab }: { trainerId: string; tab: s
     allPrograms = results[3]
     scheduleSlots = results[4]
     trainerRegistrations = results[5]
+    initialPtMembers = results[6]
   } catch (err) {
     console.error('[OtPage] Error loading trainer data:', err)
     return (
@@ -147,6 +162,8 @@ async function TrainerDetailView({ trainerId, tab }: { trainerId: string; tab: s
         workEndTime={staffList.find((s) => s.id === trainerId)?.work_end_time ?? null}
         initialPrograms={trainerPrograms}
         initialRegistrations={trainerRegistrations}
+        initialPtMembers={initialPtMembers}
+        initialPtMonth={ptMonth}
         isAdmin={!!isAdmin}
         trainerOptions={trainerOptions}
       />

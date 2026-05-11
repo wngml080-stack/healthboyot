@@ -39,6 +39,8 @@ interface Props {
   workEndTime: string | null
   initialPrograms: OtProgram[]
   initialRegistrations: OtRegistration[]
+  initialPtMembers?: PtMember[]
+  initialPtMonth?: string
   isAdmin?: boolean
   trainerOptions?: { id: string; name: string }[]
 }
@@ -47,6 +49,7 @@ export function TrainerDetailTabs({
   trainerId, trainerName, initialTab, assignments, trainers,
   profile, initialSchedules, workStartTime, workEndTime,
   initialPrograms, initialRegistrations,
+  initialPtMembers, initialPtMonth,
   isAdmin, trainerOptions,
 }: Props) {
   const router = useRouter()
@@ -67,12 +70,17 @@ export function TrainerDetailTabs({
   })
   const [statsLoading, setStatsLoading] = useState(false)
 
-  // PT회원 데이터 — 처음 pt-members 탭 열 때 로딩 (현재 월만)
+  // PT회원 데이터 — 서버에서 초기 fetch가 됐으면 즉시 표시, 아니면 마운트 useEffect에서 로딩
   const ptInitialMonth = useMemo(() => {
+    if (initialPtMonth) return initialPtMonth
     const d = new Date()
     return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`
-  }, [])
-  const [ptData, setPtData] = useState<{ members: PtMember[]; loaded: boolean }>({ members: [], loaded: false })
+  }, [initialPtMonth])
+  const hasInitialPtMembers = !!initialPtMembers && initialTab === 'pt-members'
+  const [ptData, setPtData] = useState<{ members: PtMember[]; loaded: boolean }>({
+    members: initialPtMembers ?? [],
+    loaded: hasInitialPtMembers,
+  })
   const [ptLoading, setPtLoading] = useState(false)
 
   // 초기 마운트 + trainerId 변경 시 활성 탭 데이터 로딩.
@@ -91,8 +99,9 @@ export function TrainerDetailTabs({
       setStatsData((prev) => ({ ...prev, loaded: false }))
     }
 
-    // 현재 활성 탭이 pt-members면 즉시 로딩 — 초기 마운트와 트레이너 변경 둘 다 처리
-    if (activeTab === 'pt-members' && !isPseudoTrainer) {
+    // 초기 마운트에 서버에서 받아온 PT 회원 데이터가 있으면 fetch 스킵
+    const hasServerPrefetched = isInitialMount && hasInitialPtMembers
+    if (activeTab === 'pt-members' && !isPseudoTrainer && !hasServerPrefetched) {
       console.log('[TrainerDetailTabs] PT 회원 로딩', { trainerId, ptInitialMonth, isInitialMount })
       setPtLoading(true)
       fetchPtMembersClient(trainerId, ptInitialMonth).then((members) => {
@@ -102,7 +111,7 @@ export function TrainerDetailTabs({
         console.error('[TrainerDetailTabs] PT 회원 로딩 실패:', err)
       }).finally(() => setPtLoading(false))
     }
-  }, [trainerId, activeTab, ptInitialMonth, isPseudoTrainer])
+  }, [trainerId, activeTab, ptInitialMonth, isPseudoTrainer, hasInitialPtMembers])
 
   const switchTab = useCallback((tabKey: string) => {
     if (tabKey === activeTab) return

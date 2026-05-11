@@ -23,12 +23,25 @@ function todayMonth(): string {
 
 const MAX_RETRIES = 5
 
-export function PtMembersLoader() {
-  const [data, setData] = useState<CacheShape | null>(cache)
+interface LoaderProps {
+  initialMembers?: PtMember[]
+  initialTrainers?: { id: string; name: string }[]
+  initialMonth?: string
+}
+
+export function PtMembersLoader({ initialMembers, initialTrainers, initialMonth }: LoaderProps = {}) {
+  // 서버에서 받아온 초기 데이터를 즉시 표시 (마운트 후 fetch 왕복 1회 제거)
+  const seeded: CacheShape | null = initialMembers && initialTrainers && initialMonth
+    ? { members: initialMembers, trainers: initialTrainers, month: initialMonth, ts: Date.now() }
+    : null
+  if (seeded && !cache) cache = seeded
+  const [data, setData] = useState<CacheShape | null>(seeded ?? cache)
   const [error, setError] = useState<string | null>(null)
   const cancelledRef = useRef(false)
   const retryCountRef = useRef(0)
   const retryTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+  // 서버에서 초기 데이터 받았으면 첫 마운트 fetch 스킵
+  const skipInitialFetchRef = useRef(!!seeded)
 
   const fetchData = useCallback(async () => {
     setError(null)
@@ -84,8 +97,12 @@ export function PtMembersLoader() {
   useEffect(() => {
     cancelledRef.current = false
     retryCountRef.current = 0
-    // 마운트 시 즉시 fetch — 빈 trainers/실패면 retry 루프 진입
-    void fetchData()
+    // 서버에서 초기 데이터를 받았으면 첫 마운트 fetch 스킵 — 즉시 화면 표시
+    if (skipInitialFetchRef.current) {
+      skipInitialFetchRef.current = false
+    } else {
+      void fetchData()
+    }
 
     // 탭 복귀 시 데이터가 비어있으면 재조회
     const handleVisibility = () => {
