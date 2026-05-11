@@ -75,22 +75,31 @@ export function TrainerDetailTabs({
   const [ptData, setPtData] = useState<{ members: PtMember[]; loaded: boolean }>({ members: [], loaded: false })
   const [ptLoading, setPtLoading] = useState(false)
 
-  // trainerId가 바뀌면 캐시된 PT/통계 데이터 무효화 → 새 트레이너 데이터 강제 재로딩
-  // (원래 같은 컴포넌트 인스턴스가 trainerId만 다르게 받아서 옛 데이터 그대로 보여주던 버그)
-  const prevTrainerIdRef = useRef(trainerId)
+  // 초기 마운트 + trainerId 변경 시 활성 탭 데이터 로딩.
+  // (switchTab은 사용자가 탭을 클릭할 때만 발화되므로, 하드 새로고침으로
+  // `?tab=pt-members`인 채로 진입하면 switchTab이 한 번도 안 불려서
+  // ptData가 빈 채로 PtMemberList가 렌더되던 버그를 막는다.)
+  // ref를 null로 초기화해서 첫 마운트도 trainerChanged로 인식 → fetch 발화.
+  const prevTrainerIdRef = useRef<string | null>(null)
   useEffect(() => {
     if (prevTrainerIdRef.current === trainerId) return
+    const isInitialMount = prevTrainerIdRef.current === null
     prevTrainerIdRef.current = trainerId
-    setPtData({ members: [], loaded: false })
-    setStatsData((prev) => ({ ...prev, loaded: false }))
+    // 트레이너 변경 시에만 캐시 무효화 (초기 마운트는 그대로)
+    if (!isInitialMount) {
+      setPtData({ members: [], loaded: false })
+      setStatsData((prev) => ({ ...prev, loaded: false }))
+    }
 
-    // 현재 활성 탭이 pt-members면 즉시 재로딩
+    // 현재 활성 탭이 pt-members면 즉시 로딩 — 초기 마운트와 트레이너 변경 둘 다 처리
     if (activeTab === 'pt-members' && !isPseudoTrainer) {
+      console.log('[TrainerDetailTabs] PT 회원 로딩', { trainerId, ptInitialMonth, isInitialMount })
       setPtLoading(true)
       fetchPtMembersClient(trainerId, ptInitialMonth).then((members) => {
+        console.log('[TrainerDetailTabs] PT 회원 로드 완료', { count: members.length })
         setPtData({ members, loaded: true })
       }).catch((err) => {
-        console.error('[TrainerDetailTabs] PT 회원 재로딩 실패:', err)
+        console.error('[TrainerDetailTabs] PT 회원 로딩 실패:', err)
       }).finally(() => setPtLoading(false))
     }
   }, [trainerId, activeTab, ptInitialMonth, isPseudoTrainer])
