@@ -28,7 +28,7 @@ import {
   TableHeader,
   TableRow,
 } from '@/components/ui/table'
-import { deleteMember } from '@/actions/members'
+import { deleteMember, updateMember } from '@/actions/members'
 import { addChangeLog } from '@/actions/change-log'
 import { updateOtAssignment } from '@/actions/ot'
 import { MemberEditDialog } from './member-edit-dialog'
@@ -318,7 +318,7 @@ export function MemberList({ initialMembers, trainers = [] }: Props) {
               <SortableHead label="운동시간" sortKey="exercise_time" currentKey={sortKey} asc={sortAsc} onSort={handleSort} width="w-[80px]" />
               <SortableHead label="PT" sortKey="pt_trainer" currentKey={sortKey} asc={sortAsc} onSort={handleSort} width="w-[60px]" />
               <SortableHead label="PPT" sortKey="ppt_trainer" currentKey={sortKey} asc={sortAsc} onSort={handleSort} width="w-[60px]" />
-              <SortableHead label="진행상태" sortKey="progress" currentKey={sortKey} asc={sortAsc} onSort={handleSort} width="w-[84px]" />
+              <SortableHead label="상담카드" sortKey="progress" currentKey={sortKey} asc={sortAsc} onSort={handleSort} width="w-[96px]" />
               <TableHead className="text-center text-gray-700 w-[30px]" />
             </TableRow>
           </TableHeader>
@@ -357,8 +357,35 @@ export function MemberList({ initialMembers, trainers = [] }: Props) {
                           <span className="ml-1 inline-flex items-center rounded px-1 py-0.5 text-[10px] font-bold bg-red-100 text-red-600">중복</span>
                         )}
                       </TableCell>
-                      <TableCell className="text-center whitespace-nowrap">
-                        <OtCategoryBadge category={m.ot_category} />
+                      <TableCell className="text-center whitespace-nowrap" onClick={(e) => e.stopPropagation()}>
+                        <Select
+                          value={m.ot_category ?? 'none'}
+                          onValueChange={async (v) => {
+                            const newCat = v === 'none' ? null : v
+                            const oldCat = m.ot_category ?? '미설정'
+                            // 낙관적 UI: 즉시 화면 업데이트 후 서버 저장
+                            const idx = sortedMembers.findIndex((x) => x.id === m.id)
+                            if (idx >= 0) sortedMembers[idx] = { ...sortedMembers[idx], ot_category: newCat as typeof m.ot_category }
+                            await Promise.all([
+                              updateMember(m.id, { ot_category: newCat }),
+                              addChangeLog({ target_type: 'member', target_id: m.id, action: '종목 변경', old_value: String(oldCat), new_value: String(newCat ?? '미설정'), note: `${m.name} 회원` }),
+                            ])
+                            router.refresh()
+                          }}
+                        >
+                          <SelectTrigger className="h-7 text-xs border justify-center gap-1 px-1 rounded bg-white border-gray-200 text-gray-900 min-w-[70px]">
+                            <SelectValue>
+                              <OtCategoryBadge category={m.ot_category} />
+                            </SelectValue>
+                          </SelectTrigger>
+                          <SelectContent>
+                            <SelectItem value="헬스">헬스</SelectItem>
+                            <SelectItem value="필라">필라</SelectItem>
+                            <SelectItem value="헬스,필라">헬스,필라</SelectItem>
+                            <SelectItem value="등록후 환불">등록후 환불</SelectItem>
+                            <SelectItem value="none">미설정</SelectItem>
+                          </SelectContent>
+                        </Select>
                       </TableCell>
                       <TableCell className="text-center text-xs text-gray-900 whitespace-nowrap">{m.start_date ? new Date(m.start_date).toLocaleDateString('ko', { year: '2-digit', month: '2-digit', day: '2-digit' }).replace(/\.\s*$/, '') : ''}</TableCell>
                       <TableCell className="text-center text-xs text-gray-900 whitespace-nowrap">{m.exercise_time ?? ''}</TableCell>
@@ -461,9 +488,15 @@ export function MemberList({ initialMembers, trainers = [] }: Props) {
                         })() : '-'}
                       </TableCell>
                       <TableCell className="text-center whitespace-nowrap">
-                        <span className={`inline-flex items-center rounded px-2 py-0.5 text-[10px] font-semibold ${progressColor}`}>
-                          {progressLabel}
-                        </span>
+                        {m.card_summary ? (
+                          <span className="inline-flex items-center rounded px-2 py-0.5 text-[10px] font-semibold bg-emerald-100 text-emerald-700">
+                            상담완료
+                          </span>
+                        ) : (
+                          <span className="inline-flex items-center rounded px-2 py-0.5 text-[10px] font-semibold bg-gray-100 text-gray-500">
+                            미연결
+                          </span>
+                        )}
                         {m.assignment?.is_excluded && (
                           <button
                             type="button"

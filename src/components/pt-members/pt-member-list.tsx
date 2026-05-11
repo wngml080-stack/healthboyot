@@ -14,7 +14,7 @@ import { Plus, Search, Edit2, Trash2, Users, Upload, Download, Loader2 } from 'l
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
 import {
   createPtMember, updatePtMember, deletePtMembers, upsertPtMember,
-  backfillCurrentMonthPtSessions, carryOverPreviousMonthPayroll,
+  backfillCurrentMonthPtSessions, carryOverPreviousMonthPayroll, cleanupEmptyNamePtMembers,
   type PtMember, type PtMemberInput,
 } from '@/actions/pt-members'
 import { invalidatePtMembersCache } from '@/app/(dashboard)/pt-members/loader'
@@ -362,6 +362,8 @@ export function PtMemberList({ initialMembers, trainers, fixedTrainerId, isAdmin
   }
 
   const filtered = useMemo(() => members.filter((m) => {
+    // 회원명 비어있는 garbage row는 노출 안 함
+    if (!m.name || !m.name.trim()) return false
     if (search && !m.name.includes(search)) return false
     // 월 필터: 선택한 월에 해당하는 데이터만 (NULL은 레거시 — 현재 월에 표시)
     const memberMonth = m.data_month ?? todayMonth()
@@ -463,17 +465,27 @@ export function PtMemberList({ initialMembers, trainers, fixedTrainerId, isAdmin
           <input ref={fileRef} type="file" accept=".xlsx,.xls,.csv" className="hidden"
             onChange={(e) => { const f = e.target.files?.[0]; if (f) handleExcelUpload(f); e.target.value = '' }} />
           <Button size="sm" variant="outline" onClick={async () => {
-            if (!confirm(`전월 회원 명단을 ${selectedMonth} 페이롤로 이월합니다.\n\n• 전월 남은세션 > 0 → ${selectedMonth} row 생성/갱신\n• 전월 남은세션 ≤ 0 → 전월 row를 '만료'로 마킹, ${selectedMonth}에 잘못 들어간 row는 삭제\n• 이미 만료/완료된 회원 → 전월에 그대로, ${selectedMonth}에서는 제외\n\n계속하시겠습니까?`)) return
+            if (!confirm(`전월 회원 명단을 ${selectedMonth} 페이롤로 이월합니다.\n\n• 회원명 비어있는 garbage row는 자동 정리\n• 전월 남은세션 > 0 → ${selectedMonth} row 생성/갱신\n• 전월 남은세션 ≤ 0 → 전월 row를 '만료'로 마킹, ${selectedMonth}에 잘못 들어간 row는 삭제\n• 이미 만료/완료된 회원 → 전월에 그대로, ${selectedMonth}에서는 제외\n\n계속하시겠습니까?`)) return
+            // 1) 빈 이름 garbage 사전 정리
+            const cleanup = await cleanupEmptyNamePtMembers(trainerId)
+            const cleanupNote = 'success' in cleanup ? `\n• 빈 이름 row 정리 ${cleanup.deleted}건` : ''
+            // 2) carryover 실행
             const result = await carryOverPreviousMonthPayroll(trainerId, selectedMonth)
             if ('error' in result && result.error) {
               alert('가져오기 실패: ' + result.error)
             } else if ('success' in result) {
+              const errLine = result.errors && result.errors.length > 0
+                ? `\n• 저장 오류: ${result.errors.slice(0, 3).join(' | ')}`
+                : ''
               alert(
                 `[${result.prev} → ${result.target}] 이월 완료\n` +
                 `• 신규 ${result.created}명 / 갱신 ${result.updated}명\n` +
                 `• 만료 처리 ${result.expired}명 (${result.prev}에 남음)\n` +
-                `• 스킵 ${result.skipped}명 (이미 만료/완료)\n` +
-                `• ${result.target}에서 제거 ${result.removedFromTarget}명 (만료자가 잘못 들어가 있던 경우)`
+                `• 스킵 ${result.skipped}명 (이미 만료/완료 또는 이름 빈 row)\n` +
+                `• ${result.target}에서 제거 ${result.removedFromTarget}명 (만료자가 잘못 들어가 있던 경우)\n` +
+                `• 전월 빈 이름 row 청소 ${result.cleanedEmptyName}건` +
+                cleanupNote +
+                errLine
               )
               invalidatePtMembersCache()
               setMembers(await fetchPtMembersClient(trainerId, selectedMonth))

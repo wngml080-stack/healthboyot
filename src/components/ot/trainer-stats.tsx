@@ -77,23 +77,14 @@ function useExcludedTargets(key: string) {
 }
 
 export function TrainerStats({ assignments, trainerName, programs, registrations: initialRegistrations = [], trainerId }: Props) {
-  // 서버(UTC)와 클라이언트(KST) 시간 불일치로 hydration mismatch가 나면 안 되므로
-  // 안정 placeholder로 첫 렌더 통일하고 mount 후 실제 시간 사용
-  const STABLE = new Date('2026-01-05T00:00:00Z')
-  const [now, setNow] = useState<Date>(STABLE)
-  useEffect(() => { setNow(new Date()) }, [])
+  const [now] = useState(() => new Date())
   const captureRef = useRef<HTMLDivElement>(null)
   const [capturing, setCapturing] = useState(false)
   const [viewMode, setViewMode] = useState<'monthly' | 'weekly'>('weekly')
 
-  // 월별 상태 — 첫 렌더는 placeholder 기반 → mount 후 effect에서 실제 월로 동기화
-  const [year, setYear] = useState(() => STABLE.getFullYear())
-  const [month, setMonth] = useState(() => STABLE.getMonth() + 1)
-  useEffect(() => {
-    const d = new Date()
-    setYear(d.getFullYear())
-    setMonth(d.getMonth() + 1)
-  }, [])
+  // 월별 상태
+  const [year, setYear] = useState(() => now.getFullYear())
+  const [month, setMonth] = useState(() => now.getMonth() + 1)
   const daysInMonth = getDaysInMonth(year, month)
   const todayDate = now.getDate()
   const isCurrentMonth = now.getFullYear() === year && now.getMonth() + 1 === month

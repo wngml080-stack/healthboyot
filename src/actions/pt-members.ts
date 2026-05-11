@@ -336,11 +336,21 @@ export async function carryOverPreviousMonthPayroll(trainerId: string, targetMon
   const existingByName = new Map((existingTarget ?? []).map((r) => [r.name, r.id]))
 
   let created = 0, updated = 0, expired = 0, skipped = 0, removedFromTarget = 0
+  const skippedEmptyName: Array<{ id: string }> = []
+  const insertErrors: string[] = []
   for (const m of prevMembers) {
+    // 이름이 비어있는 row는 carryover 대상에서 제외 (방어적)
+    const memberName = (m.name ?? '').trim()
+    if (!memberName) {
+      skippedEmptyName.push({ id: m.id })
+      skipped++
+      continue
+    }
+
     // 이미 전월에 만료/완료된 회원은 이월 대상 제외
     // → 당월에 row가 잘못 들어가 있다면 삭제 (5월에 4월 만료자가 보이지 않게)
     if (m.status === '만료' || m.status === '완료') {
-      const stale = existingByName.get(m.name)
+      const stale = existingByName.get(memberName)
       if (stale) {
         await supabase.from('pt_members').delete().eq('id', stale)
         removedFromTarget++
@@ -359,7 +369,7 @@ export async function carryOverPreviousMonthPayroll(trainerId: string, targetMon
         .from('pt_members')
         .update({ status: '만료', updated_at: new Date().toISOString() })
         .eq('id', m.id)
-      const stale = existingByName.get(m.name)
+      const stale = existingByName.get(memberName)
       if (stale) {
         await supabase.from('pt_members').delete().eq('id', stale)
         removedFromTarget++
@@ -368,17 +378,18 @@ export async function carryOverPreviousMonthPayroll(trainerId: string, targetMon
       continue
     }
 
-    const existingId = existingByName.get(m.name)
+    const existingId = existingByName.get(memberName)
     if (existingId) {
       const { error } = await supabase
         .from('pt_members')
         .update({ previous_remaining: prevRemaining, status: '진행중', updated_at: new Date().toISOString() })
         .eq('id', existingId)
       if (!error) updated++
+      else insertErrors.push(`${memberName}: ${error.message}`)
     } else {
       const row = buildRow({
         trainer_id: trainerId,
-        name: m.name,
+        name: memberName,
         status: '진행중',
         data_month: target,
         previous_remaining: prevRemaining,
@@ -386,9 +397,21 @@ export async function carryOverPreviousMonthPayroll(trainerId: string, targetMon
       })
       const { error } = await supabase.from('pt_members').insert(row)
       if (!error) created++
+      else insertErrors.push(`${memberName}: ${error.message}`)
     }
   }
-  return { success: true as const, prev, target, created, updated, expired, skipped, removedFromTarget }
+
+  // 이름 비어있는 전월 row 정리 — 다음 carryover에서도 같은 garbage 안 만들도록 즉시 삭제
+  if (skippedEmptyName.length > 0) {
+    await supabase.from('pt_members').delete().in('id', skippedEmptyName.map((x) => x.id))
+  }
+  return {
+    success: true as const,
+    prev, target,
+    created, updated, expired, skipped, removedFromTarget,
+    cleanedEmptyName: skippedEmptyName.length,
+    errors: insertErrors,
+  }
 }
 
 // 5월 1일 이후 PT/PPT 스케줄을 집계해 각 PT 회원의 sessions_in/sessions_out에 반영.
@@ -442,6 +465,20 @@ export async function backfillPtSessionsFromMay(trainerId: string) {
     if (!error) updated++
   }
   return { updated, skipped }
+}
+
+// 빈 이름 row 일괄 삭제 (carryover 이전 garbage 정리용)
+export async function cleanupEmptyNamePtMembers(trainerId?: string) {
+  const supabase = await createClient()
+  let q = supabase.from('pt_members').select('id, name').or('name.is.null,name.eq.')
+  if (trainerId) q = q.eq('trainer_id', trainerId)
+  const { data, error } = await q
+  if (error) return { error: error.message }
+  if (!data || data.length === 0) return { success: true as const, deleted: 0 }
+  const ids = data.map((r) => r.id)
+  const { error: delErr } = await supabase.from('pt_members').delete().in('id', ids)
+  if (delErr) return { error: delErr.message }
+  return { success: true as const, deleted: ids.length }
 }
 
 export async function getTrainersForPt(): Promise<{ id: string; name: string }[]> {

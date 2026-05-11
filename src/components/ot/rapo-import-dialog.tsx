@@ -34,7 +34,11 @@ export function RapoImportDialog({ open, onClose, trainerId, year, month, onImpo
   const [preview, setPreview] = useState<string | null>(null)
   const [schedules, setSchedules] = useState<ReviewItem[]>([])
   const [error, setError] = useState<string | null>(null)
-  const [importResult, setImportResult] = useState({ success: 0, skipped: 0 })
+  const [importResult, setImportResult] = useState<{
+    success: number
+    skipped: number
+    errors: { name: string; date: string; time: string; message: string }[]
+  }>({ success: 0, skipped: 0, errors: [] })
   const fileRef = useRef<HTMLInputElement>(null)
   const fileDataRef = useRef<File | null>(null)
 
@@ -43,13 +47,15 @@ export function RapoImportDialog({ open, onClose, trainerId, year, month, onImpo
     setPreview(null)
     setSchedules([])
     setError(null)
-    setImportResult({ success: 0, skipped: 0 })
+    setImportResult({ success: 0, skipped: 0, errors: [] })
     fileDataRef.current = null
   }
 
   const handleClose = () => {
+    const shouldRefresh = importResult.success > 0
     reset()
     onClose()
+    if (shouldRefresh) onImported()
   }
 
   const handleFile = (file: File) => {
@@ -143,6 +149,7 @@ export function RapoImportDialog({ open, onClose, trainerId, year, month, onImpo
     const supabase = createClient()
     let success = 0
     let skipped = 0
+    const errors: { name: string; date: string; time: string; message: string }[] = []
 
     const selected = schedules.filter((s) => s.selected)
 
@@ -159,14 +166,15 @@ export function RapoImportDialog({ open, onClose, trainerId, year, month, onImpo
       })
       if (error) {
         skipped++
+        errors.push({ name: s.name, date: dateStr, time: s.time, message: error.message })
+        console.error('[RapoImport INSERT 실패]', { name: s.name, date: dateStr, time: s.time }, error)
       } else {
         success++
       }
     }
 
-    setImportResult({ success, skipped })
+    setImportResult({ success, skipped, errors })
     setStep('done')
-    if (success > 0) onImported()
   }
 
   const toggleAll = (val: boolean) => {
@@ -348,18 +356,56 @@ export function RapoImportDialog({ open, onClose, trainerId, year, month, onImpo
 
         {/* Step 5: Done */}
         {step === 'done' && (
-          <div className="space-y-4 text-center py-6">
-            <div className="mx-auto w-12 h-12 rounded-full bg-green-100 flex items-center justify-center">
-              <Check className="h-6 w-6 text-green-600" />
-            </div>
-            <div>
-              <p className="text-lg font-bold text-gray-900">가져오기 완료!</p>
+          <div className="space-y-4 py-4">
+            <div className="text-center">
+              <div className={`mx-auto w-12 h-12 rounded-full flex items-center justify-center ${
+                importResult.skipped > 0 ? 'bg-amber-100' : 'bg-green-100'
+              }`}>
+                {importResult.skipped > 0
+                  ? <AlertTriangle className="h-6 w-6 text-amber-600" />
+                  : <Check className="h-6 w-6 text-green-600" />}
+              </div>
+              <p className="text-lg font-bold text-gray-900 mt-3">가져오기 완료</p>
               <p className="text-sm text-gray-500 mt-1">
                 {importResult.success}개 등록 완료
                 {importResult.skipped > 0 && ` · ${importResult.skipped}개 실패`}
               </p>
             </div>
-            <Button onClick={handleClose} className="bg-blue-600 hover:bg-blue-700 text-white">
+
+            {importResult.errors.length > 0 && (
+              <div className="rounded-lg border border-red-200 bg-red-50 p-3 space-y-2">
+                <div className="flex items-center justify-between">
+                  <p className="text-xs font-bold text-red-700">실패 {importResult.errors.length}건 상세</p>
+                  <button
+                    onClick={() => {
+                      const text = importResult.errors
+                        .map((e) => `${e.name} | ${e.date} ${e.time} | ${e.message}`)
+                        .join('\n')
+                      navigator.clipboard.writeText(text)
+                    }}
+                    className="text-[10px] text-red-600 hover:underline"
+                  >
+                    복사
+                  </button>
+                </div>
+                <div className="max-h-[40vh] overflow-y-auto space-y-1.5">
+                  {importResult.errors.map((e, i) => (
+                    <div key={i} className="rounded bg-white border border-red-100 px-2 py-1.5">
+                      <div className="flex items-center justify-between">
+                        <span className="text-xs font-bold text-gray-900">{e.name}</span>
+                        <span className="text-[10px] text-gray-500">{e.date} {e.time}</span>
+                      </div>
+                      <p className="text-[11px] text-red-600 mt-0.5 break-words">{e.message}</p>
+                    </div>
+                  ))}
+                </div>
+                <p className="text-[10px] text-red-500/80">
+                  콘솔(F12)에서도 [RapoImport INSERT 실패] 키워드로 확인 가능합니다
+                </p>
+              </div>
+            )}
+
+            <Button onClick={handleClose} className="w-full bg-blue-600 hover:bg-blue-700 text-white">
               닫기
             </Button>
           </div>

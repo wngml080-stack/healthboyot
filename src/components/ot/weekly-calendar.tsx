@@ -742,16 +742,11 @@ export function WeeklyCalendar({ assignments, trainerId, profile, workStartTime,
     return (slot >= workStartSlot && slot < workEndSlot) ? 'IN' : 'OUT'
   }, [hasWorkHours, workStartSlot, workEndSlot])
 
-  // 서버(UTC)와 클라이언트(KST)의 시간 불일치로 hydration mismatch가 나면 React 18 production은
-  // 전체 트리를 unmount → global-error 가 떠 버린다. 첫 렌더는 안정 placeholder로 통일하고,
-  // mount 후에만 진짜 now 를 사용한다.
-  const [now, setNow] = useState<Date | null>(null)
-  useEffect(() => { setNow(new Date()) }, [])
-  // SSR/첫 렌더에서 사용할 stable placeholder (서버/클라 동일 결과 보장 — 2026-01-05는 월요일)
-  const stableNow = now ?? new Date('2026-01-05T00:00:00Z')
-
-  const baseWeekStart = useMemo(() => startOfWeek(stableNow, { weekStartsOn: 1 }), [stableNow])
-  const weekStart = useMemo(() => addDays(baseWeekStart, weekOffset * 7), [baseWeekStart, weekOffset])
+  // 원래 코드로 복원 — hydration fix가 #310/#419 유발 가능성 제거 검증
+  const now = new Date()
+  const stableNow = now
+  const baseWeekStart = startOfWeek(now, { weekStartsOn: 1 })
+  const weekStart = useMemo(() => addDays(baseWeekStart, weekOffset * 7), [weekOffset])
   const weekStartStr = format(weekStart, 'yyyy-MM-dd')
   const days = useMemo(() => Array.from({ length: 7 }, (_, i) => addDays(weekStart, i)), [weekStart])
   const weekNum = Math.ceil(days[0].getDate() / 7)
@@ -759,7 +754,7 @@ export function WeeklyCalendar({ assignments, trainerId, profile, workStartTime,
   // 모바일: 오늘 날짜 컬럼으로 자동 스크롤
   useEffect(() => {
     const container = calendarScrollRef.current
-    if (!container || !now) return
+    if (!container) return
     const todayIdx = days.findIndex((d) => isSameDay(d, now))
     if (todayIdx <= 0) return
     const colWidth = 90
@@ -838,9 +833,6 @@ export function WeeklyCalendar({ assignments, trainerId, profile, workStartTime,
   }, [trainerId, weekStartStr, viewMode, monthOffset, weekStart])
 
   useEffect(() => {
-    // 첫 렌더(SSR placeholder 시점) — now가 null이면 weekStartStr이 placeholder("2026-01-05")라
-    // 과거 주차 fetch가 발화되어 정상 데이터를 덮어쓰는 레이스를 만든다. now가 set된 뒤에만 fetch.
-    if (!now) return
     scheduleRetryRef.current = 0
     fetchSchedules()
     // 탭 복귀 시 스케줄이 비어있으면 재조회 (ref로 최신값 참조)
@@ -1761,7 +1753,7 @@ export function WeeklyCalendar({ assignments, trainerId, profile, workStartTime,
           <div className="flex border-b border-gray-200 sticky top-0 bg-gray-900 z-10">
             <div className={`${isMobile ? 'w-8' : 'w-14'} shrink-0`} />
             {days.map((day, i) => {
-              const isToday = !!now && isSameDay(day, now)
+              const isToday = isSameDay(day, now)
               const dateStr = format(day, 'yyyy-MM-dd')
               const holidayName = KOREAN_HOLIDAYS[dateStr]
               const isWeekend = i >= 5
@@ -1793,7 +1785,7 @@ export function WeeklyCalendar({ assignments, trainerId, profile, workStartTime,
 
             {/* 날짜 컬럼 */}
             {days.map((day, dayIdx) => {
-              const isToday = !!now && isSameDay(day, now)
+              const isToday = isSameDay(day, now)
               const daySchedules = getSchedulesForDay(day)
 
               return (

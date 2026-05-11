@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useCallback, useTransition, useMemo } from 'react'
+import { useState, useCallback, useTransition, useMemo, useEffect, useRef } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
 import { cn } from '@/lib/utils'
 import { Users, CalendarDays, BarChart3, Loader2, Dumbbell } from 'lucide-react'
@@ -68,6 +68,26 @@ export function TrainerDetailTabs({
   }, [])
   const [ptData, setPtData] = useState<{ members: PtMember[]; loaded: boolean }>({ members: [], loaded: false })
   const [ptLoading, setPtLoading] = useState(false)
+
+  // trainerId가 바뀌면 캐시된 PT/통계 데이터 무효화 → 새 트레이너 데이터 강제 재로딩
+  // (원래 같은 컴포넌트 인스턴스가 trainerId만 다르게 받아서 옛 데이터 그대로 보여주던 버그)
+  const prevTrainerIdRef = useRef(trainerId)
+  useEffect(() => {
+    if (prevTrainerIdRef.current === trainerId) return
+    prevTrainerIdRef.current = trainerId
+    setPtData({ members: [], loaded: false })
+    setStatsData((prev) => ({ ...prev, loaded: false }))
+
+    // 현재 활성 탭이 pt-members면 즉시 재로딩
+    if (activeTab === 'pt-members' && trainerId !== 'unassigned' && trainerId !== 'excluded') {
+      setPtLoading(true)
+      fetchPtMembersClient(trainerId, ptInitialMonth).then((members) => {
+        setPtData({ members, loaded: true })
+      }).catch((err) => {
+        console.error('[TrainerDetailTabs] PT 회원 재로딩 실패:', err)
+      }).finally(() => setPtLoading(false))
+    }
+  }, [trainerId, activeTab, ptInitialMonth])
 
   const switchTab = useCallback((tabKey: string) => {
     if (tabKey === activeTab) return
@@ -197,6 +217,7 @@ export function TrainerDetailTabs({
               </div>
             ) : (
               <PtMemberList
+                key={trainerId}
                 initialMembers={ptData.members}
                 trainers={[{ id: trainerId, name: trainerName }]}
                 fixedTrainerId={trainerId}

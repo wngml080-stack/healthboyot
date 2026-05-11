@@ -6,6 +6,7 @@ const CATEGORY_COLORS: Record<string, string> = {
   '헬스,필라': 'bg-emerald-500 text-white',
   '필라,헬스': 'bg-emerald-500 text-white',
   'PT등록': 'bg-red-500 text-white',
+  '등록후 환불': 'bg-rose-600 text-white',
   '거부': 'bg-gray-400 text-white',
 }
 
