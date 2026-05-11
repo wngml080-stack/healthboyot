@@ -4,6 +4,7 @@ import { isDemoMode } from '@/lib/demo'
 import { DEMO_OT_ASSIGNMENTS } from '@/lib/demo-data'
 import { toKstShortStr, toKstDateStr, toKstTimeStr } from '@/lib/kst'
 import { createClient } from '@/lib/supabase/server'
+import { isUuid } from '@/lib/validators'
 import type { OtAssignmentWithDetails, OtStatus, SalesStatus } from '@/types'
 
 /** updateOtAssignment에 전달 가능한 필드 화이트리스트 */
@@ -69,8 +70,12 @@ export async function getOtAssignments(params?: {
   if (params?.trainerId) {
     if (params.trainerId === 'unassigned') {
       query = query.is('pt_trainer_id', null).is('ppt_trainer_id', null)
-    } else {
+    } else if (params.trainerId === 'excluded') {
+      query = query.eq('is_excluded', true)
+    } else if (isUuid(params.trainerId)) {
       query = query.or(`pt_trainer_id.eq.${params.trainerId},ppt_trainer_id.eq.${params.trainerId}`)
+    } else {
+      return []
     }
   }
 

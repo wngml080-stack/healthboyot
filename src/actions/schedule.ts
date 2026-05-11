@@ -1,6 +1,7 @@
 'use server'
 
 import { createClient } from '@/lib/supabase/server'
+import { isUuid } from '@/lib/validators'
 
 export interface TrainerSchedule {
   id: string
@@ -25,6 +26,8 @@ export interface TrainerScheduleSlot {
 }
 
 export async function getTrainerScheduleSlots(trainerId: string): Promise<TrainerScheduleSlot[]> {
+  if (!isUuid(trainerId)) return []
+
   const supabase = await createClient()
   // 오늘 기준 ±2주만 조회 (충돌 검사용이라 과거 전체가 불필요)
   const now = new Date()
@@ -42,6 +45,8 @@ export async function getTrainerScheduleSlots(trainerId: string): Promise<Traine
 }
 
 export async function getTrainerSchedules(trainerId: string, weekStart: string, weekEnd: string): Promise<TrainerSchedule[]> {
+  if (!isUuid(trainerId)) return []
+
   const supabase = await createClient()
 
   const { data, error } = await supabase
@@ -66,6 +71,8 @@ export async function getTrainerActivePtMembers(trainerId: string): Promise<{
   completed_sessions: number
   data_month: string | null
 }[]> {
+  if (!isUuid(trainerId)) return []
+
   const supabase = await createClient()
   const { data, error } = await supabase
     .from('pt_members')
@@ -86,6 +93,8 @@ export async function getTrainerPtClassSchedules(trainerId: string): Promise<{
   scheduled_date: string
   start_time: string
 }[]> {
+  if (!isUuid(trainerId)) return []
+
   const supabase = await createClient()
   const { data, error } = await supabase
     .from('trainer_schedules')

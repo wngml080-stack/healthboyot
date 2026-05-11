@@ -1,6 +1,7 @@
 'use server'
 
 import { createClient } from '@/lib/supabase/server'
+import { isUuid } from '@/lib/validators'
 import type { OtRegistration, OtRegistrationWithTrainer } from '@/types'
 
 // 트레이너가 인정건수 제출
@@ -52,6 +53,8 @@ export async function getOtRegistrations(): Promise<OtRegistrationWithTrainer[]>
 
 // 트레이너별 인정건수 (통계용)
 export async function getOtRegistrationsByTrainer(trainerId: string): Promise<OtRegistration[]> {
+  if (!isUuid(trainerId)) return []
+
   const supabase = await createClient()
 
   const { data, error } = await supabase

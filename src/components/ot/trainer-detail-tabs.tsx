@@ -53,6 +53,7 @@ export function TrainerDetailTabs({
   const searchParams = useSearchParams()
   const [activeTab, setActiveTab] = useState(initialTab)
   const [, startTransition] = useTransition()
+  const isPseudoTrainer = trainerId === 'unassigned' || trainerId === 'excluded'
 
   // 통계 데이터 — 처음 stats 탭 열 때 로딩
   const [statsData, setStatsData] = useState<{
@@ -84,7 +85,7 @@ export function TrainerDetailTabs({
     setStatsData((prev) => ({ ...prev, loaded: false }))
 
     // 현재 활성 탭이 pt-members면 즉시 재로딩
-    if (activeTab === 'pt-members' && trainerId !== 'unassigned' && trainerId !== 'excluded') {
+    if (activeTab === 'pt-members' && !isPseudoTrainer) {
       setPtLoading(true)
       fetchPtMembersClient(trainerId, ptInitialMonth).then((members) => {
         setPtData({ members, loaded: true })
@@ -92,7 +93,7 @@ export function TrainerDetailTabs({
         console.error('[TrainerDetailTabs] PT 회원 재로딩 실패:', err)
       }).finally(() => setPtLoading(false))
     }
-  }, [trainerId, activeTab, ptInitialMonth])
+  }, [trainerId, activeTab, ptInitialMonth, isPseudoTrainer])
 
   const switchTab = useCallback((tabKey: string) => {
     if (tabKey === activeTab) return
@@ -108,13 +109,19 @@ export function TrainerDetailTabs({
       setStatsLoading(true)
       Promise.all([
         getAllOtPrograms({ includeAll: true }),
-        trainerId !== 'unassigned' && trainerId !== 'excluded'
+        !isPseudoTrainer
           ? getOtRegistrationsByTrainer(trainerId)
           : Promise.resolve([]),
       ]).then(([programs, registrations]) => {
         setStatsData({ programs, registrations: registrations as OtRegistration[], loaded: true })
         setStatsLoading(false)
       })
+    }
+
+    if (tabKey === 'pt-members' && isPseudoTrainer) {
+      setPtData({ members: [], loaded: true })
+      setPtLoading(false)
+      return
     }
 
     if (tabKey === 'pt-members' && !ptData.loaded) {
@@ -127,7 +134,7 @@ export function TrainerDetailTabs({
         setPtLoading(false)
       })
     }
-  }, [activeTab, searchParams, router, startTransition, statsData.loaded, trainerId, ptData.loaded, ptInitialMonth])
+  }, [activeTab, searchParams, router, startTransition, statsData.loaded, trainerId, ptData.loaded, ptInitialMonth, isPseudoTrainer])
 
   // 관리자: 트레이너 변경 시 페이지 이동
   const switchTrainer = useCallback((newTrainerId: string) => {
@@ -215,7 +222,11 @@ export function TrainerDetailTabs({
           )}
 
           {activeTab === 'pt-members' && (
-            ptLoading ? (
+            isPseudoTrainer ? (
+              <div className="rounded-lg border border-white/10 bg-white/5 p-6 text-center text-sm text-gray-400">
+                {trainerName}에는 PT 회원 목록이 없습니다.
+              </div>
+            ) : ptLoading ? (
               <div className="flex items-center justify-center py-20 text-gray-400 gap-2">
                 <Loader2 className="h-5 w-5 animate-spin" />
                 <span className="text-sm">PT 회원 로드 중...</span>

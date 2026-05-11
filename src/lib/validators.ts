@@ -1,5 +1,9 @@
 import { z } from 'zod'
 
+export function isUuid(value: string | null | undefined): value is string {
+  return !!value && z.string().uuid().safeParse(value).success
+}
+
 // ── 회원 ──
 export const memberSchema = z.object({
   name: z.string().min(1, '이름을 입력해주세요'),

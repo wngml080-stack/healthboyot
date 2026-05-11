@@ -1,6 +1,7 @@
 'use server'
 
 import { createClient } from '@/lib/supabase/server'
+import { isUuid } from '@/lib/validators'
 
 export interface PtMember {
   id: string
@@ -105,6 +106,8 @@ function buildRow(values: PtMemberInput) {
 }
 
 export async function getPtMembers(trainerId?: string, dataMonth?: string): Promise<PtMember[]> {
+  if (trainerId && !isUuid(trainerId)) return []
+
   const supabase = await createClient()
   let query = supabase
     .from('pt_members')
@@ -211,6 +214,7 @@ export async function adjustPtMemberSessions(
   trainerId: string, name: string, month: string,
   category: PtSessionCategory, delta: number,
 ) {
+  if (!isUuid(trainerId)) return { skipped: true as const }
   if (!name.trim() || !month) return { skipped: true as const }
   const supabase = await createClient()
   const { data: row } = await supabase
@@ -248,6 +252,10 @@ export async function adjustPtMemberSessions(
 // 기존 sessions_in/out/gp/bachal 값을 덮어씀 — 스케줄을 source of truth로
 // 매칭 row 없는 회원은 skippedNames에 담아 반환 → UI에서 누구인지 표시
 export async function backfillCurrentMonthPtSessions(trainerId?: string) {
+  if (trainerId && !isUuid(trainerId)) {
+    return { success: true as const, month: currentDataMonth(), updated: 0, skippedNames: [] as string[] }
+  }
+
   const supabase = await createClient()
   const month = currentDataMonth() // 'YYYY-MM'
   const fromDate = `${month}-01`
@@ -432,6 +440,8 @@ export async function carryOverPreviousMonthPayroll(trainerId: string, targetMon
 // 5월 1일 이후 PT/PPT 스케줄을 집계해 각 PT 회원의 sessions_in/sessions_out에 반영.
 // 바챌은 별도 카테고리(IN/OUT 무관)이므로 집계에서 제외.
 export async function backfillPtSessionsFromMay(trainerId: string) {
+  if (!isUuid(trainerId)) return { updated: 0, skipped: 0 }
+
   const supabase = await createClient()
   const year = new Date().getFullYear()
   const fromDate = `${year}-05-01`
@@ -484,6 +494,8 @@ export async function backfillPtSessionsFromMay(trainerId: string) {
 
 // 빈 이름 row 일괄 삭제 (carryover 이전 garbage 정리용)
 export async function cleanupEmptyNamePtMembers(trainerId?: string) {
+  if (trainerId && !isUuid(trainerId)) return { success: true as const, deleted: 0 }
+
   const supabase = await createClient()
   let q = supabase.from('pt_members').select('id, name').or('name.is.null,name.eq.')
   if (trainerId) q = q.eq('trainer_id', trainerId)
