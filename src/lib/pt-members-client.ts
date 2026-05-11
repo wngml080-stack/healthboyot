@@ -1,43 +1,16 @@
 'use client'
 
-import { createClient, waitForSupabaseReady } from '@/lib/supabase/client'
+// 과거에는 브라우저 supabase 클라이언트로 직접 쿼리했으나,
+// createBrowserClient 인스턴스마다 별도로 세션을 비동기 복원해 첫 query가 anon으로
+// 나가 RLS가 빈 결과를 반환하는 race가 빈번했음. (특히 hard refresh 시)
+// → 서버 액션으로 우회. 서버 측 supabase 클라이언트는 cookie를 동기 조회해 안전함.
+import { getPtMembers, getTrainersForPt } from '@/actions/pt-members'
 import type { PtMember } from '@/actions/pt-members'
 
 export async function fetchPtMembersClient(trainerId?: string, dataMonth?: string): Promise<PtMember[]> {
-  // 세션 복원 완료 보장 — 안 그러면 첫 호출이 anon으로 나가 RLS가 빈 결과 반환
-  await waitForSupabaseReady()
-  const supabase = createClient()
-  let query = supabase
-    .from('pt_members')
-    .select('*, profiles!pt_members_trainer_id_fkey(name)')
-    .order('status', { ascending: true })
-    .order('name', { ascending: true })
-
-  if (trainerId) query = query.eq('trainer_id', trainerId)
-  if (dataMonth) query = query.eq('data_month', dataMonth)
-
-  const { data, error } = await query
-  if (error) throw new Error(error.message)
-
-  return (data ?? []).map((d: Record<string, unknown>) => {
-    const profile = d.profiles as { name: string } | null
-    const { profiles: _profiles, ...rest } = d
-    void _profiles
-    return { ...rest, trainer_name: profile?.name ?? '' } as unknown as PtMember
-  })
+  return getPtMembers(trainerId, dataMonth)
 }
 
 export async function fetchTrainersForPtClient(): Promise<{ id: string; name: string }[]> {
-  await waitForSupabaseReady()
-  const supabase = createClient()
-  const { data, error } = await supabase
-    .from('profiles')
-    .select('id, name')
-    .eq('is_approved', true)
-    .eq('has_folder', true)
-    .order('folder_order', { ascending: true })
-    .order('name', { ascending: true })
-
-  if (error) throw new Error(error.message)
-  return (data ?? []) as { id: string; name: string }[]
+  return getTrainersForPt()
 }

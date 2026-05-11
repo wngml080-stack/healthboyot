@@ -15,6 +15,7 @@ import { ChevronLeft, ChevronRight, X, Search, Copy, AlertCircle, RefreshCw } fr
 import { toKstShortStr } from '@/lib/kst'
 import { createClient, waitForSupabaseReady } from '@/lib/supabase/client'
 import { updateOtAssignment, upsertOtSession, moveOtSchedule, deleteOtSession } from '@/actions/ot'
+import { getTrainerSchedules, getTrainerActivePtMembers, getTrainerPtClassSchedules } from '@/actions/schedule'
 // import { OtStatusBadge } from './ot-status-badge'
 import type { OtAssignmentWithDetails, SalesStatus, Profile, OtProgram } from '@/types'
 import dynamic from 'next/dynamic'
@@ -343,15 +344,9 @@ export function WeeklyCalendar({ assignments, trainerId, profile, workStartTime,
     }
     let cancelled = false
     void (async () => {
-      await waitForSupabaseReady()
-      const { data } = await supabaseRef.current
-        .from('pt_members')
-        .select('id, name, phone, total_sessions, completed_sessions, data_month')
-        .eq('trainer_id', trainerId)
-        .eq('status', '진행중')
-        .order('data_month', { ascending: false })
-        .order('name')
-      if (!cancelled) setPtMembers((data ?? []) as PtMemberLite[])
+      // 서버 액션 사용 — browser 세션 race 회피
+      const data = await getTrainerActivePtMembers(trainerId)
+      if (!cancelled) setPtMembers(data as PtMemberLite[])
     })()
     return () => { cancelled = true }
   }, [trainerId])
@@ -385,12 +380,8 @@ export function WeeklyCalendar({ assignments, trainerId, profile, workStartTime,
     }
     let cancelled = false
     void (async () => {
-      await waitForSupabaseReady()
-      const { data } = await supabaseRef.current
-        .from('trainer_schedules')
-        .select('id, member_name, schedule_type, scheduled_date, start_time')
-        .eq('trainer_id', trainerId)
-        .in('schedule_type', ['PT', 'PPT', '바챌'])
+      // 서버 액션 사용 — browser 세션 race 회피
+      const data = await getTrainerPtClassSchedules(trainerId)
       if (cancelled || !data) return
       // (이름 + YYYY-MM)으로 그룹핑 → 월 단위 회차 reset
       const groups = new Map<string, typeof data>()
@@ -808,8 +799,6 @@ export function WeeklyCalendar({ assignments, trainerId, profile, workStartTime,
     setLoading(true)
     setScheduleLoadError(null)
     try {
-      // 세션 복원 완료 보장 — 첫 query가 anon으로 나가 RLS가 빈 결과 돌려주는 race 차단
-      await waitForSupabaseReady()
       let ws: string, we: string
       if (viewMode === 'month') {
         const base = new Date()
@@ -821,22 +810,16 @@ export function WeeklyCalendar({ assignments, trainerId, profile, workStartTime,
         ws = weekStartStr
         we = format(addDays(weekStart, 6), 'yyyy-MM-dd')
       }
-      const { data, error } = await supabaseRef.current
-        .from('trainer_schedules')
-        .select('*')
-        .eq('trainer_id', trainerId)
-        .gte('scheduled_date', ws)
-        .lte('scheduled_date', we)
-        .order('start_time')
+      // 서버 액션 사용 — 서버측 supabase 클라이언트는 cookie를 동기 조회해
+      // browser GoTrueClient의 세션 비동기 복원 race를 회피한다.
+      const rows = await getTrainerSchedules(trainerId, ws, we)
       // 더 새로운 fetch가 시작됐으면 결과 무시 (placeholder 주차 → 현재 주차 전환 시 stale fetch 차단)
       if (gen !== fetchGenRef.current) return
-      if (error) throw new Error(error.message)
-      // PostgreSQL time 컬럼은 "HH:MM:SS" 형식으로 반환됨 → "HH:MM"으로 정규화해서
-      // 수정 다이얼로그의 슬롯 매칭/<input type="time"> 동작과 일관되게 함
-      const normalized = ((data ?? []) as ScheduleItem[]).map((d) => ({
+      // PostgreSQL time 컬럼은 "HH:MM:SS" 형식으로 반환됨 → "HH:MM"으로 정규화
+      const normalized = rows.map((d) => ({
         ...d,
         start_time: typeof d.start_time === 'string' ? d.start_time.slice(0, 5) : d.start_time,
-      }))
+      })) as unknown as ScheduleItem[]
       setSchedules(normalized)
       scheduleRetryRef.current = 0
     } catch (err) {

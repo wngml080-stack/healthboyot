@@ -7,6 +7,7 @@ export interface TrainerSchedule {
   trainer_id: string
   schedule_type: string
   member_name: string
+  member_id: string | null
   ot_session_id: string | null
   scheduled_date: string
   start_time: string
@@ -54,6 +55,45 @@ export async function getTrainerSchedules(trainerId: string, weekStart: string, 
 
   if (error) return []
   return data as TrainerSchedule[]
+}
+
+// 트레이너의 모든 진행중 PT 회원 — 월별 분리 row 전부 (캘린더 블록의 라이브 회차 lookup용)
+export async function getTrainerActivePtMembers(trainerId: string): Promise<{
+  id: string
+  name: string
+  phone: string | null
+  total_sessions: number
+  completed_sessions: number
+  data_month: string | null
+}[]> {
+  const supabase = await createClient()
+  const { data, error } = await supabase
+    .from('pt_members')
+    .select('id, name, phone, total_sessions, completed_sessions, data_month')
+    .eq('trainer_id', trainerId)
+    .eq('status', '진행중')
+    .order('data_month', { ascending: false })
+    .order('name')
+  if (error) { console.error('getTrainerActivePtMembers error:', error.message); return [] }
+  return data ?? []
+}
+
+// 트레이너의 모든 PT/PPT/바챌 스케줄 — 회차 번호 자동 부여용 (날짜 무제한)
+export async function getTrainerPtClassSchedules(trainerId: string): Promise<{
+  id: string
+  member_name: string
+  schedule_type: string
+  scheduled_date: string
+  start_time: string
+}[]> {
+  const supabase = await createClient()
+  const { data, error } = await supabase
+    .from('trainer_schedules')
+    .select('id, member_name, schedule_type, scheduled_date, start_time')
+    .eq('trainer_id', trainerId)
+    .in('schedule_type', ['PT', 'PPT', '바챌'])
+  if (error) { console.error('getTrainerPtClassSchedules error:', error.message); return [] }
+  return data ?? []
 }
 
 export async function createSchedule(values: {

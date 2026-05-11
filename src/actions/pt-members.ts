@@ -125,6 +125,21 @@ export async function getPtMembers(trainerId?: string, dataMonth?: string): Prom
   })
 }
 
+// PT 회원 페이지의 트레이너 필터용 — 폴더 있는 승인된 트레이너만
+export async function getTrainersForPt(): Promise<{ id: string; name: string }[]> {
+  const supabase = await createClient()
+  const { data, error } = await supabase
+    .from('profiles')
+    .select('id, name')
+    .eq('is_approved', true)
+    .eq('has_folder', true)
+    .order('folder_order', { ascending: true })
+    .order('name', { ascending: true })
+
+  if (error) { console.error('getTrainersForPt error:', error.message); return [] }
+  return (data ?? []) as { id: string; name: string }[]
+}
+
 export async function createPtMember(values: PtMemberInput) {
   const supabase = await createClient()
   const { data, error } = await supabase
@@ -481,11 +496,3 @@ export async function cleanupEmptyNamePtMembers(trainerId?: string) {
   return { success: true as const, deleted: ids.length }
 }
 
-export async function getTrainersForPt(): Promise<{ id: string; name: string }[]> {
-  const supabase = await createClient()
-  const { data } = await supabase
-    .from('profiles').select('id, name')
-    .in('role', ['trainer', '강사', '팀장', 'admin', '관리자'])
-    .eq('is_approved', true).order('name')
-  return (data ?? []) as { id: string; name: string }[]
-}

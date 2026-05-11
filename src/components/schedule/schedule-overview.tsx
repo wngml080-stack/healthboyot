@@ -8,8 +8,7 @@ import { Button } from '@/components/ui/button'
 import {
   Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription,
 } from '@/components/ui/dialog'
-import { type TrainerDaySchedule, type ScheduleOverviewItem } from '@/actions/schedule-overview'
-import { createClient, waitForSupabaseReady } from '@/lib/supabase/client'
+import { type TrainerDaySchedule, type ScheduleOverviewItem, getAllTrainerSchedulesByDate } from '@/actions/schedule-overview'
 import { getOtProgram, getOtProgramByMemberId } from '@/actions/ot-program'
 import type { OtProgram } from '@/types'
 import { cn } from '@/lib/utils'
@@ -100,120 +99,19 @@ export function ScheduleOverview() {
     loading: boolean
   }>({ open: false, schedule: null, program: null, loading: false })
 
-  const supabaseRef = useRef(createClient())
   const isMountedRef = useRef(true)
   const dataRef = useRef<TrainerDaySchedule[]>([])
-  // schedules 빈 결과를 첫 1회는 의심해서 retry, 두 번째도 0이면 진짜 빈 날짜로 인정
-  const schedulesEmptyRetriedRef = useRef(false)
   useEffect(() => () => { isMountedRef.current = false }, [])
   useEffect(() => { dataRef.current = data }, [data])
 
   const load = useCallback(async (targetDate: string) => {
     console.log('[ScheduleOverview] fetch 시작', targetDate, 'attempt=', retryCountRef.current)
-    const supabase = supabaseRef.current
-
-    // 세션 복원 완료 보장 — 싱글톤 클라이언트 + 공유 Promise로 race 차단
-    await waitForSupabaseReady()
-
-    // 클라이언트에서 직접 병렬 쿼리 (서버 왕복 제거)
-    const [trainersRes, schedulesRes] = await Promise.all([
-      supabase
-        .from('profiles')
-        .select('id, name, role, folder_order')
-        .eq('is_approved', true)
-        .eq('has_folder', true)
-        .order('folder_order', { ascending: true })
-        .order('name', { ascending: true }),
-      supabase
-        .from('trainer_schedules')
-        .select('id, trainer_id, schedule_type, member_name, member_id, ot_session_id, scheduled_date, start_time, duration, note')
-        .eq('scheduled_date', targetDate)
-        .order('start_time', { ascending: true }),
-    ])
-
-    if (trainersRes.error) throw new Error(trainersRes.error.message)
-    if (schedulesRes.error) throw new Error(schedulesRes.error.message)
-    const trainers = trainersRes.data ?? []
-    const schedules = schedulesRes.data ?? []
-    console.log('[ScheduleOverview] fetch 결과', { trainers: trainers.length, schedules: schedules.length })
-    // RLS/토큰 일시 실패로 빈 결과 받는 경우를 잡아서 outer retry로 자동 회복
-    if (trainers.length === 0) throw new Error('트레이너 데이터가 비었습니다 (인증/RLS 일시 이슈 가능성)')
-    // schedules 빈 결과는 정상 케이스(휴일 등)일 수 있어 1회만 의심해서 retry
-    if (schedules.length === 0 && !schedulesEmptyRetriedRef.current) {
-      schedulesEmptyRetriedRef.current = true
-      throw new Error('schedules 빈 결과 — 1회 retry로 검증')
-    }
-
-    // OT assignment 정보 병렬 조회 — ot_sessions 조인으로 라운드트립 1회 단축
-    const otSessionIds = schedules.filter((s) => s.ot_session_id).map((s) => s.ot_session_id as string)
-    const memberIdsForFallback = Array.from(new Set(
-      schedules.filter((s) => ['OT', 'PT', 'PPT'].includes(s.schedule_type) && !s.ot_session_id && s.member_id)
-        .map((s) => s.member_id).filter(Boolean)
-    )) as string[]
-
-    type SessionWithAssignment = {
-      id: string
-      ot_assignment_id: string
-      ot_assignments: { id: string; is_sales_target: boolean; is_pt_conversion: boolean; sales_status: string } | null
-    }
-
-    const [sessionsRes, memberAssignmentsRes] = await Promise.all([
-      otSessionIds.length > 0
-        ? supabase
-            .from('ot_sessions')
-            .select('id, ot_assignment_id, ot_assignments!inner(id, is_sales_target, is_pt_conversion, sales_status)')
-            .in('id', otSessionIds)
-        : Promise.resolve({ data: [] as SessionWithAssignment[], error: null }),
-      memberIdsForFallback.length > 0
-        ? supabase.from('ot_assignments').select('id, member_id, is_sales_target, is_pt_conversion, sales_status').in('member_id', memberIdsForFallback).not('status', 'in', '("완료","거부")').order('created_at', { ascending: false })
-        : Promise.resolve({ data: [] as { id: string; member_id: string; is_sales_target: boolean; is_pt_conversion: boolean; sales_status: string }[], error: null }),
-    ])
-
-    const sessionData = (sessionsRes.data ?? []) as unknown as SessionWithAssignment[]
-
-    const sessionAssignmentMap = new Map<string, { assignment_id: string; is_sales_target: boolean; is_pt_conversion: boolean; sales_status: string }>()
-    for (const sd of sessionData) {
-      // Supabase 조인 결과: ot_assignments는 객체 또는 배열로 올 수 있음
-      const a = Array.isArray(sd.ot_assignments) ? sd.ot_assignments[0] : sd.ot_assignments
-      if (a) {
-        sessionAssignmentMap.set(sd.id, {
-          assignment_id: sd.ot_assignment_id,
-          is_sales_target: a.is_sales_target,
-          is_pt_conversion: a.is_pt_conversion,
-          sales_status: a.sales_status,
-        })
-      }
-    }
-
-    const memberAssignmentMap = new Map<string, { assignment_id: string; is_sales_target: boolean; is_pt_conversion: boolean; sales_status: string }>()
-    for (const a of (memberAssignmentsRes.data ?? [])) {
-      if (!memberAssignmentMap.has(a.member_id)) {
-        memberAssignmentMap.set(a.member_id, { assignment_id: a.id, is_sales_target: a.is_sales_target, is_pt_conversion: a.is_pt_conversion, sales_status: a.sales_status })
-      }
-    }
-
-    // 그룹핑
-    const scheduleMap = new Map<string, ScheduleOverviewItem[]>()
-    for (const s of schedules) {
-      const fromSession = s.ot_session_id ? sessionAssignmentMap.get(s.ot_session_id) : null
-      const fromMember = s.member_id ? memberAssignmentMap.get(s.member_id) : null
-      const aInfo = fromSession ?? fromMember ?? null
-      const item: ScheduleOverviewItem = {
-        id: s.id, trainer_id: s.trainer_id, schedule_type: s.schedule_type,
-        member_name: s.member_name, member_id: s.member_id, ot_session_id: s.ot_session_id,
-        scheduled_date: s.scheduled_date, start_time: s.start_time, duration: s.duration, note: s.note,
-        is_sales_target: aInfo?.is_sales_target ?? false, is_pt_conversion: aInfo?.is_pt_conversion ?? false,
-        ot_assignment_id: aInfo?.assignment_id ?? null, sales_status: aInfo?.sales_status ?? null, result_category: null,
-      }
-      const list = scheduleMap.get(s.trainer_id) ?? []
-      list.push(item)
-      scheduleMap.set(s.trainer_id, list)
-    }
-
-    const result: TrainerDaySchedule[] = trainers.map((t) => ({
-      trainer_id: t.id, trainer_name: t.name, role: t.role,
-      folder_order: t.folder_order ?? 0, schedules: scheduleMap.get(t.id) ?? [],
-    }))
+    // 서버 액션 사용 — 서버측 supabase 클라이언트는 cookie를 동기 조회해
+    // browser GoTrueClient의 세션 비동기 복원 race를 회피한다.
+    const result = await getAllTrainerSchedulesByDate(targetDate)
+    console.log('[ScheduleOverview] fetch 결과', { trainers: result.length, schedules: result.reduce((sum, t) => sum + t.schedules.length, 0) })
+    // 트레이너가 비어있으면 RLS/auth 이슈 가능성 → outer retry
+    if (result.length === 0) throw new Error('트레이너 데이터가 비었습니다 (인증/RLS 일시 이슈 가능성)')
 
     if (!isMountedRef.current) return
     startTransition(() => {
@@ -252,8 +150,7 @@ export function ScheduleOverview() {
 
   useEffect(() => {
     retryCountRef.current = 0
-    schedulesEmptyRetriedRef.current = false
-    // 마운트/날짜 변경 시 즉시 fetch 시도 — 빈 결과면 throw로 retry 루프 진입
+    // 마운트/날짜 변경 시 즉시 fetch — 서버 액션이 cookie 기반이라 race 없음
     void tryLoad(date)
 
     // 탭 복귀 시 데이터가 비어있으면 재조회
@@ -265,20 +162,9 @@ export function ScheduleOverview() {
     }
     document.addEventListener('visibilitychange', handleVisibility)
 
-    // INITIAL_SESSION/SIGNED_IN 이벤트 시 데이터 비어있으면 재조회 (보조 트리거)
-    const supabase = supabaseRef.current
-    const { data: { subscription } } = supabase.auth.onAuthStateChange((event, session) => {
-      if (!isMountedRef.current) return
-      if ((event === 'INITIAL_SESSION' || event === 'SIGNED_IN') && session && dataRef.current.length === 0) {
-        retryCountRef.current = 0
-        void tryLoad(date)
-      }
-    })
-
     return () => {
       if (retryTimerRef.current) clearTimeout(retryTimerRef.current)
       document.removeEventListener('visibilitychange', handleVisibility)
-      subscription.unsubscribe()
     }
   }, [date, tryLoad])
 
