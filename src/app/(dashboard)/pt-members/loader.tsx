@@ -33,7 +33,7 @@ export function PtMembersLoader() {
   const fetchData = useCallback(async () => {
     setError(null)
     try {
-      console.log('[PtMembersLoader] fetch 시작', 'attempt=', retryCountRef.current)
+      console.log('[PtMembersLoader] fetch 시작 attempt=', retryCountRef.current, 'ts=', new Date().toISOString())
       // 세션 복원 완료 보장 — 싱글톤 클라이언트 + 공유 Promise로 race 차단
       await waitForSupabaseReady()
 
@@ -43,13 +43,23 @@ export function PtMembersLoader() {
         fetchTrainersForPtClient(),
       ])
       if (cancelledRef.current) return
-      console.log('[PtMembersLoader] fetch 결과', { trainers: trainers.length, members: members.length })
+      console.log('[PtMembersLoader] fetch 결과', {
+        trainers: trainers.length,
+        members: members.length,
+        month,
+        attempt: retryCountRef.current,
+      })
 
-      // RLS/토큰 일시 실패로 빈 trainers를 받으면 자동 재시도
-      if (trainers.length === 0 && retryCountRef.current < MAX_RETRIES) {
+      // 빈 결과 재시도 정책:
+      // - trainers 비어있음 → RLS/auth 일시 실패 가능성 → 재시도
+      // - members만 비어있음 → 정상 케이스(해당 월 데이터 없음)일 수 있지만 첫 fetch는 한 번 의심
+      const shouldRetry = trainers.length === 0
+        || (members.length === 0 && retryCountRef.current === 0)
+      if (shouldRetry && retryCountRef.current < MAX_RETRIES) {
         retryCountRef.current += 1
-        const delay = 250 * retryCountRef.current
-        console.warn('[PtMembersLoader] trainers 비어있음 — 재시도', retryCountRef.current, '/', MAX_RETRIES)
+        const delay = 300 * retryCountRef.current
+        console.warn('[PtMembersLoader] 빈 결과 재시도', retryCountRef.current, '/', MAX_RETRIES,
+          { reason: trainers.length === 0 ? 'no trainers' : 'no members on first try' })
         retryTimerRef.current = setTimeout(() => { void fetchData() }, delay)
         return
       }
@@ -63,7 +73,7 @@ export function PtMembersLoader() {
       if (cancelledRef.current) return
       if (retryCountRef.current < MAX_RETRIES) {
         retryCountRef.current += 1
-        const delay = 250 * retryCountRef.current
+        const delay = 300 * retryCountRef.current
         retryTimerRef.current = setTimeout(() => { void fetchData() }, delay)
       } else {
         setError(err instanceof Error ? err.message : '데이터를 불러오지 못했습니다')

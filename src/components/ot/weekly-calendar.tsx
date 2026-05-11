@@ -810,11 +810,24 @@ export function WeeklyCalendar({ assignments, trainerId, profile, workStartTime,
         ws = weekStartStr
         we = format(addDays(weekStart, 6), 'yyyy-MM-dd')
       }
+      console.log('[WeeklyCalendar] fetchSchedules 시작', { trainerId, ws, we, attempt: scheduleRetryRef.current, gen, ts: new Date().toISOString() })
       // 서버 액션 사용 — 서버측 supabase 클라이언트는 cookie를 동기 조회해
       // browser GoTrueClient의 세션 비동기 복원 race를 회피한다.
       const rows = await getTrainerSchedules(trainerId, ws, we)
       // 더 새로운 fetch가 시작됐으면 결과 무시 (placeholder 주차 → 현재 주차 전환 시 stale fetch 차단)
-      if (gen !== fetchGenRef.current) return
+      if (gen !== fetchGenRef.current) {
+        console.log('[WeeklyCalendar] stale fetch 결과 무시 (gen)', { gen, current: fetchGenRef.current })
+        return
+      }
+      console.log('[WeeklyCalendar] fetchSchedules 결과', { rows: rows.length, attempt: scheduleRetryRef.current })
+      // 빈 결과 + 첫 시도면 의심해서 재시도 (인증 일시 실패 가능성)
+      if (rows.length === 0 && scheduleRetryRef.current < 2) {
+        scheduleRetryRef.current += 1
+        const delay = 400 * scheduleRetryRef.current
+        console.warn('[WeeklyCalendar] 빈 결과 — 의심 재시도', scheduleRetryRef.current, '/', 2)
+        scheduleRetryTimerRef.current = setTimeout(() => { void fetchSchedules() }, delay)
+        return
+      }
       // PostgreSQL time 컬럼은 "HH:MM:SS" 형식으로 반환됨 → "HH:MM"으로 정규화
       const normalized = rows.map((d) => ({
         ...d,
@@ -824,7 +837,7 @@ export function WeeklyCalendar({ assignments, trainerId, profile, workStartTime,
       scheduleRetryRef.current = 0
     } catch (err) {
       if (gen !== fetchGenRef.current) return
-      console.error('스케줄 조회 에러:', err)
+      console.error('[WeeklyCalendar] 스케줄 조회 에러:', err)
       // 인증/RLS 미준비로 인한 에러일 가능성 → 자동 재시도 (최대 3회, backoff)
       if (scheduleRetryRef.current < 3) {
         scheduleRetryRef.current += 1
