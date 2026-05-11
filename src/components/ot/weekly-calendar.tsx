@@ -1979,9 +1979,14 @@ export function WeeklyCalendar({ assignments, trainerId, profile, workStartTime,
                       >
                         {isMobile ? (
                           /* ── 모바일 컴팩트 블록 ── */
-                          <p className="text-[8px] font-bold leading-tight truncate">
-                            {s.schedule_type.toLowerCase()} {s.member_name || ''}
-                          </p>
+                          <>
+                            <p className="text-[8px] font-bold leading-tight truncate">
+                              {s.schedule_type.toLowerCase()} {s.member_name || ''}
+                            </p>
+                            {sessionLabel && (
+                              <p className="text-[8px] font-semibold opacity-80 leading-tight truncate">{sessionLabel}</p>
+                            )}
+                          </>
                         ) : (
                         <div className="flex items-start justify-between">
                           <div className="min-w-0">
