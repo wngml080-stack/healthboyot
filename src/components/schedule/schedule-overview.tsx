@@ -9,7 +9,7 @@ import {
   Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription,
 } from '@/components/ui/dialog'
 import { type TrainerDaySchedule, type ScheduleOverviewItem } from '@/actions/schedule-overview'
-import { createClient } from '@/lib/supabase/client'
+import { createClient, waitForSupabaseReady } from '@/lib/supabase/client'
 import { getOtProgram, getOtProgramByMemberId } from '@/actions/ot-program'
 import type { OtProgram } from '@/types'
 import { cn } from '@/lib/utils'
@@ -112,8 +112,8 @@ export function ScheduleOverview() {
     console.log('[ScheduleOverview] fetch 시작', targetDate, 'attempt=', retryCountRef.current)
     const supabase = supabaseRef.current
 
-    // 만료 직전 토큰 자동 리프레시 트리거 (INITIAL_SESSION 시점에 토큰이 만료된 케이스 회피)
-    await supabase.auth.getSession()
+    // 세션 복원 완료 보장 — 싱글톤 클라이언트 + 공유 Promise로 race 차단
+    await waitForSupabaseReady()
 
     // 클라이언트에서 직접 병렬 쿼리 (서버 왕복 제거)
     const [trainersRes, schedulesRes] = await Promise.all([

@@ -13,7 +13,7 @@ import {
 } from '@/components/ui/dialog'
 import { ChevronLeft, ChevronRight, X, Search, Copy, AlertCircle, RefreshCw } from 'lucide-react'
 import { toKstShortStr } from '@/lib/kst'
-import { createClient } from '@/lib/supabase/client'
+import { createClient, waitForSupabaseReady } from '@/lib/supabase/client'
 import { updateOtAssignment, upsertOtSession, moveOtSchedule, deleteOtSession } from '@/actions/ot'
 // import { OtStatusBadge } from './ot-status-badge'
 import type { OtAssignmentWithDetails, SalesStatus, Profile, OtProgram } from '@/types'
@@ -336,14 +336,24 @@ export function WeeklyCalendar({ assignments, trainerId, profile, workStartTime,
   type PtMemberLite = { id: string; name: string; phone: string | null; total_sessions: number; completed_sessions: number; data_month: string | null }
   const [ptMembers, setPtMembers] = useState<PtMemberLite[]>([])
   useEffect(() => {
-    supabaseRef.current
-      .from('pt_members')
-      .select('id, name, phone, total_sessions, completed_sessions, data_month')
-      .eq('trainer_id', trainerId)
-      .eq('status', '진행중')
-      .order('data_month', { ascending: false })
-      .order('name')
-      .then(({ data }) => setPtMembers((data ?? []) as PtMemberLite[]))
+    // 'unassigned'/'excluded'는 UUID가 아니라서 쿼리 시 400 에러 → skip
+    if (trainerId === 'unassigned' || trainerId === 'excluded' || !trainerId) {
+      setPtMembers([])
+      return
+    }
+    let cancelled = false
+    void (async () => {
+      await waitForSupabaseReady()
+      const { data } = await supabaseRef.current
+        .from('pt_members')
+        .select('id, name, phone, total_sessions, completed_sessions, data_month')
+        .eq('trainer_id', trainerId)
+        .eq('status', '진행중')
+        .order('data_month', { ascending: false })
+        .order('name')
+      if (!cancelled) setPtMembers((data ?? []) as PtMemberLite[])
+    })()
+    return () => { cancelled = true }
   }, [trainerId])
 
   // 같은 이름 중 가장 최신 월 (스케줄 생성 폼 dropdown용)
@@ -369,37 +379,41 @@ export function WeeklyCalendar({ assignments, trainerId, profile, workStartTime,
   // 트레이너의 모든 PT/PPT/바챌 스케줄을 조회해 (회원, 월) 단위로 정렬해 1차 2차 3차 ... 자동 부여
   const [sessionPosById, setSessionPosById] = useState<Map<string, number>>(new Map())
   useEffect(() => {
-    if (!trainerId) return
+    if (!trainerId || trainerId === 'unassigned' || trainerId === 'excluded') {
+      setSessionPosById(new Map())
+      return
+    }
     let cancelled = false
-    supabaseRef.current
-      .from('trainer_schedules')
-      .select('id, member_name, schedule_type, scheduled_date, start_time')
-      .eq('trainer_id', trainerId)
-      .in('schedule_type', ['PT', 'PPT', '바챌'])
-      .then(({ data }) => {
-        if (cancelled || !data) return
-        // (이름 + YYYY-MM)으로 그룹핑 → 월 단위 회차 reset
-        const groups = new Map<string, typeof data>()
-        for (const s of data) {
-          const name = (s.member_name ?? '').trim()
-          if (!name) continue
-          const month = s.scheduled_date.slice(0, 7)
-          const key = `${name}|${month}`
-          const arr = groups.get(key) ?? []
-          arr.push(s)
-          groups.set(key, arr)
-        }
-        const map = new Map<string, number>()
-        for (const arr of Array.from(groups.values())) {
-          arr.sort((a, b) => {
-            if (a.scheduled_date !== b.scheduled_date) return a.scheduled_date.localeCompare(b.scheduled_date)
-            if (a.start_time !== b.start_time) return a.start_time.localeCompare(b.start_time)
-            return a.id.localeCompare(b.id)
-          })
-          arr.forEach((s, idx) => map.set(s.id, idx + 1))
-        }
-        setSessionPosById(map)
-      })
+    void (async () => {
+      await waitForSupabaseReady()
+      const { data } = await supabaseRef.current
+        .from('trainer_schedules')
+        .select('id, member_name, schedule_type, scheduled_date, start_time')
+        .eq('trainer_id', trainerId)
+        .in('schedule_type', ['PT', 'PPT', '바챌'])
+      if (cancelled || !data) return
+      // (이름 + YYYY-MM)으로 그룹핑 → 월 단위 회차 reset
+      const groups = new Map<string, typeof data>()
+      for (const s of data) {
+        const name = (s.member_name ?? '').trim()
+        if (!name) continue
+        const month = s.scheduled_date.slice(0, 7)
+        const key = `${name}|${month}`
+        const arr = groups.get(key) ?? []
+        arr.push(s)
+        groups.set(key, arr)
+      }
+      const map = new Map<string, number>()
+      for (const arr of Array.from(groups.values())) {
+        arr.sort((a, b) => {
+          if (a.scheduled_date !== b.scheduled_date) return a.scheduled_date.localeCompare(b.scheduled_date)
+          if (a.start_time !== b.start_time) return a.start_time.localeCompare(b.start_time)
+          return a.id.localeCompare(b.id)
+        })
+        arr.forEach((s, idx) => map.set(s.id, idx + 1))
+      }
+      setSessionPosById(map)
+    })()
     return () => { cancelled = true }
   }, [trainerId, schedules])
 
@@ -742,8 +756,8 @@ export function WeeklyCalendar({ assignments, trainerId, profile, workStartTime,
     return (slot >= workStartSlot && slot < workEndSlot) ? 'IN' : 'OUT'
   }, [hasWorkHours, workStartSlot, workEndSlot])
 
-  // 원래 코드로 복원 — hydration fix가 #310/#419 유발 가능성 제거 검증
-  const now = new Date()
+  // now를 useState로 마운트 시 한 번만 캡처 — 매 렌더마다 새 객체 생성 → 무한 루프 방지
+  const [now] = useState(() => new Date())
   const stableNow = now
   const baseWeekStart = startOfWeek(now, { weekStartsOn: 1 })
   const weekStart = useMemo(() => addDays(baseWeekStart, weekOffset * 7), [weekOffset])
@@ -783,10 +797,19 @@ export function WeeklyCalendar({ assignments, trainerId, profile, workStartTime,
   const otMembers = assignments.filter((a) => !['거부', '완료'].includes(a.status))
 
   const fetchSchedules = useCallback(async () => {
+    // 'unassigned'/'excluded'는 가짜 trainer_id (UUID 아님) — Supabase 쿼리 시 400 무한 루프 방지
+    if (trainerId === 'unassigned' || trainerId === 'excluded' || !trainerId) {
+      setSchedules([])
+      setLoading(false)
+      setScheduleLoadError(null)
+      return
+    }
     const gen = ++fetchGenRef.current
     setLoading(true)
     setScheduleLoadError(null)
     try {
+      // 세션 복원 완료 보장 — 첫 query가 anon으로 나가 RLS가 빈 결과 돌려주는 race 차단
+      await waitForSupabaseReady()
       let ws: string, we: string
       if (viewMode === 'month') {
         const base = new Date()
@@ -847,7 +870,7 @@ export function WeeklyCalendar({ assignments, trainerId, profile, workStartTime,
       if (scheduleRetryTimerRef.current) clearTimeout(scheduleRetryTimerRef.current)
       document.removeEventListener('visibilitychange', handleVisibility)
     }
-  }, [fetchSchedules, now])
+  }, [fetchSchedules])
 
   const openCreate = (day: Date, hour: number, half: number) => {
     setCreateDate(format(day, 'yyyy-MM-dd'))
@@ -1988,14 +2011,14 @@ export function WeeklyCalendar({ assignments, trainerId, profile, workStartTime,
                                 [{OT_SALES_LABEL[otSalesStatus]}]
                               </p>
                             )}
-                            <p className="text-[10px] opacity-70">
-                              {s.start_time}
+                            <p className="text-[10px] opacity-70 leading-tight" style={{ wordBreak: 'keep-all', overflowWrap: 'normal' }}>
+                              <span className="whitespace-nowrap">{s.start_time}</span>
                               {s.schedule_type === 'OT' && s.ot_session_id && matched && (() => {
                                 const os = matched.sessions?.find((o) => o.id === s.ot_session_id)
-                                return os ? ` ${os.session_number}차` : ''
+                                return os ? <> · <span className="whitespace-nowrap">{os.session_number}차</span></> : null
                               })()}
-                              {` · ${s.duration}분`}
-                              {amount ? ` · ${amount}만` : ''}
+                              {' · '}<span className="whitespace-nowrap">{s.duration}분</span>
+                              {amount ? <> · <span className="whitespace-nowrap">{amount}만</span></> : null}
                             </p>
                           </div>
                           <div className="flex shrink-0">

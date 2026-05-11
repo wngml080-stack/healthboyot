@@ -5,7 +5,7 @@ import { Loader2, AlertCircle, RefreshCw } from 'lucide-react'
 import { PtMemberList } from '@/components/pt-members/pt-member-list'
 import type { PtMember } from '@/actions/pt-members'
 import { fetchPtMembersClient, fetchTrainersForPtClient } from '@/lib/pt-members-client'
-import { createClient } from '@/lib/supabase/client'
+import { createClient, waitForSupabaseReady } from '@/lib/supabase/client'
 
 type CacheShape = { members: PtMember[]; trainers: { id: string; name: string }[]; month: string; ts: number }
 let cache: CacheShape | null = null
@@ -34,9 +34,8 @@ export function PtMembersLoader() {
     setError(null)
     try {
       console.log('[PtMembersLoader] fetch 시작', 'attempt=', retryCountRef.current)
-      // 토큰 자동 리프레시 트리거 (만료 케이스 회피)
-      const supabase = createClient()
-      await supabase.auth.getSession()
+      // 세션 복원 완료 보장 — 싱글톤 클라이언트 + 공유 Promise로 race 차단
+      await waitForSupabaseReady()
 
       const month = todayMonth()
       const [members, trainers] = await Promise.all([

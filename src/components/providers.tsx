@@ -3,6 +3,7 @@
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { useState, useEffect } from 'react'
 import { DebugErrorBoundary } from './debug-error-boundary'
+import { waitForSupabaseReady } from '@/lib/supabase/client'
 
 const VERSION_CHECK_KEY = '__build_id_v1'
 const VERSION_RELOAD_KEY = '__build_reload_done'
@@ -43,6 +44,8 @@ export function Providers({ children }: { children: React.ReactNode }) {
     }
     // stale HTML 감지
     checkBuildVersion()
+    // Supabase 세션 복원 pre-warm — 자식 컴포넌트가 첫 query 발화 전에 세션이 in-memory에 있도록
+    void waitForSupabaseReady()
   }, [])
 
   const [queryClient] = useState(

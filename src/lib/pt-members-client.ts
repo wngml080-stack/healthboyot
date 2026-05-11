@@ -1,9 +1,11 @@
 'use client'
 
-import { createClient } from '@/lib/supabase/client'
+import { createClient, waitForSupabaseReady } from '@/lib/supabase/client'
 import type { PtMember } from '@/actions/pt-members'
 
 export async function fetchPtMembersClient(trainerId?: string, dataMonth?: string): Promise<PtMember[]> {
+  // 세션 복원 완료 보장 — 안 그러면 첫 호출이 anon으로 나가 RLS가 빈 결과 반환
+  await waitForSupabaseReady()
   const supabase = createClient()
   let query = supabase
     .from('pt_members')
@@ -26,6 +28,7 @@ export async function fetchPtMembersClient(trainerId?: string, dataMonth?: strin
 }
 
 export async function fetchTrainersForPtClient(): Promise<{ id: string; name: string }[]> {
+  await waitForSupabaseReady()
   const supabase = createClient()
   const { data, error } = await supabase
     .from('profiles')
