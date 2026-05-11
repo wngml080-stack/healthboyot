@@ -137,6 +137,13 @@ export function TrainerStats({ assignments, trainerName, programs, registrations
   const [newTargetCount, setNewTargetCount] = useState('')
   const [newTargetType, setNewTargetType] = useState('OT')
 
+  // 이번주 매출대상자 제외 (다음주와 별도 key — 주차별로 독립 관리)
+  const thisExcludedKey = `this-excluded-${trainerName}-${format(goalWeekStart, 'yyyy-MM-dd')}`
+  const { excluded: thisExcludedTargets, exclude: excludeThisTarget, restore: restoreThisTarget, isExcluded: isThisExcluded } = useExcludedTargets(thisExcludedKey)
+  const [thisExcludingId, setThisExcludingId] = useState<string | null>(null)
+  const [thisExcludeReason, setThisExcludeReason] = useState('')
+  const [showThisExcluded, setShowThisExcluded] = useState(false)
+
   // 이미지 저장 — html-to-image로 화면 그대로 캡처
   const handleCapture = async () => {
     if (!captureRef.current) return
@@ -540,8 +547,11 @@ export function TrainerStats({ assignments, trainerName, programs, registrations
   const thisWeekLabel = `${format(goalWeekStart, 'M/d')} ~ ${format(addDays(goalWeekStart, 6), 'M/d')}`
   const nextWeekLabel = `${format(nextWeekStart, 'M/d')} ~ ${format(addDays(nextWeekStart, 6), 'M/d')}`
 
-  // 이번주 예상 총합
-  const totalThisExpected = thisWeekTargets.reduce((s, t) => s + t.expectedAmount, 0)
+  // 이번주 진행중 대상자 — 활성/제외 분리
+  const activeThisTargets = thisWeekTargets.filter((t) => !isThisExcluded(t.id))
+  const excludedThisTargets = thisWeekTargets.filter((t) => isThisExcluded(t.id))
+  // 이번주 예상 총합 (제외된 항목 제외)
+  const totalThisExpected = activeThisTargets.reduce((s, t) => s + t.expectedAmount, 0)
 
   // 전체 차주 대상자 (자동 + 수동)
   const allNextTargets = [
@@ -693,28 +703,119 @@ export function TrainerStats({ assignments, trainerName, programs, registrations
           </CardHeader>
           <CardContent className="px-4 pb-3 space-y-3">
             {/* 진행중 대상자 */}
-            {thisWeekTargets.length === 0 && resolvedTargets.ptConversion.length === 0 && resolvedTargets.closingFailed.length === 0 ? (
+            {activeThisTargets.length === 0 && excludedThisTargets.length === 0 && resolvedTargets.ptConversion.length === 0 && resolvedTargets.closingFailed.length === 0 ? (
               <p className="text-xs text-gray-400 text-center py-3">이번주 매출대상자가 없습니다</p>
             ) : (
               <>
-                {thisWeekTargets.length > 0 && (
+                {activeThisTargets.length > 0 && (
                   <div className="space-y-2">
-                    {thisWeekTargets.map((t) => (
-                      <div key={t.id} className="flex items-center justify-between bg-gray-50 rounded-lg px-3 py-2.5">
-                        <div className="flex items-center gap-2">
-                          <span className="text-sm font-bold text-gray-900">{t.name}</span>
-                          {t.session ? (
-                            <span className="text-[10px] text-blue-600">{t.session.session_number}차 · {format(new Date(t.session.scheduled_at!), 'M/d (EEE) HH:mm', { locale: ko })}</span>
-                          ) : (
-                            <span className="text-[10px] text-gray-400">스케줄 미정</span>
-                          )}
+                    {activeThisTargets.map((t) => {
+                      const memo = thisExcludedTargets.find((e) => e.id === t.id)?.reason ?? ''
+                      return (
+                      <div key={t.id}>
+                        <div className="flex items-center justify-between bg-gray-50 rounded-lg px-3 py-2.5">
+                          <div className="flex items-center gap-2 min-w-0">
+                            <span className="text-sm font-bold text-gray-900">{t.name}</span>
+                            {t.session ? (
+                              <span className="text-[10px] text-blue-600">{t.session.session_number}차 · {format(new Date(t.session.scheduled_at!), 'M/d (EEE) HH:mm', { locale: ko })}</span>
+                            ) : (
+                              <span className="text-[10px] text-gray-400">스케줄 미정</span>
+                            )}
+                          </div>
+                          <div className="flex items-center gap-1.5 shrink-0">
+                            <Badge className={`text-[10px] ${t.statusColor}`}>{t.statusLabel}</Badge>
+                            {t.expectedAmount > 0 && <Badge className="bg-blue-600 text-white text-[10px]">예상 {t.expectedAmount.toLocaleString()}만</Badge>}
+                            <button
+                              onClick={() => { setThisExcludingId(thisExcludingId === t.id ? null : t.id); setThisExcludeReason(memo) }}
+                              className="text-gray-400 hover:text-red-500 transition-colors"
+                              title="제외 / 메모"
+                            >
+                              <X className="h-3.5 w-3.5" />
+                            </button>
+                          </div>
                         </div>
-                        <div className="flex items-center gap-1.5">
-                          <Badge className={`text-[10px] ${t.statusColor}`}>{t.statusLabel}</Badge>
-                          {t.expectedAmount > 0 && <Badge className="bg-blue-600 text-white text-[10px]">예상 {t.expectedAmount.toLocaleString()}만</Badge>}
-                        </div>
+                        {memo && (
+                          <p className="text-[10px] text-gray-500 mt-1 ml-1">📝 {memo}</p>
+                        )}
+                        {thisExcludingId === t.id && (
+                          <div className="flex items-center gap-2 mt-1.5 ml-1">
+                            <Input
+                              value={thisExcludeReason}
+                              onChange={(e) => setThisExcludeReason(e.target.value)}
+                              placeholder="제외 사유 / 메모를 입력하세요..."
+                              className="text-xs h-7 bg-white flex-1"
+                              autoFocus
+                              onKeyDown={(e) => {
+                                if (e.key === 'Enter' && thisExcludeReason.trim()) {
+                                  excludeThisTarget(t.id, thisExcludeReason.trim())
+                                  setThisExcludingId(null)
+                                  setThisExcludeReason('')
+                                }
+                              }}
+                            />
+                            <Button
+                              size="sm"
+                              className="h-7 text-[10px] bg-red-500 hover:bg-red-600 text-white px-2"
+                              disabled={!thisExcludeReason.trim()}
+                              onClick={() => {
+                                excludeThisTarget(t.id, thisExcludeReason.trim())
+                                setThisExcludingId(null)
+                                setThisExcludeReason('')
+                              }}
+                            >
+                              제외
+                            </Button>
+                            <Button
+                              size="sm"
+                              variant="outline"
+                              className="h-7 text-[10px] px-2"
+                              onClick={() => { setThisExcludingId(null); setThisExcludeReason('') }}
+                            >
+                              취소
+                            </Button>
+                          </div>
+                        )}
                       </div>
-                    ))}
+                      )
+                    })}
+                  </div>
+                )}
+
+                {/* 제외된 대상자 (이번주) */}
+                {excludedThisTargets.length > 0 && (
+                  <div className="border-t border-gray-200 pt-2">
+                    <button
+                      onClick={() => setShowThisExcluded(!showThisExcluded)}
+                      className="text-[10px] text-gray-400 hover:text-gray-600 flex items-center gap-1"
+                    >
+                      <span>{showThisExcluded ? '▼' : '▶'}</span>
+                      제외됨 ({excludedThisTargets.length}명)
+                    </button>
+                    {showThisExcluded && (
+                      <div className="space-y-1.5 mt-1.5">
+                        {excludedThisTargets.map((t) => {
+                          const reason = thisExcludedTargets.find((e) => e.id === t.id)?.reason ?? ''
+                          return (
+                            <div key={t.id} className="rounded-lg bg-gray-100 px-3 py-2 opacity-60">
+                              <div className="flex items-center justify-between">
+                                <div className="flex items-center gap-2 min-w-0">
+                                  <span className="text-sm font-bold text-gray-500 line-through">{t.name}</span>
+                                  <Badge className="bg-red-100 text-red-500 text-[8px]">제외</Badge>
+                                  {t.expectedAmount > 0 && <span className="text-[10px] text-gray-400 line-through">예상 {t.expectedAmount.toLocaleString()}만</span>}
+                                </div>
+                                <button
+                                  onClick={() => restoreThisTarget(t.id)}
+                                  className="text-[10px] text-blue-500 hover:text-blue-700 font-bold shrink-0"
+                                >
+                                  복원
+                                </button>
+                              </div>
+                              {reason && <p className="text-[10px] text-red-400 mt-1">사유: {reason}</p>}
+                            </div>
+                          )
+                        })}
+                      </div>
+                    )}
                   </div>
                 )}
 
