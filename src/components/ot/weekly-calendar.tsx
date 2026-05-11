@@ -1939,6 +1939,7 @@ export function WeeklyCalendar({ assignments, trainerId, profile, workStartTime,
                     // - 회차(N): 전체 기간 회원의 PT/PPT/바챌 스케줄을 시간순 정렬한 위치 (sessionPosById)
                     // - 총(M): 해당 월 pt_members의 total_sessions 우선, 0이면 note의 [N/M] fallback
                     let sessionLabel: string | null = null
+                    let sessionLabelShort: string | null = null
                     if (s.schedule_type === 'PT' || s.schedule_type === 'PPT') {
                       const autoPos = sessionPosById.get(s.id)
                       const noteCurrent = Number(ptParsed?.current) || 0
@@ -1949,8 +1950,10 @@ export function WeeklyCalendar({ assignments, trainerId, profile, workStartTime,
                       const current = autoPos ?? (noteCurrent > 0 ? noteCurrent : 0)
                       if (current > 0 && total > 0) {
                         sessionLabel = `${total}회 중 ${current}회차`
+                        sessionLabelShort = `${current}/${total}회`
                       } else if (current > 0) {
                         sessionLabel = `${current}회차`
+                        sessionLabelShort = `${current}회`
                       }
                     }
                     const draggable = canDragSchedule(s)
@@ -1983,8 +1986,8 @@ export function WeeklyCalendar({ assignments, trainerId, profile, workStartTime,
                             <p className="text-[8px] font-bold leading-tight truncate">
                               {s.schedule_type.toLowerCase()} {s.member_name || ''}
                             </p>
-                            {sessionLabel && (
-                              <p className="text-[8px] font-semibold opacity-80 leading-tight truncate">{sessionLabel}</p>
+                            {sessionLabelShort && (
+                              <p className="text-[8px] font-semibold opacity-80 leading-tight truncate">{sessionLabelShort}</p>
                             )}
                           </>
                         ) : (
