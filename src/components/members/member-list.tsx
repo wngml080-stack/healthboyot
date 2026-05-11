@@ -127,6 +127,8 @@ export function MemberList({ initialMembers, trainers = [] }: Props) {
 
   // 낙관적 UI 업데이트를 위한 로컬 오버라이드
   const [trainerOverrides, setTrainerOverrides] = useState<Record<string, { pt?: { id: string | null; name: string; status: string }; ppt?: { id: string | null; name: string; status: string } }>>({})
+  // 종목(ot_category) 낙관적 오버라이드 — 회원 id → 새 카테고리(null=미설정)
+  const [categoryOverrides, setCategoryOverrides] = useState<Record<string, string | null>>({})
 
   // 다이얼로그 열림 상태 (폼 state는 각 다이얼로그 컴포넌트 내부에서 관리)
   const [showAddDialog, setShowAddDialog] = useState(false)
@@ -318,7 +320,7 @@ export function MemberList({ initialMembers, trainers = [] }: Props) {
               <SortableHead label="운동시간" sortKey="exercise_time" currentKey={sortKey} asc={sortAsc} onSort={handleSort} width="w-[80px]" />
               <SortableHead label="PT" sortKey="pt_trainer" currentKey={sortKey} asc={sortAsc} onSort={handleSort} width="w-[60px]" />
               <SortableHead label="PPT" sortKey="ppt_trainer" currentKey={sortKey} asc={sortAsc} onSort={handleSort} width="w-[60px]" />
-              <SortableHead label="상담카드" sortKey="progress" currentKey={sortKey} asc={sortAsc} onSort={handleSort} width="w-[96px]" />
+              <SortableHead label="상담카드" sortKey="progress" currentKey={sortKey} asc={sortAsc} onSort={handleSort} width="w-[112px]" />
               <TableHead className="text-center text-gray-700 w-[30px]" />
             </TableRow>
           </TableHeader>
@@ -331,8 +333,6 @@ export function MemberList({ initialMembers, trainers = [] }: Props) {
               </TableRow>
             ) : (
               sortedMembers.map((m) => {
-                const progressLabel = getProgressLabel(m.assignment)
-                const progressColor = getProgressColor(progressLabel)
                 const isExpanded = expandedId === m.id
 
                 return (
@@ -358,34 +358,44 @@ export function MemberList({ initialMembers, trainers = [] }: Props) {
                         )}
                       </TableCell>
                       <TableCell className="text-center whitespace-nowrap" onClick={(e) => e.stopPropagation()}>
-                        <Select
-                          value={m.ot_category ?? 'none'}
-                          onValueChange={async (v) => {
-                            const newCat = v === 'none' ? null : v
-                            const oldCat = m.ot_category ?? '미설정'
-                            // 낙관적 UI: 즉시 화면 업데이트 후 서버 저장
-                            const idx = sortedMembers.findIndex((x) => x.id === m.id)
-                            if (idx >= 0) sortedMembers[idx] = { ...sortedMembers[idx], ot_category: newCat as typeof m.ot_category }
-                            await Promise.all([
-                              updateMember(m.id, { ot_category: newCat }),
-                              addChangeLog({ target_type: 'member', target_id: m.id, action: '종목 변경', old_value: String(oldCat), new_value: String(newCat ?? '미설정'), note: `${m.name} 회원` }),
-                            ])
-                            router.refresh()
-                          }}
-                        >
-                          <SelectTrigger className="h-7 text-xs border justify-center gap-1 px-1 rounded bg-white border-gray-200 text-gray-900 min-w-[70px]">
-                            <SelectValue>
-                              <OtCategoryBadge category={m.ot_category} />
-                            </SelectValue>
-                          </SelectTrigger>
-                          <SelectContent>
-                            <SelectItem value="헬스">헬스</SelectItem>
-                            <SelectItem value="필라">필라</SelectItem>
-                            <SelectItem value="헬스,필라">헬스,필라</SelectItem>
-                            <SelectItem value="등록후 환불">등록후 환불</SelectItem>
-                            <SelectItem value="none">미설정</SelectItem>
-                          </SelectContent>
-                        </Select>
+                        {(() => {
+                          const currentCat = m.id in categoryOverrides ? categoryOverrides[m.id] : m.ot_category
+                          return (
+                            <Select
+                              value={currentCat ?? 'none'}
+                              onValueChange={async (v) => {
+                                const newCat = v === 'none' ? null : v
+                                const oldCat = m.ot_category ?? '미설정'
+                                // 낙관적 UI 업데이트
+                                setCategoryOverrides((prev) => ({ ...prev, [m.id]: newCat }))
+                                const result = await updateMember(m.id, { ot_category: newCat })
+                                if ('error' in result && result.error) {
+                                  alert('종목 변경 실패: ' + result.error)
+                                  // 롤백
+                                  setCategoryOverrides((prev) => {
+                                    const copy = { ...prev }
+                                    delete copy[m.id]
+                                    return copy
+                                  })
+                                  return
+                                }
+                                await addChangeLog({ target_type: 'member', target_id: m.id, action: '종목 변경', old_value: String(oldCat), new_value: String(newCat ?? '미설정'), note: `${m.name} 회원` })
+                                router.refresh()
+                              }}
+                            >
+                              <SelectTrigger className="h-7 w-[88px] mx-auto text-xs border-0 bg-transparent shadow-none px-1 hover:bg-gray-50 rounded justify-center [&>svg]:hidden">
+                                <OtCategoryBadge category={currentCat} />
+                              </SelectTrigger>
+                              <SelectContent>
+                                <SelectItem value="헬스">헬스</SelectItem>
+                                <SelectItem value="필라">필라</SelectItem>
+                                <SelectItem value="헬스,필라">헬스,필라</SelectItem>
+                                <SelectItem value="등록후 환불">등록후 환불</SelectItem>
+                                <SelectItem value="none">미설정</SelectItem>
+                              </SelectContent>
+                            </Select>
+                          )
+                        })()}
                       </TableCell>
                       <TableCell className="text-center text-xs text-gray-900 whitespace-nowrap">{m.start_date ? new Date(m.start_date).toLocaleDateString('ko', { year: '2-digit', month: '2-digit', day: '2-digit' }).replace(/\.\s*$/, '') : ''}</TableCell>
                       <TableCell className="text-center text-xs text-gray-900 whitespace-nowrap">{m.exercise_time ?? ''}</TableCell>
@@ -490,7 +500,7 @@ export function MemberList({ initialMembers, trainers = [] }: Props) {
                       <TableCell className="text-center whitespace-nowrap">
                         {m.card_summary ? (
                           <span className="inline-flex items-center rounded px-2 py-0.5 text-[10px] font-semibold bg-emerald-100 text-emerald-700">
-                            상담완료
+                            상담카드 연결
                           </span>
                         ) : (
                           <span className="inline-flex items-center rounded px-2 py-0.5 text-[10px] font-semibold bg-gray-100 text-gray-500">

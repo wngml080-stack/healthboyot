@@ -2,11 +2,16 @@
 
 import { useState, useCallback, useTransition, useMemo, useEffect, useRef } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
+import dynamic from 'next/dynamic'
 import { cn } from '@/lib/utils'
 import { Users, CalendarDays, BarChart3, Loader2, Dumbbell } from 'lucide-react'
 import { NotificationBell } from './notification-bell'
 import { TrainerCardList } from './trainer-card-list'
-import { WeeklyCalendar } from './weekly-calendar'
+// SSR/CSR 시각 차이로 인한 hydration mismatch (#310/#419) 방지 — client only 로드
+const WeeklyCalendar = dynamic(() => import('./weekly-calendar').then((m) => ({ default: m.WeeklyCalendar })), {
+  ssr: false,
+  loading: () => <div className="flex items-center justify-center py-20"><Loader2 className="h-6 w-6 animate-spin text-gray-400" /></div>,
+})
 import { TrainerStats } from './trainer-stats'
 import { getAllOtPrograms } from '@/actions/ot-program'
 import { getOtRegistrationsByTrainer } from '@/actions/ot-registration'

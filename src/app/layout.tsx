@@ -61,6 +61,20 @@ export default function RootLayout({
           dangerouslySetInnerHTML={{
             __html: `(function(){
               try {
+                // 1) 옛 service worker 강제 unregister + 모든 캐시 삭제
+                //    (PWA에서 옛 빌드의 SW가 cache 응답을 가로채는 문제 해결)
+                if ('serviceWorker' in navigator) {
+                  navigator.serviceWorker.getRegistrations().then(function(regs){
+                    regs.forEach(function(r){ try { r.unregister() } catch(_){} })
+                  }).catch(function(){})
+                }
+                if (typeof caches !== 'undefined') {
+                  caches.keys().then(function(keys){
+                    keys.forEach(function(k){ try { caches.delete(k) } catch(_){} })
+                  }).catch(function(){})
+                }
+
+                // 2) 빌드 ID 체크 → stale 캐시 자동 새로고침
                 var serverBuild = '${buildId}';
                 var stored = localStorage.getItem('__build_id');
                 var url = new URL(location.href);
