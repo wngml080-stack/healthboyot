@@ -3,7 +3,7 @@
   "short_name": "OT시스템",
   "description": "헬스보이짐 당산역점 OT 배정 및 관리 시스템",
   "id": "healthboyot-v2",
-  "start_url": "/reset.html?pwa=1",
+  "start_url": "/ot",
   "scope": "/",
   "display": "standalone",
   "background_color": "#1a1a1a",

@@ -33,9 +33,12 @@ async function purgeAndHardReload() {
       await Promise.all(ks.map((k) => caches.delete(k)))
     }
   } catch {}
-  // 캐시 우회 — 새 URL로 인식시켜 fresh HTML 받기
-  const u = new URL(window.location.href)
-  u.searchParams.set('_cb', Date.now().toString())
+
+  // 깨진 React 라우트를 다시 로드하지 말고, 번들 없는 정적 reset 페이지로 탈출한다.
+  const u = new URL('/reset.html', window.location.origin)
+  u.searchParams.set('from', 'global-error')
+  u.searchParams.set('keepAuth', '1')
+  u.searchParams.set('cb', Date.now().toString())
   window.location.replace(u.toString())
 }
 
@@ -97,7 +100,7 @@ export default function GlobalError({
               }}
               style={{ padding: '0.625rem 1.5rem', backgroundColor: '#facc15', color: '#000', border: 'none', borderRadius: '0.5rem', fontWeight: 600, cursor: 'pointer' }}
             >
-              강제 새로고침
+              앱 초기화
             </button>
             <button
               onClick={() => { window.location.href = '/login' }}

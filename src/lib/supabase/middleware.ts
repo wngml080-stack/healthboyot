@@ -36,15 +36,18 @@ export async function updateSession(request: NextRequest) {
     data: { session },
   } = await supabase.auth.getSession()
 
-  // 비인증 사용자 → 로그인으로
-  if (!session && !pathname.startsWith('/login')) {
+  // 비인증 사용자 → 로그인으로 (단, 진단/리셋용 페이지는 예외 — 캐시 문제 디버깅용)
+  const PUBLIC_PATHS = ['/login', '/debug-errors', '/reset']
+  const isPublicPath = PUBLIC_PATHS.some((p) => pathname.startsWith(p))
+  if (!session && !isPublicPath) {
     const url = request.nextUrl.clone()
     url.pathname = '/login'
     return NextResponse.redirect(url)
   }
 
-  // 인증된 사용자가 로그인 접근 시 → /ot으로
-  if (session && pathname.startsWith('/login')) {
+  // 인증된 사용자가 로그인 접근 시 → /ot으로.
+  // 단, reset loop 복구 중에는 로그인 화면을 그대로 보여줘서 /ot 에러 루프를 끊는다.
+  if (session && pathname.startsWith('/login') && !request.nextUrl.searchParams.has('_reset_loop')) {
     const url = request.nextUrl.clone()
     url.pathname = '/ot'
     return NextResponse.redirect(url)

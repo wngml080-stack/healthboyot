@@ -82,6 +82,15 @@
         var statusEl = document.getElementById('status');
         var fallbackEl = document.getElementById('fallback');
         var AUTH_KEY_PART = 'sb-nwyxawtqpdqbsqkpjucu-auth-token';
+        var params = new URLSearchParams(location.search);
+        var forceLogout = params.get('logout') === '1';
+        var resetCountKey = '__pwa_reset_count';
+        var resetCount = 0;
+
+        try {
+          resetCount = Number(sessionStorage.getItem(resetCountKey) || '0');
+          sessionStorage.setItem(resetCountKey, String(resetCount + 1));
+        } catch (_) {}
 
         function setStatus(message) {
           statusEl.textContent = message;
@@ -113,7 +122,7 @@
           try {
             var keys = Object.keys(localStorage);
             keys.forEach(function (key) {
-              if (key.indexOf(AUTH_KEY_PART) === -1) {
+              if (forceLogout || key.indexOf(AUTH_KEY_PART) === -1) {
                 localStorage.removeItem(key);
               }
             });
@@ -121,11 +130,34 @@
 
           try {
             sessionStorage.clear();
+            sessionStorage.setItem(resetCountKey, String(resetCount + 1));
+          } catch (_) {}
+        }
+
+        function clearAuthCookies() {
+          if (!forceLogout) return;
+
+          try {
+            document.cookie.split(';').forEach(function (cookie) {
+              var name = cookie.split('=')[0].trim();
+              if (name.indexOf('sb-') === 0) {
+                document.cookie = name + '=; Max-Age=0; path=/';
+                document.cookie = name + '=; Max-Age=0; path=/; domain=healthboyot.cloud';
+                document.cookie = name + '=; Max-Age=0; path=/; domain=.healthboyot.cloud';
+              }
+            });
           } catch (_) {}
         }
 
         async function run() {
           try {
+            if (!forceLogout && resetCount >= 2) {
+              setStatus('반복 초기화를 중단했습니다. 로그인 화면으로 이동합니다...');
+              await delay(500);
+              location.replace('/login?_reset_loop=' + Date.now());
+              return;
+            }
+
             setStatus('Service Worker 해제 중...');
             await unregisterServiceWorkers();
 
@@ -134,13 +166,12 @@
 
             setStatus('임시 저장소 정리 중...');
             clearStorage();
+            clearAuthCookies();
 
-            setStatus('완료. 새 앱으로 이동합니다...');
+            setStatus(forceLogout ? '완료. 로그인 화면으로 이동합니다...' : '완료. 새 앱으로 이동합니다...');
             await delay(500);
 
-            var next = new URL('/ot', location.origin);
-            next.searchParams.set('_pwa_reset', Date.now().toString());
-            location.replace(next.toString());
+            location.replace(forceLogout ? '/login' : '/ot');
           } catch (error) {
             setStatus('초기화 중 오류가 발생했습니다. 아래 버튼으로 다시 이동해주세요.');
             fallbackEl.hidden = false;
