@@ -19,6 +19,7 @@ import {
 } from '@/actions/pt-members'
 import { invalidatePtMembersCache } from '@/app/(dashboard)/pt-members/loader'
 import { fetchPtMembersClient } from '@/lib/pt-members-client'
+import { createClient } from '@/lib/supabase/client'
 
 interface Props {
   initialMembers: PtMember[]
@@ -110,6 +111,28 @@ export function PtMemberList({ initialMembers, trainers, fixedTrainerId, isAdmin
       .catch((err) => { console.error('[PtMemberList] 월 데이터 로드 실패:', err) })
     return () => { cancelled = true }
   }, [selectedMonth, initialMonth, fixedTrainerId])
+
+  // 다른 디바이스에서 pt_members 변경(INSERT/UPDATE/DELETE) 시 현재 보고있는 월 데이터 즉시 재페치
+  useEffect(() => {
+    const supabase = createClient()
+    let debounce: ReturnType<typeof setTimeout> | null = null
+    const channel = supabase
+      .channel(`pt-members-list-${fixedTrainerId ?? 'all'}-${selectedMonth}`)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'pt_members' }, () => {
+        if (debounce) clearTimeout(debounce)
+        debounce = setTimeout(() => {
+          invalidatePtMembersCache()
+          fetchPtMembersClient(fixedTrainerId, selectedMonth)
+            .then((rows) => setMembers(rows))
+            .catch((err) => console.error('[PtMemberList] realtime 재페치 실패:', err))
+        }, 500)
+      })
+      .subscribe()
+    return () => {
+      if (debounce) clearTimeout(debounce)
+      supabase.removeChannel(channel)
+    }
+  }, [fixedTrainerId, selectedMonth])
   const fileRef = useRef<HTMLInputElement>(null)
   const [uploading, setUploading] = useState(false)
   const [selected, setSelected] = useState<Set<string>>(new Set())

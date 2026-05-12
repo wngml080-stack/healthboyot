@@ -34,16 +34,15 @@ export function useRealtimeOT() {
   useEffect(() => {
     const supabase = supabaseRef.current
 
+    // 모든 핵심 테이블의 INSERT/UPDATE/DELETE를 wildcard로 listen — PC ↔ 모바일 즉시 동기화
     const channel = supabase
       .channel('ot-realtime')
-      .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'ot_assignments' }, scheduleRefresh)
-      .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'ot_assignments' }, scheduleRefresh)
-      .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'ot_sessions' }, scheduleRefresh)
-      .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'ot_sessions' }, scheduleRefresh)
-      // trainer_schedules는 PT/PPT/바챌 등 모든 스케줄의 1차 저장소 — 누락되면 SSR 데이터 stale
-      .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'trainer_schedules' }, scheduleRefresh)
-      .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'trainer_schedules' }, scheduleRefresh)
-      .on('postgres_changes', { event: 'DELETE', schema: 'public', table: 'trainer_schedules' }, scheduleRefresh)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'ot_assignments' }, scheduleRefresh)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'ot_sessions' }, scheduleRefresh)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'trainer_schedules' }, scheduleRefresh)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'pt_members' }, scheduleRefresh)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'ot_programs' }, scheduleRefresh)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'members' }, scheduleRefresh)
       .subscribe()
 
     // 탭 비활성 시 refresh 억제, 복귀 시 대기 중이면 한 번만 refresh

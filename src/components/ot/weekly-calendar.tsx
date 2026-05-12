@@ -893,6 +893,15 @@ export function WeeklyCalendar({ assignments, trainerId, profile, workStartTime,
         schema: 'public',
         table: 'trainer_schedules',
       }, trigger)
+      // pt_members 변경(다른 디바이스에서 PT 회원 추가/수정/삭제) — 캘린더 블록의 회차 라이브 lookup이
+      // 최신 total_sessions를 쓰도록 ptMembers state도 같이 갱신
+      .on('postgres_changes', {
+        event: '*',
+        schema: 'public',
+        table: 'pt_members',
+      }, () => {
+        getTrainerActivePtMembers(trainerId).then((data) => setPtMembers(data as PtMemberLite[])).catch(() => {})
+      })
       .subscribe()
     return () => {
       if (debounce) clearTimeout(debounce)

@@ -17,6 +17,7 @@ import { getAllOtPrograms } from '@/actions/ot-program'
 import { getOtRegistrationsByTrainer } from '@/actions/ot-registration'
 import { fetchPtMembersClient } from '@/lib/pt-members-client'
 import { PtMemberList } from '@/components/pt-members/pt-member-list'
+import { createClient } from '@/lib/supabase/client'
 import type { OtAssignmentWithDetails, OtProgram, Profile, OtRegistration } from '@/types'
 import type { PtMember } from '@/actions/pt-members'
 
