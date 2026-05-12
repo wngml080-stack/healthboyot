@@ -854,9 +854,11 @@ export function WeeklyCalendar({ assignments, trainerId, profile, workStartTime,
   useEffect(() => {
     scheduleRetryRef.current = 0
     fetchSchedules()
-    // 탭 복귀 시 스케줄이 비어있으면 재조회 (ref로 최신값 참조)
+    // 탭 복귀 시 항상 재조회 — 다른 디바이스에서 추가된 스케줄을 모바일에서도 즉시 반영
+    // (기존엔 schedules가 비어있을 때만 재조회했는데, 그러면 일부 데이터가 이미 있을 때
+    //  다른 디바이스의 신규 스케줄이 안 떴음)
     const handleVisibility = () => {
-      if (document.visibilityState === 'visible' && schedulesRef.current.length === 0 && !loadingRef.current) {
+      if (document.visibilityState === 'visible' && !loadingRef.current) {
         scheduleRetryRef.current = 0
         void fetchSchedules()
       }
@@ -867,6 +869,34 @@ export function WeeklyCalendar({ assignments, trainerId, profile, workStartTime,
       document.removeEventListener('visibilitychange', handleVisibility)
     }
   }, [fetchSchedules])
+
+  // trainer_schedules 실시간 구독 — 다른 디바이스에서 스케줄 생성/수정/삭제 시 즉시 반영
+  // fetchSchedules는 useCallback이라 deps 자주 바뀜 → ref로 안정화해서 채널 재구독 최소화
+  const fetchSchedulesRef = useRef(fetchSchedules)
+  useEffect(() => { fetchSchedulesRef.current = fetchSchedules }, [fetchSchedules])
+
+  useEffect(() => {
+    if (!trainerId || trainerId === 'unassigned' || trainerId === 'excluded') return
+    const supabase = supabaseRef.current
+    let debounce: ReturnType<typeof setTimeout> | null = null
+    const trigger = () => {
+      if (debounce) clearTimeout(debounce)
+      debounce = setTimeout(() => { void fetchSchedulesRef.current() }, 500)
+    }
+    const channel = supabase
+      .channel(`weekly-calendar-${trainerId}`)
+      .on('postgres_changes', {
+        event: '*',
+        schema: 'public',
+        table: 'trainer_schedules',
+        filter: `trainer_id=eq.${trainerId}`,
+      }, trigger)
+      .subscribe()
+    return () => {
+      if (debounce) clearTimeout(debounce)
+      supabase.removeChannel(channel)
+    }
+  }, [trainerId])
 
   const openCreate = (day: Date, hour: number, half: number) => {
     setCreateDate(format(day, 'yyyy-MM-dd'))

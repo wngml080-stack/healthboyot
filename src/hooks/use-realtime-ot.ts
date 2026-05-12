@@ -28,7 +28,7 @@ export function useRealtimeOT() {
       router.refresh()
       refreshTimer.current = null
       pendingRefresh.current = false
-    }, 3000) // 3초 디바운스 — 연속 이벤트 병합
+    }, 1000) // 1초 디바운스 — 다른 디바이스 변경을 빠르게 반영하면서 연속 이벤트는 병합
   }, [router])
 
   useEffect(() => {
@@ -40,6 +40,10 @@ export function useRealtimeOT() {
       .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'ot_assignments' }, scheduleRefresh)
       .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'ot_sessions' }, scheduleRefresh)
       .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'ot_sessions' }, scheduleRefresh)
+      // trainer_schedules는 PT/PPT/바챌 등 모든 스케줄의 1차 저장소 — 누락되면 SSR 데이터 stale
+      .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'trainer_schedules' }, scheduleRefresh)
+      .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'trainer_schedules' }, scheduleRefresh)
+      .on('postgres_changes', { event: 'DELETE', schema: 'public', table: 'trainer_schedules' }, scheduleRefresh)
       .subscribe()
 
     // 탭 비활성 시 refresh 억제, 복귀 시 대기 중이면 한 번만 refresh
