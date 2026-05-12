@@ -883,13 +883,15 @@ export function WeeklyCalendar({ assignments, trainerId, profile, workStartTime,
       if (debounce) clearTimeout(debounce)
       debounce = setTimeout(() => { void fetchSchedulesRef.current() }, 500)
     }
+    // trainer_id filter는 DELETE 이벤트에서 누락될 수 있음 (REPLICA IDENTITY DEFAULT는 PK만 포함).
+    // 필터 빼고 모든 trainer_schedules 변경을 받아 자기 fetchSchedules를 트리거 — 어차피
+    // fetch 자체가 trainer_id로 좁힌 쿼리라 결과는 자기 데이터만 들어옴.
     const channel = supabase
       .channel(`weekly-calendar-${trainerId}`)
       .on('postgres_changes', {
         event: '*',
         schema: 'public',
         table: 'trainer_schedules',
-        filter: `trainer_id=eq.${trainerId}`,
       }, trigger)
       .subscribe()
     return () => {
