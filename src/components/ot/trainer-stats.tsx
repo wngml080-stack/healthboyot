@@ -761,7 +761,7 @@ export function TrainerStats({ assignments, trainerName, programs, registrations
                 {activeThisTargets.length > 0 && (
                   <div className="space-y-2">
                     {activeThisTargets.map((t) => {
-                      const memo = thisExcludedTargets.find((e) => e.id === t.id)?.reason ?? ''
+                      const memo = getThisMemo(t.id)
                       return (
                       <div key={t.id}>
                         <div className="flex items-center justify-between bg-gray-50 rounded-lg px-3 py-2.5">
@@ -777,23 +777,81 @@ export function TrainerStats({ assignments, trainerName, programs, registrations
                             <Badge className={`text-[10px] ${t.statusColor}`}>{t.statusLabel}</Badge>
                             {t.expectedAmount > 0 && <Badge className="bg-blue-600 text-white text-[10px]">예상 {t.expectedAmount.toLocaleString()}만</Badge>}
                             <button
-                              onClick={() => { setThisExcludingId(thisExcludingId === t.id ? null : t.id); setThisExcludeReason(memo) }}
+                              onClick={() => { setThisMemoEditingId(thisMemoEditingId === t.id ? null : t.id); setThisMemoDraft(memo) }}
+                              className={`transition-colors ${memo ? 'text-amber-500 hover:text-amber-600' : 'text-gray-400 hover:text-amber-500'}`}
+                              title="메모"
+                            >
+                              <ClipboardCheck className="h-3.5 w-3.5" />
+                            </button>
+                            <button
+                              onClick={() => { setThisExcludingId(thisExcludingId === t.id ? null : t.id); setThisExcludeReason('') }}
                               className="text-gray-400 hover:text-red-500 transition-colors"
-                              title="제외 / 메모"
+                              title="제외"
                             >
                               <X className="h-3.5 w-3.5" />
                             </button>
                           </div>
                         </div>
-                        {memo && (
-                          <p className="text-[10px] text-gray-500 mt-1 ml-1">📝 {memo}</p>
+                        {memo && thisMemoEditingId !== t.id && (
+                          <p className="text-[10px] text-amber-600 mt-1 ml-1">📝 {memo}</p>
+                        )}
+                        {thisMemoEditingId === t.id && (
+                          <div className="flex items-center gap-2 mt-1.5 ml-1">
+                            <Input
+                              value={thisMemoDraft}
+                              onChange={(e) => setThisMemoDraft(e.target.value)}
+                              placeholder="메모를 입력하세요 (상황·진행내용 등)"
+                              className="text-xs h-7 bg-white flex-1"
+                              autoFocus
+                              onKeyDown={(e) => {
+                                if (e.key === 'Enter') {
+                                  setThisMemo(t.id, thisMemoDraft)
+                                  setThisMemoEditingId(null)
+                                  setThisMemoDraft('')
+                                }
+                              }}
+                            />
+                            <Button
+                              size="sm"
+                              className="h-7 text-[10px] bg-amber-500 hover:bg-amber-600 text-white px-2"
+                              onClick={() => {
+                                setThisMemo(t.id, thisMemoDraft)
+                                setThisMemoEditingId(null)
+                                setThisMemoDraft('')
+                              }}
+                            >
+                              저장
+                            </Button>
+                            {memo && (
+                              <Button
+                                size="sm"
+                                variant="outline"
+                                className="h-7 text-[10px] px-2"
+                                onClick={() => {
+                                  setThisMemo(t.id, '')
+                                  setThisMemoEditingId(null)
+                                  setThisMemoDraft('')
+                                }}
+                              >
+                                삭제
+                              </Button>
+                            )}
+                            <Button
+                              size="sm"
+                              variant="outline"
+                              className="h-7 text-[10px] px-2"
+                              onClick={() => { setThisMemoEditingId(null); setThisMemoDraft('') }}
+                            >
+                              취소
+                            </Button>
+                          </div>
                         )}
                         {thisExcludingId === t.id && (
                           <div className="flex items-center gap-2 mt-1.5 ml-1">
                             <Input
                               value={thisExcludeReason}
                               onChange={(e) => setThisExcludeReason(e.target.value)}
-                              placeholder="제외 사유 / 메모를 입력하세요..."
+                              placeholder="제외 사유를 입력하세요..."
                               className="text-xs h-7 bg-white flex-1"
                               autoFocus
                               onKeyDown={(e) => {
@@ -887,12 +945,17 @@ export function TrainerStats({ assignments, trainerName, programs, registrations
                         ) : null}
                       </div>
                     ))}
-                    {resolvedTargets.closingFailed.map((name) => (
-                      <div key={name} className="flex items-center justify-between bg-red-50 rounded-lg px-3 py-2">
-                        <div className="flex items-center gap-2">
-                          <span className="text-sm font-bold text-gray-900">{name}</span>
-                          <Badge className="bg-red-500 text-white text-[10px]">클로징실패</Badge>
+                    {resolvedTargets.closingFailed.map((r) => (
+                      <div key={r.id} className="bg-red-50 rounded-lg px-3 py-2">
+                        <div className="flex items-center justify-between">
+                          <div className="flex items-center gap-2">
+                            <span className="text-sm font-bold text-gray-900">{r.name}</span>
+                            <Badge className="bg-red-500 text-white text-[10px]">클로징실패</Badge>
+                          </div>
                         </div>
+                        {r.reason && (
+                          <p className="text-[10px] text-red-700 mt-1 leading-relaxed">📌 {r.reason}</p>
+                        )}
                       </div>
                     ))}
                   </div>
@@ -917,11 +980,31 @@ export function TrainerStats({ assignments, trainerName, programs, registrations
               <div className="space-y-2">
                 {activeNextTargets.map((t, i) => (
                   <div key={t.id || i}>
-                    <div className={`flex items-center justify-between rounded-lg px-3 py-2.5 ${t.isCarryOver ? 'bg-amber-50 border border-amber-200' : 'bg-blue-50'}`}>
-                      <div className="flex items-center gap-2">
+                    <div className={`flex items-center justify-between rounded-lg px-3 py-2.5 gap-2 ${t.isCarryOver ? 'bg-amber-50 border border-amber-200' : 'bg-blue-50'}`}>
+                      <div className="flex items-center gap-2 flex-wrap min-w-0">
                         <span className="text-sm font-bold text-gray-900">{t.name}</span>
                         {t.isCarryOver && <Badge className="bg-amber-200 text-amber-800 text-[8px]">이월</Badge>}
-                        {t.session ? (
+                        {t.isCarryOver && t.allSessions && t.allSessions.length > 0 ? (
+                          <div className="flex items-center gap-1 flex-wrap">
+                            {t.allSessions.map((s) => {
+                              const inNextWeek = new Date(s.scheduled_at) >= addDays(goalWeekStart, 7) && new Date(s.scheduled_at) <= addDays(goalWeekStart, 13)
+                              return (
+                                <span
+                                  key={s.session_number}
+                                  className={`text-[10px] px-1.5 py-0.5 rounded ${
+                                    s.completed
+                                      ? 'bg-emerald-100 text-emerald-700'
+                                      : inNextWeek
+                                        ? 'bg-blue-100 text-blue-700 font-bold'
+                                        : 'bg-gray-100 text-gray-600'
+                                  }`}
+                                >
+                                  {s.completed ? '✓ ' : ''}{s.session_number}차 · {format(new Date(s.scheduled_at), 'M/d', { locale: ko })}
+                                </span>
+                              )
+                            })}
+                          </div>
+                        ) : t.session ? (
                           <span className="text-[10px] text-blue-600">{t.session.session_number}차 · {format(new Date(t.session.scheduled_at!), 'M/d (EEE) HH:mm', { locale: ko })}</span>
                         ) : !t.isCustom ? (
                           <span className="text-[10px] text-gray-400">스케줄 미정</span>
