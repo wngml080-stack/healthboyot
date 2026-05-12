@@ -61,17 +61,29 @@ export default function RootLayout({
           dangerouslySetInnerHTML={{
             __html: `(function(){
               try {
-                // 1) 옛 service worker 강제 unregister + 모든 캐시 삭제
-                //    (PWA에서 옛 빌드의 SW가 cache 응답을 가로채는 문제 해결)
-                if ('serviceWorker' in navigator) {
+                // 1) SW + 캐시 발견 시 → 즉시 unregister + 강제 리로드 (chunk fetch 시작 전에)
+                //    옛 SW가 chunk를 가로채면 새 HTML + 옛 chunk mismatch → React #310/#419 발생
+                //    따라서 SW 발견 시 즉시 죽이고 한 번 리로드해서 SW 없는 상태에서 chunk fetch
+                var killKey = '__sw_killed_v3';
+                if (!sessionStorage.getItem(killKey) && 'serviceWorker' in navigator) {
                   navigator.serviceWorker.getRegistrations().then(function(regs){
-                    regs.forEach(function(r){ try { r.unregister() } catch(_){} })
-                  }).catch(function(){})
-                }
-                if (typeof caches !== 'undefined') {
-                  caches.keys().then(function(keys){
-                    keys.forEach(function(k){ try { caches.delete(k) } catch(_){} })
-                  }).catch(function(){})
+                    if (regs.length === 0) return;
+                    Promise.all(regs.map(function(r){ return r.unregister().catch(function(){}); }))
+                      .then(function(){
+                        if (typeof caches !== 'undefined') {
+                          return caches.keys().then(function(keys){
+                            return Promise.all(keys.map(function(k){ return caches.delete(k).catch(function(){}); }));
+                          }).catch(function(){});
+                        }
+                      })
+                      .then(function(){
+                        sessionStorage.setItem(killKey, '1');
+                        var u = new URL(location.href);
+                        u.searchParams.set('_sw', Date.now().toString());
+                        location.replace(u.toString());
+                      })
+                      .catch(function(){});
+                  }).catch(function(){});
                 }
 
                 // 2) 빌드 ID 체크 → stale 캐시 자동 새로고침

@@ -2,8 +2,6 @@
 
 import { useEffect, useState } from 'react'
 
-const RECOVERY_FLAG = '__ge_recovered_v2'
-
 interface ErrorLogEntry {
   t: string
   prefix: string
@@ -34,12 +32,7 @@ async function purgeAndHardReload() {
     }
   } catch {}
 
-  // 깨진 React 라우트를 다시 로드하지 말고, 번들 없는 정적 reset 페이지로 탈출한다.
-  const u = new URL('/reset.html', window.location.origin)
-  u.searchParams.set('from', 'global-error')
-  u.searchParams.set('keepAuth', '1')
-  u.searchParams.set('cb', Date.now().toString())
-  window.location.replace(u.toString())
+  window.location.replace('/ot')
 }
 
 export default function GlobalError({
@@ -55,14 +48,6 @@ export default function GlobalError({
   useEffect(() => {
     setLog(readErrorLog())
     console.error('[GlobalError]', error)
-    // 세션당 1회만 자동 강제 새로고침 (옛 HTML/chunks 캐시 무효화)
-    try {
-      if (!sessionStorage.getItem(RECOVERY_FLAG)) {
-        sessionStorage.setItem(RECOVERY_FLAG, '1')
-        purgeAndHardReload()
-        return
-      }
-    } catch {}
     setExhausted(true)
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
@@ -95,12 +80,11 @@ export default function GlobalError({
           <div style={{ display: 'flex', gap: '0.75rem', marginBottom: '1rem' }}>
             <button
               onClick={() => {
-                try { sessionStorage.removeItem(RECOVERY_FLAG) } catch {}
                 purgeAndHardReload()
               }}
               style={{ padding: '0.625rem 1.5rem', backgroundColor: '#facc15', color: '#000', border: 'none', borderRadius: '0.5rem', fontWeight: 600, cursor: 'pointer' }}
             >
-              앱 초기화
+              캐시 정리 후 다시 시도
             </button>
             <button
               onClick={() => { window.location.href = '/login' }}

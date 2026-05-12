@@ -76,6 +76,23 @@ function useExcludedTargets(key: string) {
   }
 }
 
+// 대상자 메모 (제외와 별도, localStorage)
+interface TargetMemo { id: string; memo: string }
+function useTargetMemos(key: string) {
+  const [memos, setMemos] = useState<TargetMemo[]>([])
+  useEffect(() => { try { const s = localStorage.getItem(key); if (s) setMemos(JSON.parse(s)) } catch {} }, [key])
+  const save = (m: TargetMemo[]) => { setMemos(m); localStorage.setItem(key, JSON.stringify(m)) }
+  return {
+    memos,
+    setMemo: (id: string, memo: string) => {
+      const trimmed = memo.trim()
+      if (!trimmed) save(memos.filter((m) => m.id !== id))
+      else save([...memos.filter((m) => m.id !== id), { id, memo: trimmed }])
+    },
+    getMemo: (id: string) => memos.find((m) => m.id === id)?.memo ?? '',
+  }
+}
+
 export function TrainerStats({ assignments, trainerName, programs, registrations: initialRegistrations = [], trainerId }: Props) {
   const [now] = useState(() => new Date())
   const captureRef = useRef<HTMLDivElement>(null)
@@ -143,6 +160,12 @@ export function TrainerStats({ assignments, trainerName, programs, registrations
   const [thisExcludingId, setThisExcludingId] = useState<string | null>(null)
   const [thisExcludeReason, setThisExcludeReason] = useState('')
   const [showThisExcluded, setShowThisExcluded] = useState(false)
+
+  // 이번주 대상자 메모 (제외와 독립)
+  const thisMemoKey = `this-memos-${trainerName}-${format(goalWeekStart, 'yyyy-MM-dd')}`
+  const { setMemo: setThisMemo, getMemo: getThisMemo } = useTargetMemos(thisMemoKey)
+  const [thisMemoEditingId, setThisMemoEditingId] = useState<string | null>(null)
+  const [thisMemoDraft, setThisMemoDraft] = useState('')
 
   // 이미지 저장 — html-to-image로 화면 그대로 캡처
   const handleCapture = async () => {
@@ -464,13 +487,18 @@ export function TrainerStats({ assignments, trainerName, programs, registrations
       ptConversion: allSalesTargets
         .filter((a) => (a.is_pt_conversion || a.sales_status === '등록완료') && resolvedInThisWeek(a))
         .map((a) => ({
+          id: a.id,
           name: a.member.name,
           expectedAmount: toManwon(a.expected_amount ?? a.expected_sales ?? 0),
           actualSales: toManwon(a.actual_sales ?? 0),
         })),
       closingFailed: allSalesTargets
         .filter((a) => a.sales_status === '클로징실패' && resolvedInThisWeek(a))
-        .map((a) => a.member.name),
+        .map((a) => ({
+          id: a.id,
+          name: a.member.name,
+          reason: a.closing_fail_reason || a.sales_note || '',
+        })),
     }
 
     // 다음주 매출대상자: 활성 대상자 중 이월되는 대상
@@ -484,11 +512,21 @@ export function TrainerStats({ assignments, trainerName, programs, registrations
       })
       .map((a) => {
         const ns = a.sessions?.find((s) => s.scheduled_at && !s.completed_at && new Date(s.scheduled_at) >= nws && new Date(s.scheduled_at) <= nwe)
+        // 1차/2차/3차 전체 스케줄 (이월 대상자가 과거 차수까지 보이도록)
+        const allSessions = (a.sessions ?? [])
+          .filter((s) => s.scheduled_at && s.session_number >= 1 && s.session_number <= 3)
+          .map((s) => ({
+            session_number: s.session_number,
+            scheduled_at: s.scheduled_at!,
+            completed: !!s.completed_at,
+          }))
+          .sort((x, y) => x.session_number - y.session_number)
         return {
           id: a.id, name: a.member.name,
           expectedAmount: toManwon(a.expected_amount ?? a.expected_sales ?? 0),
           session: ns, isCustom: false,
           isCarryOver: activeIds.has(a.id),
+          allSessions,
         }
       })
 
@@ -569,7 +607,7 @@ export function TrainerStats({ assignments, trainerName, programs, registrations
   // 전체 차주 대상자 (자동 + 수동)
   const allNextTargets = [
     ...nextWeekTargets,
-    ...customTargets.map((t) => ({ id: t.id, name: t.name, expectedAmount: t.expectedAmount, session: undefined as typeof nextWeekTargets[number]['session'], isCustom: true, isCarryOver: false })),
+    ...customTargets.map((t) => ({ id: t.id, name: t.name, expectedAmount: t.expectedAmount, session: undefined as typeof nextWeekTargets[number]['session'], isCustom: true, isCarryOver: false, allSessions: [] as typeof nextWeekTargets[number]['allSessions'] })),
   ]
   const activeNextTargets = allNextTargets.filter((t) => !isTargetExcluded(t.id))
   const excludedNextTargets = allNextTargets.filter((t) => isTargetExcluded(t.id))

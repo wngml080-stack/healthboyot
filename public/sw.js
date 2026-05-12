@@ -1,7 +1,7 @@
 // 서비스 워커 해제 전용.
-// 기존 iOS PWA가 오래된 app-shell/청크를 계속 잡고 있으면 React가 뜨기 전에도
-// 실패할 수 있으므로, 새 SW가 활성화되는 순간 정적 reset 페이지로 보낸다.
-const RESET_URL = '/reset.html?from=sw&ts='
+// 기존 PWA에 남아 있는 registration만 조용히 제거한다.
+// 클라이언트를 reset 페이지로 강제 이동시키면 iOS PWA에서 매 실행마다
+// "앱 초기화"가 반복될 수 있으므로 자동 navigation은 하지 않는다.
 
 self.addEventListener('install', () => {
   self.skipWaiting()
@@ -13,19 +13,6 @@ self.addEventListener('activate', (event) => {
     await Promise.all(keys.map((key) => caches.delete(key)))
 
     await self.clients.claim()
-
-    const windows = await self.clients.matchAll({
-      type: 'window',
-      includeUncontrolled: true,
-    })
-
-    await Promise.all(windows.map((client) => {
-      if ('navigate' in client) {
-        return client.navigate(RESET_URL + Date.now()).catch(() => undefined)
-      }
-      return undefined
-    }))
-
     await self.registration.unregister()
   })())
 })

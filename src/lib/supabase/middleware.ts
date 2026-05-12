@@ -4,6 +4,15 @@ import { NextResponse, type NextRequest } from 'next/server'
 export async function updateSession(request: NextRequest) {
   const pathname = request.nextUrl.pathname
 
+  // /reset 또는 /reset.html로 진입하는 모든 요청 → /ot로 강제 redirect
+  // 옛 PWA가 옛 manifest의 start_url(/reset 계열)로 진입해도 매번 메인으로 이동, auth 토큰 유지
+  if (pathname === '/reset' || pathname.startsWith('/reset.html') || pathname.startsWith('/reset?') || pathname.startsWith('/reset/')) {
+    const url = request.nextUrl.clone()
+    url.pathname = '/ot'
+    url.search = ''
+    return NextResponse.redirect(url)
+  }
+
   let supabaseResponse = NextResponse.next({
     request,
   })
@@ -45,9 +54,8 @@ export async function updateSession(request: NextRequest) {
     return NextResponse.redirect(url)
   }
 
-  // 인증된 사용자가 로그인 접근 시 → /ot으로.
-  // 단, reset loop 복구 중에는 로그인 화면을 그대로 보여줘서 /ot 에러 루프를 끊는다.
-  if (session && pathname.startsWith('/login') && !request.nextUrl.searchParams.has('_reset_loop')) {
+  // 인증된 사용자가 로그인 접근 시 → /ot으로
+  if (session && pathname.startsWith('/login')) {
     const url = request.nextUrl.clone()
     url.pathname = '/ot'
     return NextResponse.redirect(url)
